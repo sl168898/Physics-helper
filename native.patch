@@ -1,0 +1,503 @@
+diff --git a/src/ActorManager.cpp b/src/ActorManager.cpp
+index 340d8e8..1c9249c 100644
+--- a/src/ActorManager.cpp
++++ b/src/ActorManager.cpp
+@@ -1,5 +1,6 @@
+ 
+ #include "ActorManager.h"
++#include "FlailDirectSMP.h"
+ #include "WeatherManager.h"
+ #include "dhdtOverrideManager.h"
+ #include "hdtDefaultBBP.h"
+@@ -187,6 +188,9 @@ namespace hdt
+ 
+ 		setSkeletonsActive(true);
+ 
++		// Observe each visible flail instance before the physics-world frame sink.
++		FlailDirectSMP::get().update();
++
+ 		return RE::BSEventNotifyControl::kContinue;
+ 	}
+ 
+@@ -194,6 +198,7 @@ namespace hdt
+ 	{
+ 		m_shutdown = true;
+ 		std::lock_guard<decltype(m_lock)> l(m_lock);
++		FlailDirectSMP::get().shutdown();
+ 
+ 		m_skeletons.clear();
+ 
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index acab49a..145a5bf 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -5,6 +5,9 @@ add_compile_definitions(_SILENCE_AMP_DEPRECATION_WARNINGS NOMINMAX)
+ set(SOURCE_DIR "${ROOT_DIR}/src")
+ 
+ set(SOURCE_FILES
++	"${SOURCE_DIR}/FlailDirectSMP.cpp"
++	"${SOURCE_DIR}/FlailDirectSMP.h"
++	"${SOURCE_DIR}/FlailRigScanner.h"
+ 	"${SOURCE_DIR}/hdtSkinnedMesh/hdtAABB.h"
+ 	"${SOURCE_DIR}/hdtSkinnedMesh/hdtBone.h"
+ 	"${SOURCE_DIR}/hdtSkinnedMesh/hdtBoneScaleConstraint.cpp"
+diff --git a/src/FlailDirectSMP.cpp b/src/FlailDirectSMP.cpp
+new file mode 100644
+index 0000000..354b3dc
+--- /dev/null
++++ b/src/FlailDirectSMP.cpp
+@@ -0,0 +1,218 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "FlailDirectSMP.h"
++#include "ActorManager.h"
++#include "hdtSkyrimPhysicsWorld.h"
++
++#include <cctype>
++
++namespace hdt
++{
++	namespace
++	{
++		constexpr auto physicsPath = "meshes\\GildyCreations\\GildFlailPhysics.xml";
++		constexpr auto companionPlugin = "GildFlail_DirectSMP_Lorerim.esp";
++
++		struct NodeTraits
++		{
++			static std::string_view name(RE::NiNode* node)
++			{
++				const auto p = node->name.c_str();
++				return p ? std::string_view(p) : std::string_view{};
++			}
++			static bool hidden(RE::NiNode* node) { return node->GetAppCulled(); }
++			template <class F>
++			static void children(RE::NiNode* node, F&& f)
++			{
++				for (const auto& child : node->GetChildren()) {
++					if (child) {
++						if (auto n = child->AsNode()) {
++							f(n);
++						}
++					}
++				}
++			}
++		};
++	}
++
++	FlailDirectSMP& FlailDirectSMP::get()
++	{
++		static FlailDirectSMP manager;
++		return manager;
++	}
++
++	void FlailDirectSMP::configure()
++	{
++		const auto requested = GetPrivateProfileIntA("FlailDirectSMP", "Enabled", 0,
++			".\\Data\\SKSE\\Plugins\\FlailDirectSMP.ini") != 0;
++		auto data = RE::TESDataHandler::GetSingleton();
++		// The companion removes armor-equipping scripts and supplies this marker.
++		const auto marker = data ? data->LookupForm<RE::BGSListForm>(0x800, companionPlugin) : nullptr;
++		enabled = requested && marker;
++		logger::info("[FlailDirectSMP] experimental prototype p2 / FSMP 3.2.1; enabled={}, requested={}, companion={}",
++			enabled, requested, marker != nullptr);
++	}
++
++	void FlailDirectSMP::beginLoad()
++	{
++		loading = true;
++		clear();
++	}
++
++	void FlailDirectSMP::endLoad(bool succeeded)
++	{
++		clear();
++		loading = !succeeded;
++	}
++
++	void FlailDirectSMP::shutdown()
++	{
++		stopped = true;
++		clear();
++	}
++
++	bool FlailDirectSMP::hasActiveSystems() const
++	{
++		return std::any_of(entries.begin(), entries.end(), [](const auto& item) {
++			return item.second.system && item.second.system->m_world;
++		});
++	}
++
++	void FlailDirectSMP::detach(Entry& entry)
++	{
++		if (entry.system && entry.system->m_world) {
++			SkyrimPhysicsWorld::get()->removeSkinnedMeshSystem(entry.system.get());
++		}
++		entry.system = nullptr;
++	}
++
++	void FlailDirectSMP::clear()
++	{
++		if (entries.empty()) {
++			return;
++		}
++		// FSMP can simulate asynchronously. Its world mutex alone does not make
++		// it safe to release scene nodes that a queued second-step task still uses.
++		SkyrimPhysicsWorld::get()->m_tasks.wait();
++		for (auto& [node, entry] : entries) {
++			detach(entry);
++		}
++		entries.clear();
++	}
++
++	bool FlailDirectSMP::legacyDriverPresent(RE::NiNode* actorRoot)
++	{
++		for (auto& skeleton : ActorManager::instance()->getSkeletons()) {
++			if (skeleton.skeleton.get() != actorRoot) {
++				continue;
++			}
++			for (const auto& armor : skeleton.getArmors()) {
++				if (!armor.hasPhysics()) {
++					continue;
++				}
++				auto path = armor.physicsFile.first;
++				std::transform(path.begin(), path.end(), path.begin(),
++					[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
++				if (path.ends_with("gildflailphysics.xml")) {
++					return true;
++				}
++			}
++		}
++		return false;
++	}
++
++	FlailDirectSMP::Entry FlailDirectSMP::attach(const Rig& rig)
++	{
++		Entry entry;
++		entry.rig = rig;
++		for (auto node : rig.attachment) {
++			entry.heldNodes.push_back(make_nismart(node));
++		}
++		for (auto node : rig.bones) {
++			entry.heldNodes.push_back(make_nismart(node));
++		}
++
++		DefaultBBP::PhysicsFile_t file{ physicsPath, {} };
++		// The crucial change: the root is THIS flail's Flail_0, never the actor.
++		// Both name lookup and the resulting system stay within that instance.
++		// No NIF names, bones, meshes, equip slots, or armor records are mutated.
++		auto system = SkyrimSystemCreator().createOrUpdateSystem(
++			rig.bones[0], rig.bones[0], &file, {}, nullptr);
++		bool complete = system && system->getBones().size() == flail::boneNames.size();
++		if (complete) {
++			for (std::size_t i = 0; i < rig.bones.size(); ++i) {
++				auto bone = system->findBone(flail::boneNames[i].data());
++				if (!bone || static_cast<SkyrimBone*>(bone)->m_node != rig.bones[i]) {
++					complete = false;
++					break;
++				}
++			}
++		}
++		if (!complete) {
++			logger::warn("[FlailDirectSMP] instance {:p}: five-bone binding failed; leaving it unmanaged",
++				static_cast<void*>(rig.bones[0]));
++			return entry;
++		}
++		entry.system = system;
++		SkyrimPhysicsWorld::get()->addSkinnedMeshSystem(system.get());
++		logger::info("[FlailDirectSMP] bound independent instance {:p}, five bones",
++			static_cast<void*>(rig.bones[0]));
++		return entry;
++	}
++
++	void FlailDirectSMP::update()
++	{
++		if (!enabled || loading || stopped) {
++			return;
++		}
++		auto world = SkyrimPhysicsWorld::get();
++		world->m_tasks.wait();
++		auto player = RE::PlayerCharacter::GetSingleton();
++		auto object = player ? player->Get3D(false) : nullptr;
++		auto root = object ? object->AsNode() : nullptr;
++		if (!root || !root->parent || world->disabled) {
++			clear();
++			return;
++		}
++		if (legacyDriverPresent(root)) {
++			clear();
++			if (!warnedLegacy) {
++				logger::warn("[FlailDirectSMP] legacy armor physics is present; direct binding suspended");
++				warnedLegacy = true;
++			}
++			return;
++		}
++		warnedLegacy = false;
++
++		auto scan = flail::collect<RE::NiNode, NodeTraits>(root);
++		if (!scan.complete) {
++			clear();
++			if (!warnedLimit) {
++				logger::warn("[FlailDirectSMP] scene traversal limit reached; direct binding suspended");
++				warnedLimit = true;
++			}
++			return;
++		}
++		warnedLimit = false;
++
++		std::vector<Rig> previous;
++		previous.reserve(entries.size());
++		for (const auto& [node, entry] : entries) {
++			previous.push_back(entry.rig);
++		}
++		auto delta = flail::changes(previous, scan.rigs);
++		// Always detach obsolete bindings before creating replacement systems.
++		for (auto node : delta.remove) {
++			auto old = entries.find(node);
++			detach(old->second);
++			entries.erase(old);
++		}
++		for (const auto& rig : delta.add) {
++			entries.emplace(rig.bones[0], attach(rig));
++		}
++		for (auto& [node, entry] : entries) {
++			if (entry.system && !entry.system->m_world) {
++				world->addSkinnedMeshSystem(entry.system.get());
++			}
++		}
++	}
++}
+diff --git a/src/FlailDirectSMP.h b/src/FlailDirectSMP.h
+new file mode 100644
+index 0000000..f61b94a
+--- /dev/null
++++ b/src/FlailDirectSMP.h
+@@ -0,0 +1,44 @@
++#pragma once
++
++// SPDX-License-Identifier: GPL-3.0-or-later
++#include "FlailRigScanner.h"
++#include "hdtSkyrimSystem.h"
++
++namespace hdt
++{
++	// Experimental, player/third-person-only manager. Built inside hdtSMP64;
++	// it does not call an invented public FSMP plugin API or equip any armor.
++	class FlailDirectSMP
++	{
++	public:
++		static FlailDirectSMP& get();
++		void configure();
++		void beginLoad();
++		void endLoad(bool succeeded = true);
++		void update();
++		void shutdown();
++		bool hasActiveSystems() const;
++
++	private:
++		using Rig = flail::Rig<RE::NiNode>;
++		struct Entry
++		{
++			Rig rig;
++			// Hold the actual instance and its bones until the simulation is detached.
++			std::vector<RE::NiPointer<RE::NiNode>> heldNodes;
++			RE::BSTSmartPointer<SkyrimSystem> system;
++		};
++
++		bool enabled = false;
++		bool loading = true;
++		bool stopped = false;
++		bool warnedLegacy = false;
++		bool warnedLimit = false;
++		std::unordered_map<RE::NiNode*, Entry> entries;
++
++		static bool legacyDriverPresent(RE::NiNode* actorRoot);
++		static void detach(Entry& entry);
++		static Entry attach(const Rig& rig);
++		void clear();
++	};
++}
+diff --git a/src/FlailRigScanner.h b/src/FlailRigScanner.h
+new file mode 100644
+index 0000000..2a76386
+--- /dev/null
++++ b/src/FlailRigScanner.h
+@@ -0,0 +1,126 @@
++#pragma once
++
++// SPDX-License-Identifier: GPL-3.0-or-later
++// The portable part of the experimental GildFlail direct-physics extension.
++#include <array>
++#include <cstddef>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++namespace hdt::flail
++{
++	inline constexpr std::array<std::string_view, 5> boneNames{
++		"Flail_0", "Flail_1", "Flail_2", "Flail_3", "Flail_4"
++	};
++
++	template <class Node>
++	struct Rig
++	{
++		std::array<Node*, 5> bones{};
++		// Includes the actor's root, all attachment ancestors, and Flail_0.
++		// Reparenting an unchanged weapon is therefore an identity change too.
++		std::vector<Node*> attachment;
++		bool operator==(const Rig&) const = default;
++	};
++
++	template <class Node>
++	struct Scan
++	{
++		std::vector<Rig<Node>> rigs;
++		bool complete = true;
++		std::size_t visited = 0;
++	};
++
++	// Traits supplies name(Node*), hidden(Node*), and children(Node*, callback).
++	// Deliberately accepts only the known, contiguous five-bone GildFlail rig.
++	// There is no fallback search in another weapon or the actor's skeleton.
++	template <class Node, class Traits>
++	Scan<Node> collect(Node* root, std::size_t maxNodes = 20000, std::size_t maxDepth = 96)
++	{
++		Scan<Node> result;
++		std::vector<Node*> path;
++		auto visit = [&](auto&& self, Node* node) -> void {
++			if (!node || !result.complete) {
++				return;
++			}
++			if (++result.visited > maxNodes || path.size() >= maxDepth) {
++				result.complete = false;
++				return;
++			}
++			if (Traits::hidden(node)) {
++				return;
++			}
++			path.push_back(node);
++			if (Traits::name(node) == boneNames[0]) {
++				Rig<Node> rig;
++				rig.bones[0] = node;
++				bool valid = true;
++				for (std::size_t i = 1; i < boneNames.size(); ++i) {
++					std::size_t matches = 0;
++					Traits::children(rig.bones[i - 1], [&](Node* child) {
++						if (child && Traits::name(child) == boneNames[i]) {
++							++matches;
++							rig.bones[i] = child;
++						}
++					});
++					if (matches != 1 || Traits::hidden(rig.bones[i])) {
++						valid = false;
++						break;
++					}
++				}
++				if (valid) {
++					rig.attachment = path;
++					result.rigs.push_back(std::move(rig));
++				}
++			} else {
++				Traits::children(node, [&](Node* child) { self(self, child); });
++			}
++			path.pop_back();
++		};
++		visit(visit, root);
++		if (!result.complete) {
++			// A partial traversal must never leave an arbitrarily chosen subset live.
++			result.rigs.clear();
++		}
++		return result;
++	}
++
++	template <class Node>
++	struct Changes
++	{
++		std::vector<Node*> remove;
++		std::vector<Rig<Node>> add;
++	};
++
++	template <class Node>
++	Changes<Node> changes(const std::vector<Rig<Node>>& previous, const std::vector<Rig<Node>>& next)
++	{
++		Changes<Node> result;
++		for (const auto& old : previous) {
++			bool unchanged = false;
++			for (const auto& now : next) {
++				if (old == now) {
++					unchanged = true;
++					break;
++				}
++			}
++			if (!unchanged) {
++				result.remove.push_back(old.bones[0]);
++			}
++		}
++		for (const auto& now : next) {
++			bool unchanged = false;
++			for (const auto& old : previous) {
++				if (old == now) {
++					unchanged = true;
++					break;
++				}
++			}
++			if (!unchanged) {
++				result.add.push_back(now);
++			}
++		}
++		return result;
++	}
++}
+diff --git a/src/hdtSkyrimPhysicsWorld.cpp b/src/hdtSkyrimPhysicsWorld.cpp
+index 75d710e..a592918 100644
+--- a/src/hdtSkyrimPhysicsWorld.cpp
++++ b/src/hdtSkyrimPhysicsWorld.cpp
+@@ -1,4 +1,5 @@
+ #include "hdtSkyrimPhysicsWorld.h"
++#include "FlailDirectSMP.h"
+ #include "PluginInterfaceImpl.h"
+ #include "WeatherManager.h"
+ #include "hdtPhysicsProfiler.h"
+@@ -103,7 +104,8 @@ namespace hdt
+ 		m_averageInterval += (interval - m_averageInterval) * .125f;
+ 
+ 		// No need to calculate physics if there is no active skeleton.
+-		if (!disabled && hdt::ActorManager::instance()->activeSkeletons) {
++		// Direct weapon systems must also run when no armor/hair skeleton is active.
++		if (!disabled && (hdt::ActorManager::instance()->activeSkeletons || FlailDirectSMP::get().hasActiveSystems())) {
+ 			// The tick is the given time for each computation substep. We set it to the average fps
+ 			// to have one average computation each frame when everything is usual.
+ 			// In case of poor fps, we set it to the configured minimum engine value (60 Hz),
+diff --git a/src/main.cpp b/src/main.cpp
+index f0fc6eb..bf10a13 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1,4 +1,5 @@
+ #include "ActorManager.h"
++#include "FlailDirectSMP.h"
+ #include "Events.h"
+ #include "Hooks.h"
+ #include "PluginInterfaceImpl.h"
+@@ -578,6 +579,15 @@ namespace
+ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
+ {
+ 	switch (a_msg->type) {
++	case SKSE::MessagingInterface::kDataLoaded:
++		hdt::FlailDirectSMP::get().configure();
++		break;
++	case SKSE::MessagingInterface::kNewGame:
++		hdt::FlailDirectSMP::get().endLoad();
++		break;
++	case SKSE::MessagingInterface::kPostLoadGame:
++		hdt::FlailDirectSMP::get().endLoad(a_msg->data != nullptr);
++		break;
+ 	case SKSE::MessagingInterface::kInputLoaded:
+ 		Events::Register();
+ 		break;
+@@ -595,6 +605,7 @@ void MessageHandler(SKSE::MessagingInterface::Message* a_msg)
+ 		break;
+ 	case SKSE::MessagingInterface::kPreLoadGame:
+ 		{
++			hdt::FlailDirectSMP::get().beginLoad();
+ 			std::string save_name = reinterpret_cast<char*>(a_msg->data);
+ 			save_name = save_name.substr(0, save_name.find_last_of("."));
+ 

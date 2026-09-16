@@ -1,0 +1,39 @@
+name: Build experimental flail FSMP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'codex/flail-*'
+
+concurrency:
+  group: flail-native-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Check out prototype sources
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Cache compiled vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: flail-fsmp321-windows2022-noavx-vcpkg-60b06921-v1
+
+      - name: Build experimental native DLL
+        shell: pwsh
+        run: '& .\tools\build_windows.ps1'
+
+      - name: Upload native-only artifact after a successful build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FlailDirectSMP-p2-native-only-UNTESTED
+          path: _build/FlailDirectSMP_native_p2_UNTESTED.zip
+          if-no-files-found: error
