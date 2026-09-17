@@ -36,9 +36,9 @@ if ($MainSource -match 'script->|GetConcreteFormFactoryByType<RE::Script>|phial:
     throw 'Unsafe command compilation returned to the settings writer'
 }
 # Compile the adapter first: catch API/template errors before building CommonLib.
-$MakeLine = Get-Content (Join-Path $Build 'CMakeCache.txt') | Where-Object { $_ -match '^CMAKE_MAKE_PROGRAM:FILEPATH=' } | Select-Object -First 1
-if (!$MakeLine) { throw 'CMake did not record MSBuild path' }
-$MSBuild = $MakeLine.Substring($MakeLine.IndexOf('=') + 1)
+$VSWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+$MSBuild = (& $VSWhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1)
+if (!$MSBuild -or !(Test-Path $MSBuild)) { throw 'MSBuild was not found by vswhere' }
 Run $MSBuild @((Join-Path $Build 'WhitePhialMenu.vcxproj'), '/t:ClCompile', '/p:Configuration=Release', '/p:Platform=x64', '/p:BuildProjectReferences=false', '/verbosity:minimal')
 Run 'cmake' @('--build', $Build, '--config', 'Release', '--parallel', '2')
 Run 'ctest' @('--test-dir', $Build, '-C', 'Release', '--output-on-failure')
