@@ -101,7 +101,8 @@ namespace
         auto player = RE::PlayerCharacter::GetSingleton();
         auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
         auto policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
-        auto effects = player ? player->GetActiveEffectList() : nullptr;
+        auto target = player ? player->AsMagicTarget() : nullptr;
+        auto effects = target ? target->GetActiveEffectList() : nullptr;
         std::string status = "Waiting for the original White Phial hotkey effect.";
         if (hotkeyEffect && policy && effects) {
             const auto key = static_cast<std::int32_t>(globals[phial::hotkey]->value);
