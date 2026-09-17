@@ -1,0 +1,30 @@
+name: Build White Phial menu
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/white-phial-*']
+permissions:
+  contents: read
+concurrency:
+  group: white-phial-menu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: waterskin-windows2022-staticmd-vcpkg-60b06921-v1
+      - name: Build DLL and run settings tests
+        shell: pwsh
+        run: '& .\white-phial-menu\tools\build_windows.ps1'
+      - name: Upload installable menu
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: White-Phial-Menu-SKSE-v1
+          path: white-phial-menu/_build/White_Phial_Menu_SKSE_v1.zip
+          if-no-files-found: error

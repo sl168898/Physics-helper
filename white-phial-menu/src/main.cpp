@@ -1,0 +1,339 @@
+#include <RE/Skyrim.h>
+#include <SKSE/SKSE.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <mutex>
+#include "SKSEMenuFramework.h"
+#include "Settings.h"
+#include "Keys.h"
+
+namespace
+{
+    namespace imgui = ImGuiMCP;
+    using Clock = std::chrono::steady_clock;
+    constexpr auto originalPlugin = "The White Phial - Tweaks and Enhancements.esp";
+    std::array<RE::TESGlobal*, phial::count> globals{};
+    bool formsReady = false;  // Only read/written by game thread tasks and SKSE messages.
+    bool registered = false;
+
+    struct Shared
+    {
+        std::uint64_t epoch = 1;
+        bool session = false;
+        bool ready = false;
+        bool pollPending = false;
+        bool applyPending = false;
+        phial::Values values{};
+        std::string status = "Load a save to edit the White Phial settings.";
+        bool error = false;
+    } shared;
+    std::mutex sharedMutex;
+
+    bool inGame()
+    {
+        auto ui = RE::UI::GetSingleton();
+        return ui && RE::PlayerCharacter::GetSingleton() &&
+            !ui->IsMenuOpen(RE::MainMenu::MENU_NAME) && !ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+    }
+
+    phial::Values readValues()
+    {
+        phial::Values values{};
+        for (std::size_t i = 0; i < phial::count; ++i) values[i] = globals[i]->value;
+        return values;
+    }
+
+    void resetSession(bool active)
+    {
+        std::lock_guard lock(sharedMutex);
+        ++shared.epoch;
+        shared.session = active;
+        shared.ready = shared.pollPending = shared.applyPending = false;
+        shared.error = active && !formsReady;
+        shared.status = !active ? "Load a save to edit the White Phial settings." :
+            formsReady ? "Reading the current save..." :
+            "The White Phial settings were not found. Enable White Phial - Tweaks and Enhancements (2.1 or later).";
+    }
+
+    void requestRefresh()
+    {
+        auto tasks = SKSE::GetTaskInterface();
+        if (!tasks) return;
+        std::uint64_t epoch;
+        {
+            std::lock_guard lock(sharedMutex);
+            if (!shared.session || shared.pollPending || shared.applyPending) return;
+            shared.pollPending = true;
+            epoch = shared.epoch;
+        }
+        tasks->AddTask([epoch] {
+            std::lock_guard lock(sharedMutex);
+            if (epoch != shared.epoch || !shared.session) return;
+            shared.pollPending = false;
+            const bool wasReady = shared.ready;
+            shared.ready = formsReady && inGame();
+            if (!shared.ready) {
+                if (formsReady) shared.status = "Load a save and finish loading to edit these settings.";
+                return;
+            }
+            shared.values = readValues();
+            if (!wasReady) {
+                shared.status = "Changes apply to this character. Save your game to keep them.";
+                shared.error = false;
+            }
+        });
+    }
+
+    bool runSetting(std::size_t field, float value)
+    {
+        const auto command = phial::command(field, value);
+        if (!command) return false;
+        auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+        std::unique_ptr<RE::Script> script(factory ? factory->Create() : nullptr);
+        if (!script) return false;
+        // The engine's own documented 'set' command performs the change, exactly
+        // as at the console. This preserves normal global/save-game semantics.
+        // No ConsoleUtil, Papyrus script, quest, ESP or inventory item is added.
+        script->SetCommand(*command);
+        script->CompileAndRun(RE::PlayerCharacter::GetSingleton());
+        const bool verified = phial::equal(globals[field]->value, value);
+        SKSE::log::info("{}; readback={}; verified={}", *command, globals[field]->value, verified);
+        return verified;
+    }
+
+    void requestApply(phial::Request request)
+    {
+        auto tasks = SKSE::GetTaskInterface();
+        if (!tasks) return;
+        {
+            std::lock_guard lock(sharedMutex);
+            if (!shared.ready || !shared.session || shared.applyPending || request.epoch != shared.epoch) return;
+            shared.applyPending = true;
+            shared.status = "Applying changes...";
+            shared.error = false;
+        }
+        tasks->AddTask([request] {
+            {
+                std::lock_guard lock(sharedMutex);
+                if (request.epoch != shared.epoch || !shared.session) return;
+            }
+            if (!formsReady || !inGame()) {
+                std::lock_guard lock(sharedMutex);
+                shared.applyPending = false;
+                shared.status = "Changes were not applied. Close the loading or main menu and try again.";
+                shared.error = true;
+                return;
+            }
+            auto current = readValues();
+            if (!phial::canApply(request, request.epoch, current)) {
+                std::lock_guard lock(sharedMutex);
+                shared.applyPending = false;
+                shared.values = current;
+                shared.status = "A setting changed while you were editing, or a value is invalid. Use Discard edits, then try again.";
+                shared.error = true;
+                SKSE::log::warn("Rejected invalid or stale settings request");
+                return;
+            }
+            bool success = true;
+            for (std::size_t i = 0; i < phial::count; ++i) {
+                if (!(request.dirty & (1u << i)) || phial::equal(current[i], request.desired[i])) continue;
+                if (!runSetting(i, request.desired[i])) { success = false; break; }
+            }
+            std::lock_guard lock(sharedMutex);
+            shared.values = readValues();
+            shared.applyPending = false;
+            shared.error = !success;
+            shared.status = success ? "Applied. Save your game to keep these settings." :
+                "A change could not be verified. Current values are shown below; see WhitePhialMenu.log.";
+        });
+    }
+
+    void __stdcall render()
+    {
+        static phial::Draft draft;
+        static auto nextRefresh = Clock::time_point{};
+        const auto now = Clock::now();
+        if (now >= nextRefresh) {
+            requestRefresh();
+            nextRefresh = now + std::chrono::milliseconds(300);
+        }
+        Shared view;
+        {
+            std::lock_guard lock(sharedMutex);
+            view = shared;
+        }
+        imgui::TextUnformatted("White Phial - Tweaks and Enhancements");
+        imgui::Separator();
+        if (!view.ready) {
+            imgui::TextWrapped("%s", view.status.c_str());
+            return;
+        }
+        draft.receive(view.epoch, view.values);
+        imgui::BeginDisabled(view.applyPending);
+
+        bool enchanted = draft.request.desired[phial::repaired] >= 1;
+        if (imgui::Checkbox("Fully re-enchanted", &enchanted)) draft.edit(phial::repaired, enchanted ? 1.0f : 0.0f);
+        imgui::TextWrapped("Unlocks the phial's full potential after Quintus repairs it. This does not complete the original quest.");
+        imgui::Spacing();
+
+        float hours = draft.request.desired[phial::hours];
+        imgui::SetNextItemWidth(300);
+        if (imgui::InputFloat("Refill time (game hours)", &hours, 1.0f, 6.0f, "%.2f")) draft.edit(phial::hours, hours);
+        if (imgui::Button("6 hours")) draft.edit(phial::hours, 6);
+        imgui::SameLine();
+        if (imgui::Button("12 hours")) draft.edit(phial::hours, 12);
+        imgui::SameLine();
+        if (imgui::Button("24 hours")) draft.edit(phial::hours, 24);
+        imgui::SameLine();
+        if (imgui::Button("48 hours")) draft.edit(phial::hours, 48);
+        imgui::TextWrapped("In-game time, not real time. An active refill continues under the original mod's timer rules.");
+        if ((draft.request.dirty & (1u << phial::hours)) && !phial::valid(phial::hours, hours))
+            imgui::TextWrapped("Enter a refill time from 0.1 to 8760 hours.");
+        imgui::Spacing();
+
+        const auto keyLabel = phial::keyName(draft.request.desired[phial::hotkey]);
+        imgui::SetNextItemWidth(300);
+        if (imgui::BeginCombo("Use phial hotkey", keyLabel.c_str())) {
+            for (const auto& key : phial::keys) {
+                const bool selected = draft.request.desired[phial::hotkey] == key.code;
+                if (imgui::Selectable(key.name, selected)) draft.edit(phial::hotkey, static_cast<float>(key.code));
+                if (selected) imgui::SetItemDefaultFocus();
+            }
+            imgui::EndCombo();
+        }
+        if (imgui::Button("Default key: Numpad /")) draft.edit(phial::hotkey, 181);
+        imgui::TextWrapped("The original mod's hotkey uses a filled potion phial. It does not use poisons. Choose a key that is free in your other mods.");
+        imgui::Spacing();
+        imgui::Separator();
+
+        imgui::BeginDisabled(!draft.validEdits());
+        if (imgui::Button("Apply changes")) requestApply(draft.request);
+        imgui::EndDisabled();
+        imgui::SameLine();
+        if (imgui::Button("Discard edits")) {
+            draft.reset(view.epoch, view.values);
+            requestRefresh();
+        }
+        imgui::EndDisabled();
+        imgui::Spacing();
+        if (view.error) imgui::TextWrapped("Error: %s", view.status.c_str());
+        else imgui::TextWrapped("%s", view.status.c_str());
+        if (draft.request.dirty) imgui::TextUnformatted("You have unapplied changes.");
+        const auto currentKey = phial::keyName(view.values[phial::hotkey]);
+        imgui::TextWrapped("Current: %s | Refill: %.2f hours | Hotkey: %s",
+            view.values[phial::repaired] >= 1 ? "Fully re-enchanted" : "Partially repaired",
+            view.values[phial::hours], currentKey.c_str());
+    }
+
+    void registerMenu()
+    {
+        if (registered) return;
+        const auto module = GetModuleHandleW(L"SKSEMenuFramework.dll");
+        if (!module) {
+            SKSE::log::error("SKSE Menu Framework is not loaded; settings panel unavailable");
+            return;
+        }
+        // Check every UI export used here before a render callback can execute.
+        // Old or mismatched framework builds cannot cause a null function call.
+        constexpr const char* required[] = {
+            "AddSectionItem", "igTextUnformatted", "igSeparator", "igTextWrappedV",
+            "igBeginDisabled", "igEndDisabled", "igCheckbox", "igSpacing", "igSetNextItemWidth",
+            "igInputFloat", "igButton", "igSameLine", "igBeginCombo", "igEndCombo",
+            "igSelectable_Bool", "igSetItemDefaultFocus"
+        };
+        for (const auto name : required) {
+            if (!GetProcAddress(module, name)) {
+                SKSE::log::error("Menu Framework is missing export {}; install a compatible 3.x version", name);
+                return;
+            }
+        }
+        SKSEMenuFramework::SetSection("White Phial");
+        SKSEMenuFramework::AddSectionItem("Settings", render);
+        registered = true;
+        SKSE::log::info("Registered menu: White Phial / Settings");
+    }
+
+    void resolveGlobals()
+    {
+        auto data = RE::TESDataHandler::GetSingleton();
+        if (!data) return;
+        // Global EDIDs are retained by Skyrim itself. No EditorID extension or
+        // load-order-dependent FormIDs are necessary. Reject ambiguous matches.
+        std::array<unsigned, phial::count> matches{};
+        for (auto global : data->GetFormArray<RE::TESGlobal>()) {
+            if (!global || global->IsDeleted()) continue;
+            const auto edid = global->GetFormEditorID();
+            if (!edid) continue;
+            for (std::size_t i = 0; i < phial::count; ++i) {
+                if (_stricmp(edid, phial::editorIDs[i].data()) != 0) continue;
+                ++matches[i];
+                globals[i] = global;
+            }
+        }
+        formsReady = true;
+        for (std::size_t i = 0; i < phial::count; ++i) {
+            auto origin = globals[i] ? globals[i]->GetFile(0) : nullptr;
+            const bool valid = matches[i] == 1 && origin && _stricmp(origin->GetFilename().data(), originalPlugin) == 0;
+            if (valid) SKSE::log::info("Resolved {} -> {:08X}; value={}", phial::editorIDs[i], globals[i]->GetFormID(), globals[i]->value);
+            else {
+                formsReady = false;
+                SKSE::log::error("Missing/ambiguous global {} (matches={}) or unexpected owning plugin", phial::editorIDs[i], matches[i]);
+            }
+        }
+    }
+
+    void onMessage(SKSE::MessagingInterface::Message* message)
+    {
+        if (!message) return;
+        switch (message->type) {
+        case SKSE::MessagingInterface::kPostLoad:
+            registerMenu();
+            break;
+        case SKSE::MessagingInterface::kDataLoaded:
+            resolveGlobals();
+            registerMenu();
+            break;
+        case SKSE::MessagingInterface::kPreLoadGame:
+            resetSession(false);
+            break;
+        case SKSE::MessagingInterface::kPostLoadGame:
+            resetSession(message->data != nullptr);  // SKSE passes the load-success bool in data.
+            requestRefresh();
+            break;
+        case SKSE::MessagingInterface::kNewGame:
+            resetSession(true);
+            requestRefresh();
+            break;
+        default: break;
+        }
+    }
+}
+
+extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
+    SKSE::PluginVersionData data{};
+    data.PluginVersion({ 1, 0, 0, 0 });
+    data.PluginName("WhitePhialMenu");
+    data.AuthorName("Physics-helper contributors");
+    data.UsesAddressLibrary(true);
+    data.UsesStructsPost629(true);
+    data.CompatibleVersions({ REL::Version{ 1, 6, 1170, 0 } });
+    return data;
+}();
+
+extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse)
+{
+    if (skse->RuntimeVersion() != REL::Version{ 1, 6, 1170, 0 }) return false;
+    auto path = SKSE::log::log_directory();
+    if (!path) return false;
+    *path /= "WhitePhialMenu.log";
+    auto logger = std::make_shared<spdlog::logger>("global",
+        std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true));
+    spdlog::set_default_logger(std::move(logger));
+    spdlog::set_level(spdlog::level::info);
+    spdlog::flush_on(spdlog::level::info);
+    SKSE::Init(skse);
+    SKSE::log::info("WhitePhialMenu 1.0.0; Skyrim 1.6.1170");
+    return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
+}
