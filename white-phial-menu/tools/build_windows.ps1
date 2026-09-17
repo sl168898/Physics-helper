@@ -30,6 +30,11 @@ Run (Join-Path $Vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 Run 'cmake' @('-S', $Root, '-B', $Build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
     "-DCMAKE_TOOLCHAIN_FILE=$Vcpkg/scripts/buildsystems/vcpkg.cmake", '-DVCPKG_TARGET_TRIPLET=x64-windows-static-md',
     "-DCOMMONLIB_ROOT=$Common", "-DMENU_API_ROOT=$Menu")
+# Regression gate: the shipped plugin must not reintroduce console compilation.
+$MainSource = [IO.File]::ReadAllText((Join-Path $Root 'src/main.cpp'))
+if ($MainSource -match 'script->|GetConcreteFormFactoryByType<RE::Script>|phial::command\(') {
+    throw 'Unsafe command compilation returned to the settings writer'
+}
 Run 'cmake' @('--build', $Build, '--config', 'Release', '--parallel', '2')
 Run 'ctest' @('--test-dir', $Build, '-C', 'Release', '--output-on-failure')
 # Copy only this DLL: CommonLib's install rules are not part of the mod package.
@@ -50,11 +55,11 @@ foreach ($Name in @('src/main.cpp','src/Settings.h','src/Keys.h','src/Profile.h'
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'WhitePhialMenu'; version = '1.1.0'; runtime = '1.6.1170'
+    plugin = 'WhitePhialMenu'; version = '1.1.1'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit; menu_api_commit = $MenuCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; settings_tests = 'passed'; profile_tests = 'passed'; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; settings_tests = 'passed'; profile_tests = 'passed'; apply_backend = 'direct TESGlobal value write'; in_game_tested = $false
     no_esp = $true; no_new_inventory_items = $true; no_papyrus_scripts = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Menu_SKSE_v2.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Menu_SKSE_v3.zip')

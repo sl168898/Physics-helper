@@ -6,23 +6,15 @@
 int main()
 {
     using namespace phial;
-    assert(command(repaired, 1) == "set TWPTE_PhialIsFullyRepaired to 1");
-    assert(command(repaired, 0) == "set TWPTE_PhialIsFullyRepaired to 0");
-    assert(command(hours, 12.5f) == "set TWPTE_ResetHours to 12.5");
-    assert(command(hotkey, 68) == "set TWPTE_HotkeyButton to 68");
-    assert(command(hotkey, 181) == "set TWPTE_HotkeyButton to 181");
-    assert(!command(count, 1));
-    assert(!command(repaired, 2));
-    assert(!command(hours, 0));
-    assert(!command(hours, -1));
-    assert(!command(hours, std::numeric_limits<float>::quiet_NaN()));
-    assert(!command(hours, std::numeric_limits<float>::infinity()));
-    assert(command(hours, minHours));
-    assert(command(hours, maxHours));
-    assert(!command(hours, maxHours + 1));
-    assert(!command(hotkey, 68.5f));
-    assert(!command(hotkey, 282));
-    assert(!command(hotkey, 0));
+    assert(valid(repaired, 0) && valid(repaired, 1));
+    assert(!valid(repaired, 2) && !valid(count, 1));
+    assert(valid(hours, minHours) && valid(hours, maxHours));
+    assert(!valid(hours, 0) && !valid(hours, -1) && !valid(hours, maxHours + 1));
+    assert(!valid(hours, std::numeric_limits<float>::quiet_NaN()));
+    assert(!valid(hours, std::numeric_limits<float>::infinity()));
+    assert(valid(hotkey, 47) && valid(hotkey, 181));
+    assert(!valid(hotkey, 68.5f) && !valid(hotkey, 282) && !valid(hotkey, 0));
+    assert(keyName(47) == "V");
     assert(keyName(181) == "Numpad /");
     assert(keyName(68) == "F10");
     assert(keyName(276) == "Gamepad A");
@@ -30,6 +22,15 @@ int main()
         assert(valid(hotkey, static_cast<float>(keys[i].code)));
         for (std::size_t j = i + 1; j < std::size(keys); ++j) assert(keys[i].code != keys[j].code);
     }
+
+    // Regression: the user's V-key change is valid and touches only hotkey.
+    Draft crashCase;
+    crashCase.receive(1, Values{ 1, 12, 181 });
+    crashCase.edit(hotkey, 47);
+    assert(crashCase.request.dirty == (1u << hotkey));
+    assert(canApply(crashCase.request, 1, crashCase.current));
+    crashCase.receive(1, Values{ 1, 12, 47 });
+    assert(!crashCase.request.dirty && crashCase.current[hours] == 12);
 
     // Installation/refresh does not reset the player's existing settings.
     Draft draft;

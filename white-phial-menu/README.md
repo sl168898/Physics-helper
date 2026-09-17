@@ -2,7 +2,9 @@
 
 An SKSE Menu Framework settings page for **White Phial - Tweaks and Enhancements** by AndrealletiusVIII. Built for **Skyrim SE/AE 1.6.1170 on Windows**.
 
-Version **1.1.0**, package **v2**, adds optional settings shared across saves.
+Version **1.1.1**, package **v3**, fixes the Apply crash in v2 while retaining optional settings shared across saves.
+
+The reported crash occurred while the old adapter compiled a temporary console script. This version removes that path from both manual Apply and automatic restoration. It writes the three resolved globals directly on the game thread. Existing shared INI settings remain compatible.
 
 ## Upgrade and enable shared settings
 
@@ -47,7 +49,7 @@ Automatic application happens once after the loaded game is available. Loading-m
 
 The adapter locates unique `TESGlobal` records by their retained EditorIDs and checks their originating plugin. It does not depend on load-order FormIDs or an EditorID-retention extension. All reads and changes run through SKSE game-thread tasks; the render callback uses a locked snapshot. Stale edits are rejected if another script changed that field, and pending work is invalidated on save loads. File writes use a temporary file followed by replacement and report failures. See [Microsoft's MoveFileEx documentation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw) for the Windows replacement operation.
 
-For each changed field the native game command compiler runs one fixed, validated `set` command. This follows the same engine path as the author's documented console controls and retains normal save behavior. ConsoleUtil is not required and the console does not need to be open.
+Each changed field is validated, then written directly to its resolved `TESGlobal::value` and read back. Deleted or constant globals are rejected. No temporary Script is created and no console command is compiled or executed. Globals use Skyrim's Global Variables save table; no speculative TESForm change flag is added. ConsoleUtil is not required. See [CommonLib's TESGlobal layout](https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/T/TESGlobal.h) and [xEdit's save structure](https://github.com/TES5Edit/TES5Edit/blob/dev-4.1.6/Core/wbDefinitionsTES5Saves.pas).
 
 | Menu control | Original global |
 | --- | --- |
@@ -59,11 +61,13 @@ No original mod assets, ESP edits, new inventory items, quests, or Papyrus scrip
 
 ## Validation and first in-game check
 
-The package build compiles the DLL on Windows and runs native tests for exact command generation, invalid numeric values, partial edits, conflicting changes and save isolation. Persistence tests cover disk round trips, replacing an existing profile, restart/disable behavior, regional decimal formatting, corrupt/incomplete files and preserving the old file on a failed write. **It has not been tested in a running Skyrim instance or through MO2's virtual filesystem.** BuildInfo.json records the source revision, dependency revisions and DLL hash.
+The package build compiles the DLL on Windows and runs native tests for the reported V-key (47) edit, invalid numeric values, partial edits, conflicting changes and save isolation. Persistence tests cover disk round trips, replacing an existing profile, restart/disable behavior, regional decimal formatting, corrupt/incomplete files and preserving the old file on a failed write. **It has not been tested in a running Skyrim instance or through MO2's virtual filesystem.** BuildInfo.json records the source revision, dependency revisions and DLL hash.
 
-For the first shared-settings test, choose a free hotkey and a 12-hour refill, enable Remember settings across saves and click Apply. Check the success message. Quit to desktop and load an older/different save: the menu's Current values should show the remembered choices without needing Apply again. Test a new game as well. To test opt-out, turn sharing off, Apply and restart; an older save should then retain its own values. Test re-enchantment with a phial obtained through the original quest; active refill behavior is determined by the original mod.
+First retest changing the hotkey to V (47) and pressing Apply. Confirm the current value changes and try the original phial hotkey. With sharing off, save and reload to verify per-save retention.
 
-If the page is missing, check `WhitePhialMenu.log` in the SKSE log folder. In Windows, open `shell:Personal`, then `My Games/Skyrim Special Edition/SKSE`. The log records menu registration, resolved globals, applied commands and readback results. A missing setting disables the page instead of guessing a FormID.
+For the shared-settings test, choose a free hotkey and a 12-hour refill, enable Remember settings across saves and click Apply. Check the success message. Quit to desktop and load an older/different save: the menu's Current values should show the remembered choices without needing Apply again. Test a new game as well. To test opt-out, turn sharing off, Apply and restart; an older save should then retain its own values. Test re-enchantment with a phial obtained through the original quest; active refill behavior is determined by the original mod.
+
+If the page is missing, check `WhitePhialMenu.log` in the SKSE log folder. In Windows, open `shell:Personal`, then `My Games/Skyrim Special Edition/SKSE`. The log records menu registration, resolved globals, direct setting updates and readback results. A missing setting disables the page instead of guessing a FormID.
 
 ## Build and credits
 

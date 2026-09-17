@@ -28,16 +28,6 @@ namespace phial
         }
     }
 
-    // Only the three documented globals can be written. No free-form command input.
-    inline std::optional<std::string> command(std::size_t field, float value)
-    {
-        if (!valid(field, value)) return std::nullopt;
-        char number[64];
-        auto [end, error] = std::to_chars(number, number + sizeof(number), value, std::chars_format::fixed);
-        if (error != std::errc{}) return std::nullopt;
-        return "set " + std::string(editorIDs[field]) + " to " + std::string(number, end);
-    }
-
     struct Request
     {
         std::uint64_t epoch{};

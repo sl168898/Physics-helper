@@ -68,7 +68,7 @@ namespace
             "The White Phial settings were not found. Enable White Phial - Tweaks and Enhancements (2.1 or later).";
     }
 
-    bool runSetting(std::size_t field, float value);
+    bool writeSetting(std::size_t field, float value);
 
     void requestRefresh()
     {
@@ -115,7 +115,7 @@ namespace
             bool restored = true;
             if (restore) {
                 for (std::size_t i = 0; i < phial::count; ++i) {
-                    if (!phial::equal(globals[i]->value, profile.values[i]) && !runSetting(i, profile.values[i])) {
+                    if (!phial::equal(globals[i]->value, profile.values[i]) && !writeSetting(i, profile.values[i])) {
                         restored = false;
                         break;
                     }
@@ -146,20 +146,23 @@ namespace
         });
     }
 
-    bool runSetting(std::size_t field, float value)
+    bool writeSetting(std::size_t field, float value)
     {
-        const auto command = phial::command(field, value);
-        if (!command) return false;
-        auto factory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-        std::unique_ptr<RE::Script> script(factory ? factory->Create() : nullptr);
-        if (!script) return false;
-        // The engine's own documented 'set' command performs the change, exactly
-        // as at the console. This preserves normal global/save-game semantics.
-        // No ConsoleUtil, Papyrus script, quest, ESP or inventory item is added.
-        script->SetCommand(*command);
-        script->CompileAndRun(RE::PlayerCharacter::GetSingleton());
-        const bool verified = phial::equal(globals[field]->value, value);
-        SKSE::log::info("{}; readback={}; verified={}", *command, globals[field]->value, verified);
+        if (!formsReady || !phial::valid(field, value) || !globals[field]) return false;
+        auto global = globals[field];
+        if (global->IsDeleted() || (global->GetFormFlags() & RE::TESGlobal::RecordFlags::kConstant)) {
+            SKSE::log::error("Refused deleted/constant setting {}", phial::editorIDs[field]);
+            return false;
+        }
+        // Globals are stored in the save's Global Variables table, not a
+        // TESForm change-flag record. No guessed AddChange mask is needed.
+        // Avoid Script::CompileAndRun: v2 crashed in that engine path on 1170.
+        // Both Apply and shared-profile restoration arrive on the game thread.
+        const float previous = global->value;
+        global->value = value;
+        const bool verified = phial::equal(global->value, value);
+        SKSE::log::info("Direct global update {}: {} -> {}; readback={}; verified={}",
+            phial::editorIDs[field], previous, value, global->value, verified);
         return verified;
     }
 
@@ -202,7 +205,7 @@ namespace
             bool success = true;
             for (std::size_t i = 0; i < phial::count; ++i) {
                 if (!(request.dirty & (1u << i)) || phial::equal(current[i], request.desired[i])) continue;
-                if (!runSetting(i, request.desired[i])) { success = false; break; }
+                if (!writeSetting(i, request.desired[i])) { success = false; break; }
             }
             const auto values = readValues();
             std::string saveError;
@@ -411,7 +414,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 1, 0, 0 });
+    data.PluginVersion({ 1, 1, 1, 0 });
     data.PluginName("WhitePhialMenu");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -432,6 +435,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialMenu 1.1.0; Skyrim 1.6.1170; shared settings supported");
+    SKSE::log::info("WhitePhialMenu 1.1.1; Skyrim 1.6.1170; direct global writes; shared settings supported");
     return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
 }
