@@ -30,12 +30,12 @@ struct Scene
 		nodes.push_back(std::make_unique<Node>(Node{std::move(name), false, {}}));
 		return nodes.back().get();
 	}
-	Node* rig(Node* parent)
+	Node* rig(Node* parent, int count = 5)
 	{
 		auto root = make("Flail_0");
 		parent->children.push_back(root);
 		auto bone = root;
-		for (int i = 1; i < 5; ++i) {
+		for (int i = 1; i < count; ++i) {
 			auto child = make("Flail_" + std::to_string(i));
 			bone->children.push_back(child);
 			bone = child;
@@ -102,7 +102,7 @@ int main()
 	assert(delta.add.size() == 1 && delta.add[0].bones[3] == replacement3);
 
 	// Broken rigs cannot borrow identically named bones from the other flail.
-	replacement3->children.clear();
+	bone2->children.clear();
 	auto broken = read();
 	assert(broken.rigs.size() == 1 && broken.rigs[0].bones[0] == d);
 	delta = changes(replaced.rigs, broken.rigs);
@@ -137,6 +137,34 @@ int main()
 	limited = collect<Node, Traits>(cycle, 100, 20);
 	assert(!limited.complete && limited.rigs.empty());
 
+	// Actual two-handed mesh topologies: Iron has 2 bones, Steel has 4.
+	Scene mixed;
+	auto mixedActor = mixed.make("NPC");
+	auto iron = mixed.rig(mixedActor, 2);
+	auto steel = mixed.rig(mixedActor, 4);
+	mixed.rig(mixedActor, 5);
+	auto all = collect<Node, Traits>(mixedActor);
+	assert(all.complete && all.rigs.size() == 3);
+	assert(all.rigs[0].bones.size() == 2 && all.rigs[1].bones.size() == 4 && all.rigs[2].bones.size() == 5);
+	assert(all.rigs[0].bones.back() == iron->children[0]);
+	assert(changes(all.rigs, collect<Node, Traits>(mixedActor).rigs).add.empty());
+	// A gap must not be mistaken for a legitimate short chain.
+	iron->children[0]->children.push_back(mixed.make("Flail_3"));
+	assert((collect<Node, Traits>(mixedActor).rigs.size() == 2));
+	iron->children[0]->children.clear();
+	// Hidden short chains are rejected, not shortened further.
+	steel->children[0]->children[0]->hidden = true;
+	assert((collect<Node, Traits>(mixedActor).rigs.size() == 2));
+	// A short chain may grow when the game replaces its model; rebind once.
+	iron->children[0]->children.push_back(mixed.make("Flail_2"));
+	assert((collect<Node, Traits>(mixedActor).rigs.size() == 1));
+	// No unsupported single-bone or six-bone rigs.
+	Scene unsupported;
+	auto other = unsupported.make("NPC");
+	unsupported.rig(other, 1);
+	unsupported.rig(other, 6);
+	assert((collect<Node, Traits>(other).rigs.empty()));
+
 	std::cout << "PASS: duplicate rigs, stability, visibility swap, reparenting, bone replacement,\n"
-	             "missing/ambiguous/hidden bones, unload, new scene, node/depth/cycle limits\n";
+	             "2/4/5-bone rigs, gaps/ambiguous/hidden bones, unload, new scene, node/depth/cycle limits\n";
 }

@@ -50,7 +50,7 @@ Push-Location $Fsmp
 try {
     Run 'cmake' @('--preset', 'vs2022-windows', '-DCOPY_OUTPUT=OFF',
         '-DENABLE_SKYRIM_SE=ON', '-DENABLE_SKYRIM_AE=ON', '-DENABLE_SKYRIM_VR=OFF',
-        '-DPROJECT_BUILD_INFO=flail-p2-fsmp321')
+        '-DPROJECT_BUILD_INFO=flail-p4-fsmp321')
     Run 'cmake' @('--build', 'out/build/vs2022-windows', '--config', 'Release', '--parallel', '2')
     $Stage = Join-Path $WorkDirectory 'mod-stage'
     Run 'cmake' @('--install', 'out/build/vs2022-windows', '--config', 'Release', '--component', 'main', '--prefix', $Stage)
@@ -65,7 +65,7 @@ Copy-Item (Join-Path $Bundle 'RUNTIME_TESTING.md') (Join-Path $Stage 'README.md'
 Copy-Item (Join-Path $Bundle 'LICENSE') $Stage
 Copy-Item (Join-Path $Bundle 'EXCEPTIONS') $Stage
 $Info = [ordered]@{
-    prototype = 'p2-silver-only-fsmp321'
+    prototype = 'p4-all-flails-fsmp321'
     fsmp_source_commit = $FsmpCommit
     vcpkg_commit = $VcpkgCommit
     patch_sha256 = (Get-FileHash $Patch -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -77,6 +77,6 @@ $Info = [ordered]@{
     runtime_target = 'User target: Skyrim 1.6.1170 with FSMP 3.2.1; runtime compatibility not tested'
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-$Zip = Join-Path $WorkDirectory 'FlailDirectSMP_native_p2_UNTESTED.zip'
+$Zip = Join-Path $WorkDirectory 'FlailDirectSMP_native_p4_UNTESTED.zip'
 Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath $Zip
 Write-Host "Native-only Windows build complete. Companion ESP is not included: $Zip"

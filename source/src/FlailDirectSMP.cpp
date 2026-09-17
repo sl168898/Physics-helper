@@ -48,7 +48,7 @@ namespace hdt
 		// The companion removes armor-equipping scripts and supplies this marker.
 		const auto marker = data ? data->LookupForm<RE::BGSListForm>(0x800, companionPlugin) : nullptr;
 		enabled = requested && marker;
-		logger::info("[FlailDirectSMP] experimental prototype p2 / FSMP 3.2.1; enabled={}, requested={}, companion={}",
+		logger::info("[FlailDirectSMP] experimental prototype p4 / FSMP 3.2.1; enabled={}, requested={}, companion={}",
 			enabled, requested, marker != nullptr);
 	}
 
@@ -137,7 +137,7 @@ namespace hdt
 		// No NIF names, bones, meshes, equip slots, or armor records are mutated.
 		auto system = SkyrimSystemCreator().createOrUpdateSystem(
 			rig.bones[0], rig.bones[0], &file, {}, nullptr);
-		bool complete = system && system->getBones().size() == flail::boneNames.size();
+		bool complete = system && system->getBones().size() == rig.bones.size();
 		if (complete) {
 			for (std::size_t i = 0; i < rig.bones.size(); ++i) {
 				auto bone = system->findBone(flail::boneNames[i].data());
@@ -148,14 +148,14 @@ namespace hdt
 			}
 		}
 		if (!complete) {
-			logger::warn("[FlailDirectSMP] instance {:p}: five-bone binding failed; leaving it unmanaged",
-				static_cast<void*>(rig.bones[0]));
+			logger::warn("[FlailDirectSMP] instance {:p}: {}-bone binding failed; leaving it unmanaged",
+				static_cast<void*>(rig.bones[0]), rig.bones.size());
 			return entry;
 		}
 		entry.system = system;
 		SkyrimPhysicsWorld::get()->addSkinnedMeshSystem(system.get());
-		logger::info("[FlailDirectSMP] bound independent instance {:p}, five bones",
-			static_cast<void*>(rig.bones[0]));
+		logger::info("[FlailDirectSMP] bound independent instance {:p}, {} bones",
+			static_cast<void*>(rig.bones[0]), rig.bones.size());
 		return entry;
 	}
 

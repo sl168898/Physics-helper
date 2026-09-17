@@ -17,7 +17,7 @@ namespace hdt::flail
 	template <class Node>
 	struct Rig
 	{
-		std::array<Node*, 5> bones{};
+		std::vector<Node*> bones;
 		// Includes the actor's root, all attachment ancestors, and Flail_0.
 		// Reparenting an unchanged weapon is therefore an identity change too.
 		std::vector<Node*> attachment;
@@ -33,7 +33,7 @@ namespace hdt::flail
 	};
 
 	// Traits supplies name(Node*), hidden(Node*), and children(Node*, callback).
-	// Deliberately accepts only the known, contiguous five-bone GildFlail rig.
+	// Accepts the supplied contiguous 2-, 4-, and 5-bone GildFlail rigs.
 	// There is no fallback search in another weapon or the actor's skeleton.
 	template <class Node, class Traits>
 	Scan<Node> collect(Node* root, std::size_t maxNodes = 20000, std::size_t maxDepth = 96)
@@ -54,21 +54,30 @@ namespace hdt::flail
 			path.push_back(node);
 			if (Traits::name(node) == boneNames[0]) {
 				Rig<Node> rig;
-				rig.bones[0] = node;
+				rig.bones.push_back(node);
 				bool valid = true;
-				for (std::size_t i = 1; i < boneNames.size(); ++i) {
+				for (std::size_t i = 1; i <= boneNames.size(); ++i) {
+					Node* next = nullptr;
 					std::size_t matches = 0;
-					Traits::children(rig.bones[i - 1], [&](Node* child) {
-						if (child && Traits::name(child) == boneNames[i]) {
+					Traits::children(rig.bones.back(), [&](Node* child) {
+						if (!child || !Traits::name(child).starts_with("Flail_")) return;
+						// Reject gaps, duplicates, branches and chains longer than known rigs.
+						if (i >= boneNames.size() || Traits::name(child) != boneNames[i]) {
+							valid = false;
+						} else {
 							++matches;
-							rig.bones[i] = child;
+							next = child;
 						}
 					});
-					if (matches != 1 || Traits::hidden(rig.bones[i])) {
+					if (!valid || matches > 1 || (next && Traits::hidden(next))) {
 						valid = false;
 						break;
 					}
+					if (!next) break;
+					rig.bones.push_back(next);
 				}
+				const auto count = rig.bones.size();
+				valid = valid && (count == 2 || count == 4 || count == 5);
 				if (valid) {
 					rig.attachment = path;
 					result.rigs.push_back(std::move(rig));

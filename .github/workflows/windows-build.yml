@@ -34,6 +34,6 @@ jobs:
       - name: Upload native-only artifact after a successful build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: FlailDirectSMP-p2-native-only-UNTESTED
-          path: _build/FlailDirectSMP_native_p2_UNTESTED.zip
+          name: FlailDirectSMP-p4-native-only-UNTESTED
+          path: _build/FlailDirectSMP_native_p4_UNTESTED.zip
           if-no-files-found: error

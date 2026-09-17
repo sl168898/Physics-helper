@@ -43,7 +43,7 @@ index acab49a..145a5bf 100644
  	"${SOURCE_DIR}/hdtSkinnedMesh/hdtBoneScaleConstraint.cpp"
 diff --git a/src/FlailDirectSMP.cpp b/src/FlailDirectSMP.cpp
 new file mode 100644
-index 0000000..354b3dc
+index 0000000..565ba97
 --- /dev/null
 +++ b/src/FlailDirectSMP.cpp
 @@ -0,0 +1,218 @@
@@ -97,7 +97,7 @@ index 0000000..354b3dc
 +		// The companion removes armor-equipping scripts and supplies this marker.
 +		const auto marker = data ? data->LookupForm<RE::BGSListForm>(0x800, companionPlugin) : nullptr;
 +		enabled = requested && marker;
-+		logger::info("[FlailDirectSMP] experimental prototype p2 / FSMP 3.2.1; enabled={}, requested={}, companion={}",
++		logger::info("[FlailDirectSMP] experimental prototype p4 / FSMP 3.2.1; enabled={}, requested={}, companion={}",
 +			enabled, requested, marker != nullptr);
 +	}
 +
@@ -186,7 +186,7 @@ index 0000000..354b3dc
 +		// No NIF names, bones, meshes, equip slots, or armor records are mutated.
 +		auto system = SkyrimSystemCreator().createOrUpdateSystem(
 +			rig.bones[0], rig.bones[0], &file, {}, nullptr);
-+		bool complete = system && system->getBones().size() == flail::boneNames.size();
++		bool complete = system && system->getBones().size() == rig.bones.size();
 +		if (complete) {
 +			for (std::size_t i = 0; i < rig.bones.size(); ++i) {
 +				auto bone = system->findBone(flail::boneNames[i].data());
@@ -197,14 +197,14 @@ index 0000000..354b3dc
 +			}
 +		}
 +		if (!complete) {
-+			logger::warn("[FlailDirectSMP] instance {:p}: five-bone binding failed; leaving it unmanaged",
-+				static_cast<void*>(rig.bones[0]));
++			logger::warn("[FlailDirectSMP] instance {:p}: {}-bone binding failed; leaving it unmanaged",
++				static_cast<void*>(rig.bones[0]), rig.bones.size());
 +			return entry;
 +		}
 +		entry.system = system;
 +		SkyrimPhysicsWorld::get()->addSkinnedMeshSystem(system.get());
-+		logger::info("[FlailDirectSMP] bound independent instance {:p}, five bones",
-+			static_cast<void*>(rig.bones[0]));
++		logger::info("[FlailDirectSMP] bound independent instance {:p}, {} bones",
++			static_cast<void*>(rig.bones[0]), rig.bones.size());
 +		return entry;
 +	}
 +
@@ -317,10 +317,10 @@ index 0000000..f61b94a
 +}
 diff --git a/src/FlailRigScanner.h b/src/FlailRigScanner.h
 new file mode 100644
-index 0000000..2a76386
+index 0000000..0014f2f
 --- /dev/null
 +++ b/src/FlailRigScanner.h
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,135 @@
 +#pragma once
 +
 +// SPDX-License-Identifier: GPL-3.0-or-later
@@ -340,7 +340,7 @@ index 0000000..2a76386
 +	template <class Node>
 +	struct Rig
 +	{
-+		std::array<Node*, 5> bones{};
++		std::vector<Node*> bones;
 +		// Includes the actor's root, all attachment ancestors, and Flail_0.
 +		// Reparenting an unchanged weapon is therefore an identity change too.
 +		std::vector<Node*> attachment;
@@ -356,7 +356,7 @@ index 0000000..2a76386
 +	};
 +
 +	// Traits supplies name(Node*), hidden(Node*), and children(Node*, callback).
-+	// Deliberately accepts only the known, contiguous five-bone GildFlail rig.
++	// Accepts the supplied contiguous 2-, 4-, and 5-bone GildFlail rigs.
 +	// There is no fallback search in another weapon or the actor's skeleton.
 +	template <class Node, class Traits>
 +	Scan<Node> collect(Node* root, std::size_t maxNodes = 20000, std::size_t maxDepth = 96)
@@ -377,21 +377,30 @@ index 0000000..2a76386
 +			path.push_back(node);
 +			if (Traits::name(node) == boneNames[0]) {
 +				Rig<Node> rig;
-+				rig.bones[0] = node;
++				rig.bones.push_back(node);
 +				bool valid = true;
-+				for (std::size_t i = 1; i < boneNames.size(); ++i) {
++				for (std::size_t i = 1; i <= boneNames.size(); ++i) {
++					Node* next = nullptr;
 +					std::size_t matches = 0;
-+					Traits::children(rig.bones[i - 1], [&](Node* child) {
-+						if (child && Traits::name(child) == boneNames[i]) {
++					Traits::children(rig.bones.back(), [&](Node* child) {
++						if (!child || !Traits::name(child).starts_with("Flail_")) return;
++						// Reject gaps, duplicates, branches and chains longer than known rigs.
++						if (i >= boneNames.size() || Traits::name(child) != boneNames[i]) {
++							valid = false;
++						} else {
 +							++matches;
-+							rig.bones[i] = child;
++							next = child;
 +						}
 +					});
-+					if (matches != 1 || Traits::hidden(rig.bones[i])) {
++					if (!valid || matches > 1 || (next && Traits::hidden(next))) {
 +						valid = false;
 +						break;
 +					}
++					if (!next) break;
++					rig.bones.push_back(next);
 +				}
++				const auto count = rig.bones.size();
++				valid = valid && (count == 2 || count == 4 || count == 5);
 +				if (valid) {
 +					rig.attachment = path;
 +					result.rigs.push_back(std::move(rig));
