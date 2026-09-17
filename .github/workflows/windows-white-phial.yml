@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable menu
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: White-Phial-Menu-SKSE-v3
-          path: white-phial-menu/_build/White_Phial_Menu_SKSE_v3.zip
+          name: White-Phial-Menu-SKSE-v4
+          path: white-phial-menu/_build/White_Phial_Menu_SKSE_v4.zip
           if-no-files-found: error

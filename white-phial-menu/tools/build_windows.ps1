@@ -55,11 +55,11 @@ foreach ($Name in @('src/main.cpp','src/Settings.h','src/Keys.h','src/Profile.h'
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'WhitePhialMenu'; version = '1.1.1'; runtime = '1.6.1170'
+    plugin = 'WhitePhialMenu'; version = '1.1.2'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit; menu_api_commit = $MenuCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; settings_tests = 'passed'; profile_tests = 'passed'; apply_backend = 'direct TESGlobal value write'; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; settings_tests = 'passed'; profile_tests = 'passed'; apply_backend = 'direct TESGlobal value write'; hotkey_backend = 'existing script RegisterForKey via VM'; in_game_tested = $false
     no_esp = $true; no_new_inventory_items = $true; no_papyrus_scripts = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Menu_SKSE_v3.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Menu_SKSE_v4.zip')

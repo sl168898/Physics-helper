@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <mutex>
+#include <unordered_map>
 #include "SKSEMenuFramework.h"
 #include "Settings.h"
 #include "Keys.h"
@@ -18,6 +19,7 @@ namespace
     std::array<RE::TESGlobal*, phial::count> globals{};
     bool formsReady = false;  // Only read/written by game thread tasks and SKSE messages.
     bool registered = false;
+    RE::EffectSetting* hotkeyEffect = nullptr;
     const std::filesystem::path profilePath = "Data/SKSE/Plugins/WhitePhialMenu.ini";
 
     struct Shared
@@ -36,6 +38,7 @@ namespace
         phial::Values values{};
         std::string status = "Load a save to edit the White Phial settings.";
         bool error = false;
+        std::string hotkeyStatus;
     } shared;
     std::mutex sharedMutex;
 
@@ -62,10 +65,75 @@ namespace
         shared.remember = shared.profileRead = shared.restorePending = false;
         shared.saveFailed = shared.configError = false;
         shared.profile = {};
+        shared.hotkeyStatus.clear();
         shared.error = active && !formsReady;
         shared.status = !active ? "Load a save to edit the White Phial settings." :
             formsReady ? "Reading the current save..." :
             "The White Phial settings were not found. Enable White Phial - Tweaks and Enhancements (2.1 or later).";
+    }
+
+    class KeyRegistrationComplete final : public RE::BSScript::IStackCallbackFunctor
+    {
+    public:
+        KeyRegistrationComplete(std::uint64_t epoch, std::int32_t key) : epoch_(epoch), key_(key) {}
+        void operator()(RE::BSScript::Variable) override
+        {
+            std::lock_guard lock(sharedMutex);
+            if (shared.epoch != epoch_ || !shared.session ||
+                shared.values[phial::hotkey] != static_cast<float>(key_)) return;
+            shared.hotkeyStatus = "Hotkey registration refreshed. Close the menu before using the phial.";
+            SKSE::log::info("Hotkey RegisterForKey completed: code={}; session={}", key_, epoch_);
+        }
+        void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
+    private:
+        std::uint64_t epoch_;
+        std::int32_t key_;
+    };
+
+    void refreshHotkeyRegistration(std::uint64_t epoch)
+    {
+        // Called only on the game thread. Reset deduplication after every load:
+        // the same VM handle/key may have different registrations in another save.
+        static std::uint64_t cachedEpoch = 0;
+        static std::unordered_map<RE::VMHandle, std::int32_t> queued;
+        if (cachedEpoch != epoch) { queued.clear(); cachedEpoch = epoch; }
+        if (!formsReady || !inGame() || !phial::valid(phial::hotkey, globals[phial::hotkey]->value)) return;
+        auto player = RE::PlayerCharacter::GetSingleton();
+        auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+        auto policy = vm ? vm->GetObjectHandlePolicy() : nullptr;
+        auto effects = player ? player->GetActiveEffectList() : nullptr;
+        std::string status = "Waiting for the original White Phial hotkey effect.";
+        if (hotkeyEffect && policy && effects) {
+            const auto key = static_cast<std::int32_t>(globals[phial::hotkey]->value);
+            bool found = false, changed = false, failed = false;
+            for (auto effect : *effects) {
+                if (!effect || effect->GetBaseObject() != hotkeyEffect ||
+                    effect->flags.any(RE::ActiveEffect::Flag::kDispelled)) continue;
+                const auto handle = policy->GetHandleForObject(RE::ActiveEffect::VMTYPEID, effect);
+                if (handle == policy->EmptyHandle()) continue;
+                RE::BSTSmartPointer<RE::BSScript::Object> object;
+                if (!vm->FindBoundObject(handle, "TWPTPE_Hotkey_Script", object) || !object) continue;
+                found = true;
+                if (const auto it = queued.find(handle); it != queued.end() && it->second == key) continue;
+                // Invoke the inherited SKSE method on this exact existing script.
+                // Keep old registrations: its OnKeyDown rejects every key except
+                // the current global. This avoids unregister/register races and
+                // never touches another mod's registrations or restarts a spell.
+                RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback{
+                    new KeyRegistrationComplete(epoch, key) };
+                auto keyArgument = key;
+                const bool accepted = vm->DispatchMethodCall(object, "RegisterForKey",
+                    RE::MakeFunctionArguments(keyArgument), callback);
+                SKSE::log::info("Hotkey RegisterForKey queued: code={}; handle={:X}; accepted={}", key, handle, accepted);
+                if (accepted) { queued[handle] = key; changed = true; }
+                else failed = true;
+            }
+            if (failed) status = "Hotkey registration could not be queued. Check WhitePhialMenu.log.";
+            else if (changed) status = "Hotkey registration queued. Close the menu to let the script finish.";
+            else if (found) return;  // Preserve callback completion feedback.
+        }
+        std::lock_guard lock(sharedMutex);
+        if (epoch == shared.epoch && shared.session) shared.hotkeyStatus = std::move(status);
     }
 
     bool writeSetting(std::size_t field, float value);
@@ -122,6 +190,7 @@ namespace
                 }
                 SKSE::log::info("Shared settings applied after load; verified={}", restored);
             }
+            if (ready) refreshHotkeyRegistration(epoch);
             const auto values = ready ? readValues() : phial::Values{};
             std::lock_guard lock(sharedMutex);
             if (epoch != shared.epoch || !shared.session) return;
@@ -207,6 +276,7 @@ namespace
                 if (!(request.dirty & (1u << i)) || phial::equal(current[i], request.desired[i])) continue;
                 if (!writeSetting(i, request.desired[i])) { success = false; break; }
             }
+            refreshHotkeyRegistration(request.epoch);
             const auto values = readValues();
             std::string saveError;
             if (success && (request.remember || wasRemembering || retrySave)) {
@@ -305,6 +375,7 @@ namespace
         imgui::Spacing();
         if (view.error) imgui::TextWrapped("Error: %s", view.status.c_str());
         else imgui::TextWrapped("%s", view.status.c_str());
+        if (!view.hotkeyStatus.empty()) imgui::TextWrapped("%s", view.hotkeyStatus.c_str());
         if (draft.request.dirty || draft.request.remember != draft.request.expectedRemember)
             imgui::TextUnformatted("You have unapplied changes.");
         const auto currentKey = phial::keyName(view.values[phial::hotkey]);
@@ -345,6 +416,9 @@ namespace
     {
         auto data = RE::TESDataHandler::GetSingleton();
         if (!data) return;
+        // Local form ID and script name verified against the supplied original ESP/PEX.
+        hotkeyEffect = data->LookupForm<RE::EffectSetting>(0xD4D, originalPlugin);
+        SKSE::log::info("Original hotkey effect resolved={}", hotkeyEffect != nullptr);
         // Global EDIDs are retained by Skyrim itself. No EditorID extension or
         // load-order-dependent FormIDs are necessary. Reject ambiguous matches.
         std::array<unsigned, phial::count> matches{};
@@ -414,7 +488,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 1, 1, 0 });
+    data.PluginVersion({ 1, 1, 2, 0 });
     data.PluginName("WhitePhialMenu");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -435,6 +509,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialMenu 1.1.1; Skyrim 1.6.1170; direct global writes; shared settings supported");
+    SKSE::log::info("WhitePhialMenu 1.1.2; Skyrim 1.6.1170; direct global writes; live hotkey registration; shared settings supported");
     return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
 }

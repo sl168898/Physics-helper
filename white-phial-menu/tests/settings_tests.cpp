@@ -32,6 +32,21 @@ int main()
     crashCase.receive(1, Values{ 1, 12, 47 });
     assert(!crashCase.request.dirty && crashCase.current[hours] == 12);
 
+    // User's pre-existing X binding can move through V, N, top-row 5 and X.
+    // Each request preserves the other two settings and sharing preference.
+    Draft keySequence;
+    Values keyValues{ 1, 12, 45 };
+    keySequence.receive(8, keyValues, true);
+    for (const float code : { 47.0f, 49.0f, 6.0f, 45.0f }) {
+        keySequence.edit(hotkey, code);
+        assert(canApply(keySequence.request, 8, keyValues, true));
+        assert(keySequence.request.dirty == (1u << hotkey));
+        keyValues[hotkey] = code;
+        keySequence.receive(8, keyValues, true);
+        assert(!keySequence.request.dirty && keySequence.request.remember);
+        assert(keyValues[repaired] == 1 && keyValues[hours] == 12);
+    }
+
     // Installation/refresh does not reset the player's existing settings.
     Draft draft;
     Values original{ 1, 7.25f, 88 };

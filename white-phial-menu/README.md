@@ -2,9 +2,17 @@
 
 An SKSE Menu Framework settings page for **White Phial - Tweaks and Enhancements** by AndrealletiusVIII. Built for **Skyrim SE/AE 1.6.1170 on Windows**.
 
-Version **1.1.1**, package **v3**, fixes the Apply crash in v2 while retaining optional settings shared across saves.
+Version **1.1.2**, package **v4**, refreshes the original script's hotkey registration when settings change and after loading, while retaining the v3 crash fix and shared settings.
 
 The reported crash occurred while the old adapter compiled a temporary console script. This version removes that path from both manual Apply and automatic restoration. It writes the three resolved globals directly on the game thread. Existing shared INI settings remain compatible.
+
+## Hotkey registration fix
+
+Inspection of the supplied original ESP, source and compiled PEX showed that `TWPTPE_Hotkey_Script` registers its key only in OnEffectStart. Its OnKeyDown also checks the current global. Changing that global alone leaves the old key registered and the new key unregistered. This affects a save whose X key was configured before installing this menu too.
+
+The adapter now finds the player's active instance of the original `TWTPE_Hotkey_Effect` (original plugin local FormID 0xD4D), finds its existing `TWPTPE_Hotkey_Script` VM object, and calls the inherited SKSE `RegisterForKey` method with the selected code. It does this after Apply and on ready load/refresh, even with sharing off. Calls are deduplicated by session, effect handle and key; opening the settings page retries when the effect or script was not ready at load. When the original effect starts later, its own OnEffectStart registers the current key as usual.
+
+Old registrations are retained on that same script to avoid an asynchronous unregister/register race. The original OnKeyDown checks the global, so only the currently selected key can use the phial. Other mods' registrations are untouched. No spell is restarted, no potion is consumed by Apply, and no original script is replaced. The menu/log distinguish a written global, a queued registration call, and a completed call. Completion does not prove an in-game keypress has been tested.
 
 ## Upgrade and enable shared settings
 
@@ -63,7 +71,7 @@ No original mod assets, ESP edits, new inventory items, quests, or Papyrus scrip
 
 The package build compiles the DLL on Windows and runs native tests for the reported V-key (47) edit, invalid numeric values, partial edits, conflicting changes and save isolation. Persistence tests cover disk round trips, replacing an existing profile, restart/disable behavior, regional decimal formatting, corrupt/incomplete files and preserving the old file on a failed write. **It has not been tested in a running Skyrim instance or through MO2's virtual filesystem.** BuildInfo.json records the source revision, dependency revisions and DLL hash.
 
-First retest changing the hotkey to V (47) and pressing Apply. Confirm the current value changes and try the original phial hotkey. With sharing off, save and reload to verify per-save retention.
+First use a filled potion phial (not poison). Change X (45) to V (47), press Apply, and close the settings menu. Confirm the new key consumes the filled phial and the previous key no longer does. Refill before each test, then test N (49), top-row 5 (6), and X again. The log should report `Hotkey RegisterForKey completed` for the selected key. With sharing off, save and reload to verify per-save retention.
 
 For the shared-settings test, choose a free hotkey and a 12-hour refill, enable Remember settings across saves and click Apply. Check the success message. Quit to desktop and load an older/different save: the menu's Current values should show the remembered choices without needing Apply again. Test a new game as well. To test opt-out, turn sharing off, Apply and restart; an older save should then retain its own values. Test re-enchantment with a phial obtained through the original quest; active refill behavior is determined by the original mod.
 
