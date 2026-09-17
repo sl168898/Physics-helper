@@ -8,6 +8,7 @@
 #include "SKSEMenuFramework.h"
 #include "Settings.h"
 #include "Keys.h"
+#include "ProfileStore.h"
 
 namespace
 {
@@ -17,6 +18,7 @@ namespace
     std::array<RE::TESGlobal*, phial::count> globals{};
     bool formsReady = false;  // Only read/written by game thread tasks and SKSE messages.
     bool registered = false;
+    const std::filesystem::path profilePath = "Data/SKSE/Plugins/WhitePhialMenu.ini";
 
     struct Shared
     {
@@ -25,6 +27,12 @@ namespace
         bool ready = false;
         bool pollPending = false;
         bool applyPending = false;
+        bool remember = false;
+        bool profileRead = false;
+        bool restorePending = false;
+        bool saveFailed = false;
+        bool configError = false;
+        phial::Profile profile{};
         phial::Values values{};
         std::string status = "Load a save to edit the White Phial settings.";
         bool error = false;
@@ -51,11 +59,16 @@ namespace
         ++shared.epoch;
         shared.session = active;
         shared.ready = shared.pollPending = shared.applyPending = false;
+        shared.remember = shared.profileRead = shared.restorePending = false;
+        shared.saveFailed = shared.configError = false;
+        shared.profile = {};
         shared.error = active && !formsReady;
         shared.status = !active ? "Load a save to edit the White Phial settings." :
             formsReady ? "Reading the current save..." :
             "The White Phial settings were not found. Enable White Phial - Tweaks and Enhancements (2.1 or later).";
     }
+
+    bool runSetting(std::size_t field, float value);
 
     void requestRefresh()
     {
@@ -69,18 +82,65 @@ namespace
             epoch = shared.epoch;
         }
         tasks->AddTask([epoch] {
+            bool needsProfile;
+            {
+                std::lock_guard lock(sharedMutex);
+                if (epoch != shared.epoch || !shared.session) return;
+                needsProfile = !shared.profileRead;
+            }
+            if (needsProfile) {
+                const auto loaded = phial::loadProfile(profilePath);
+                std::lock_guard lock(sharedMutex);
+                if (epoch != shared.epoch || !shared.session) return;
+                shared.profileRead = true;
+                shared.profile = loaded.profile;
+                shared.remember = loaded && loaded.profile.enabled;
+                shared.restorePending = shared.remember;
+                if (!loaded) {
+                    shared.error = shared.configError = true;
+                    shared.status = "Shared settings could not be read: " + loaded.error + " Choose settings and Apply to replace the configuration.";
+                    SKSE::log::error("Shared configuration: {}", loaded.error);
+                } else SKSE::log::info("Shared configuration loaded; enabled={}", shared.remember);
+            }
+            const bool ready = formsReady && inGame();
+            bool restore = false;
+            phial::Profile profile;
+            {
+                std::lock_guard lock(sharedMutex);
+                if (epoch != shared.epoch || !shared.session) return;
+                restore = ready && shared.restorePending;
+                profile = shared.profile;
+                if (restore) shared.restorePending = false;
+            }
+            bool restored = true;
+            if (restore) {
+                for (std::size_t i = 0; i < phial::count; ++i) {
+                    if (!phial::equal(globals[i]->value, profile.values[i]) && !runSetting(i, profile.values[i])) {
+                        restored = false;
+                        break;
+                    }
+                }
+                SKSE::log::info("Shared settings applied after load; verified={}", restored);
+            }
+            const auto values = ready ? readValues() : phial::Values{};
             std::lock_guard lock(sharedMutex);
             if (epoch != shared.epoch || !shared.session) return;
             shared.pollPending = false;
             const bool wasReady = shared.ready;
-            shared.ready = formsReady && inGame();
-            if (!shared.ready) {
-                if (formsReady) shared.status = "Load a save and finish loading to edit these settings.";
-                return;
+            shared.ready = ready;
+            if (!ready) {
+                if (formsReady && !shared.configError) shared.status = "Waiting for loading to finish...";
+                return;  // Keep restorePending for the loading-menu close event.
             }
-            shared.values = readValues();
-            if (!wasReady) {
-                shared.status = "Changes apply to this character. Save your game to keep them.";
+            shared.values = values;
+            if (restore && !restored) {
+                shared.error = shared.configError = true;
+                shared.status = "Shared settings could not be applied completely. Check the current values and WhitePhialMenu.log.";
+            } else if (restore) {
+                shared.status = "Your remembered settings were applied to this save.";
+                shared.error = false;
+            } else if (!wasReady && !shared.configError) {
+                shared.status = "Changes apply to this character. Enable Remember settings across saves to share them.";
                 shared.error = false;
             }
         });
@@ -115,9 +175,12 @@ namespace
             shared.error = false;
         }
         tasks->AddTask([request] {
+            bool wasRemembering, retrySave;
             {
                 std::lock_guard lock(sharedMutex);
                 if (request.epoch != shared.epoch || !shared.session) return;
+                wasRemembering = shared.remember;
+                retrySave = shared.saveFailed || shared.configError;
             }
             if (!formsReady || !inGame()) {
                 std::lock_guard lock(sharedMutex);
@@ -127,7 +190,7 @@ namespace
                 return;
             }
             auto current = readValues();
-            if (!phial::canApply(request, request.epoch, current)) {
+            if (!phial::canApply(request, request.epoch, current, wasRemembering, retrySave)) {
                 std::lock_guard lock(sharedMutex);
                 shared.applyPending = false;
                 shared.values = current;
@@ -141,12 +204,28 @@ namespace
                 if (!(request.dirty & (1u << i)) || phial::equal(current[i], request.desired[i])) continue;
                 if (!runSetting(i, request.desired[i])) { success = false; break; }
             }
+            const auto values = readValues();
+            std::string saveError;
+            if (success && (request.remember || wasRemembering || retrySave)) {
+                saveError = phial::saveProfile(profilePath, { request.remember, values });
+                if (saveError.empty()) SKSE::log::info("Shared settings saved; enabled={}", request.remember);
+                else SKSE::log::error("Shared settings not saved: {}", saveError);
+            }
             std::lock_guard lock(sharedMutex);
-            shared.values = readValues();
+            if (request.epoch != shared.epoch || !shared.session) return;
+            shared.values = values;
             shared.applyPending = false;
-            shared.error = !success;
-            shared.status = success ? "Applied. Save your game to keep these settings." :
-                "A change could not be verified. Current values are shown below; see WhitePhialMenu.log.";
+            shared.error = !success || !saveError.empty();
+            shared.saveFailed = !saveError.empty();
+            if (success && saveError.empty()) {
+                shared.remember = request.remember;
+                shared.profile = { request.remember, values };
+                shared.configError = false;
+                shared.status = request.remember ? "Applied and remembered for all saves and new games." :
+                    "Applied. Automatic sharing is off; save your game to keep these values in this save.";
+            } else if (!saveError.empty()) {
+                shared.status = "Applied to this game, but could not remember the settings: " + saveError + " Press Apply to retry.";
+            } else shared.status = "A change could not be verified. Current values are shown below; see WhitePhialMenu.log.";
         });
     }
 
@@ -170,7 +249,7 @@ namespace
             imgui::TextWrapped("%s", view.status.c_str());
             return;
         }
-        draft.receive(view.epoch, view.values);
+        draft.receive(view.epoch, view.values, view.remember);
         imgui::BeginDisabled(view.applyPending);
 
         bool enchanted = draft.request.desired[phial::repaired] >= 1;
@@ -208,19 +287,23 @@ namespace
         imgui::Spacing();
         imgui::Separator();
 
-        imgui::BeginDisabled(!draft.validEdits());
+        imgui::Checkbox("Remember settings across saves", &draft.request.remember);
+        imgui::TextWrapped("Apply to remember all three settings, including re-enchantment status, for other saves and new characters.");
+        imgui::Spacing();
+        imgui::BeginDisabled(!draft.validEdits() && !view.saveFailed && !view.configError);
         if (imgui::Button("Apply changes")) requestApply(draft.request);
         imgui::EndDisabled();
         imgui::SameLine();
         if (imgui::Button("Discard edits")) {
-            draft.reset(view.epoch, view.values);
+            draft.reset(view.epoch, view.values, view.remember);
             requestRefresh();
         }
         imgui::EndDisabled();
         imgui::Spacing();
         if (view.error) imgui::TextWrapped("Error: %s", view.status.c_str());
         else imgui::TextWrapped("%s", view.status.c_str());
-        if (draft.request.dirty) imgui::TextUnformatted("You have unapplied changes.");
+        if (draft.request.dirty || draft.request.remember != draft.request.expectedRemember)
+            imgui::TextUnformatted("You have unapplied changes.");
         const auto currentKey = phial::keyName(view.values[phial::hotkey]);
         imgui::TextWrapped("Current: %s | Refill: %.2f hours | Hotkey: %s",
             view.values[phial::repaired] >= 1 ? "Fully re-enchanted" : "Partially repaired",
@@ -284,6 +367,20 @@ namespace
         }
     }
 
+    class LoadMenus final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+    {
+    public:
+        RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* event,
+            RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+        {
+            if (!event) return RE::BSEventNotifyControl::kContinue;
+            if (event->menuName == RE::MainMenu::MENU_NAME && event->opening) resetSession(false);
+            if (!event->opening && (event->menuName == RE::LoadingMenu::MENU_NAME ||
+                event->menuName == RE::MainMenu::MENU_NAME)) requestRefresh();
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    } loadMenus;
+
     void onMessage(SKSE::MessagingInterface::Message* message)
     {
         if (!message) return;
@@ -293,6 +390,7 @@ namespace
             break;
         case SKSE::MessagingInterface::kDataLoaded:
             resolveGlobals();
+            if (auto ui = RE::UI::GetSingleton()) ui->AddEventSink<RE::MenuOpenCloseEvent>(&loadMenus);
             registerMenu();
             break;
         case SKSE::MessagingInterface::kPreLoadGame:
@@ -313,7 +411,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 0, 0, 0 });
+    data.PluginVersion({ 1, 1, 0, 0 });
     data.PluginName("WhitePhialMenu");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -334,6 +432,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialMenu 1.0.0; Skyrim 1.6.1170");
+    SKSE::log::info("WhitePhialMenu 1.1.0; Skyrim 1.6.1170; shared settings supported");
     return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
 }

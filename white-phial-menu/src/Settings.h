@@ -43,16 +43,23 @@ namespace phial
         std::uint64_t epoch{};
         std::uint8_t dirty{};
         Values expected{}, desired{};
+        bool expectedRemember{}, remember{};
     };
 
-    inline bool canApply(const Request& request, std::uint64_t epoch, const Values& current)
+    inline bool canApply(const Request& request, std::uint64_t epoch, const Values& current,
+        bool remember = false, bool retrySave = false)
     {
-        if (request.epoch != epoch || !request.dirty || (request.dirty & ~7u)) return false;
+        if (request.epoch != epoch || request.expectedRemember != remember || (request.dirty & ~7u)) return false;
+        if (!request.dirty && request.remember == remember && !retrySave) return false;
         for (std::size_t i = 0; i < count; ++i) {
             if (!(request.dirty & (1u << i))) continue;
             if (!valid(i, request.desired[i])) return false;
             // Another mod/quest may have changed the value while this edit was pending.
             if (!equal(current[i], request.expected[i]) && !equal(current[i], request.desired[i])) return false;
+        }
+        if (request.remember) {
+            for (std::size_t i = 0; i < count; ++i)
+                if (!valid(i, (request.dirty & (1u << i)) ? request.desired[i] : current[i])) return false;
         }
         return true;
     }
@@ -63,17 +70,19 @@ namespace phial
         Request request{};
         Values current{};
 
-        void reset(std::uint64_t epoch, const Values& values)
+        void reset(std::uint64_t epoch, const Values& values, bool remember = false)
         {
             initialized = true;
             current = values;
-            request = { epoch, 0, values, values };
+            request = { epoch, 0, values, values, remember, remember };
         }
 
-        void receive(std::uint64_t epoch, const Values& values)
+        void receive(std::uint64_t epoch, const Values& values, bool remember = false)
         {
-            if (!initialized || request.epoch != epoch) { reset(epoch, values); return; }
+            if (!initialized || request.epoch != epoch) { reset(epoch, values, remember); return; }
             current = values;
+            if (request.remember == request.expectedRemember || request.remember == remember)
+                request.remember = request.expectedRemember = remember;
             for (std::size_t i = 0; i < count; ++i) {
                 const auto bit = static_cast<std::uint8_t>(1u << i);
                 if (!(request.dirty & bit) || equal(values[i], request.desired[i])) {
@@ -95,9 +104,9 @@ namespace phial
 
         bool validEdits() const
         {
-            if (!request.dirty) return false;
+            if (!request.dirty && request.remember == request.expectedRemember) return false;
             for (std::size_t i = 0; i < count; ++i)
-                if ((request.dirty & (1u << i)) && !valid(i, request.desired[i])) return false;
+                if ((request.remember || (request.dirty & (1u << i))) && !valid(i, request.desired[i])) return false;
             return true;
         }
     };

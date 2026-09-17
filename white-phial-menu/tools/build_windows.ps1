@@ -43,18 +43,18 @@ Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Menu 'LICENSE') (Join-Path $Stage 'MenuFramework-API-LICENSE')
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Settings.h','src/Keys.h','tests/settings_tests.cpp','CMakeLists.txt','vcpkg.json')) {
+foreach ($Name in @('src/main.cpp','src/Settings.h','src/Keys.h','src/Profile.h','src/ProfileStore.h','tests/settings_tests.cpp','tests/profile_tests.cpp','CMakeLists.txt','vcpkg.json')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'WhitePhialMenu'; version = '1.0.0'; runtime = '1.6.1170'
+    plugin = 'WhitePhialMenu'; version = '1.1.0'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit; menu_api_commit = $MenuCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; settings_tests = 'passed'; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; settings_tests = 'passed'; profile_tests = 'passed'; in_game_tested = $false
     no_esp = $true; no_new_inventory_items = $true; no_papyrus_scripts = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Menu_SKSE_v1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Menu_SKSE_v2.zip')

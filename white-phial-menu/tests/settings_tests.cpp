@@ -66,4 +66,31 @@ int main()
     assert(!canApply(draft.request, 2, Values{ 0, 24, 181 }));
     draft.edit(hours, 24);
     assert(draft.request.dirty == 0);
+
+    // Sharing can be enabled/disabled without editing any individual setting.
+    draft.request.remember = true;
+    assert(draft.validEdits());
+    assert(canApply(draft.request, 2, Values{ 0, 24, 181 }));
+    assert(!canApply(draft.request, 2, Values{ 0, 24, 181 }, true));
+    draft.receive(2, Values{ 0, 24, 181 }, true);
+    assert(!draft.validEdits());
+    assert(draft.request.remember && draft.request.expectedRemember);
+    draft.request.remember = false;
+    assert(draft.validEdits());
+    assert(canApply(draft.request, 2, Values{ 0, 24, 181 }, true));
+    draft.receive(2, Values{ 0, 24, 181 }, false);
+    assert(!draft.validEdits());
+
+    // A failed disk save can be retried even when game values already match.
+    assert(!canApply(draft.request, 2, draft.current, false));
+    assert(canApply(draft.request, 2, draft.current, false, true));
+    draft.request.remember = true;
+    draft.receive(3, Values{ 1, 6, 68 }, false);
+    assert(!draft.request.remember);  // Cancel unapplied toggle on a save switch.
+
+    // Enabling sharing validates ALL values, including previously unedited ones.
+    draft.reset(4, Values{ 1, -5, 68 });
+    draft.request.remember = true;
+    assert(!draft.validEdits());
+    assert(!canApply(draft.request, 4, draft.current));
 }

@@ -2,6 +2,19 @@
 
 An SKSE Menu Framework settings page for **White Phial - Tweaks and Enhancements** by AndrealletiusVIII. Built for **Skyrim SE/AE 1.6.1170 on Windows**.
 
+Version **1.1.0**, package **v2**, adds optional settings shared across saves.
+
+## Upgrade and enable shared settings
+
+1. Close Skyrim, replace the previous White Phial Menu mod with this package in MO2, and enable it. Keep only the new `WhitePhialMenu.dll` active.
+2. Load a save, open **White Phial > Settings**, and choose your enchantment status, refill time and hotkey.
+3. Check **Remember settings across saves**, then click **Apply changes**. The status should say **Applied and remembered for all saves and new games**.
+4. Those three choices are reapplied when loading a different/older save or starting a new game, including after exiting Skyrim and restarting. You do not need to open the settings panel on each load.
+
+Sharing includes **Fully re-enchanted**, so that flag is also applied to other characters. It still does not grant the phial or complete the original quest. The option is off until you enable it and apply, preserving existing settings on installation.
+
+Uncheck the option and click Apply to stop automatic application on future loads. Turning it off does not undo values already applied to the currently loaded game; change them in the menu as needed and save.
+
 ## Install with Mod Organizer 2
 
 1. Keep the original [White Phial mod](https://www.nexusmods.com/skyrimspecialedition/mods/73532) and its requirements installed. The hotkey global requires version 2.1 or later; the published configuration for 2.3.1 was used for this adapter.
@@ -16,12 +29,23 @@ An SKSE Menu Framework settings page for **White Phial - Tweaks and Enhancements
 - **Refill time (game hours)** edits the original refill-delay setting. Presets: 6, 12, 24 and 48 hours. Custom values: 0.1 through 8760 hours. An already running refill follows the original mod's scripts; this adapter does not cancel or restart its timer.
 - **Use phial hotkey** offers readable keyboard, mouse and gamepad names using SKSE's key codes. It configures the original hotkey; potion/poison restrictions and input behavior remain controlled by the original mod. The default is **Numpad /** (181).
 - **Apply changes** writes only settings you edited and reads them back. **Discard edits** reloads the currently observed values.
+- **Remember settings across saves** stores all three current choices outside the save file and reapplies them after loading. Its checked/unchecked state is also stored. Press Apply to commit a checkbox change even if no other field was edited.
 
-Save the game after applying changes. The engine handles these as ordinary console-set globals belonging to that save. This adapter has no shared INI override, automatic defaults, custom save serialization, or Papyrus replacement. Installing it does not change your settings. Removing the DLL removes the menu; values already saved retain their normal game behavior.
+With sharing off, save the game after applying changes; values belong to that save as before. With sharing on, Apply writes the shared configuration immediately, independently of saving the game. This adapter uses ordinary game globals and has no custom save serialization or Papyrus replacement. Removing the DLL removes the menu and automatic application; values already saved retain their normal game behavior.
+
+## Shared configuration and MO2
+
+The menu generates `Data/SKSE/Plugins/WhitePhialMenu.ini` after you enable sharing and press Apply. Through MO2, a newly created file normally appears under **Overwrite/SKSE/Plugins** unless you configured another output mod. An existing file may be updated in the mod that supplies it. Keep the configuration enabled/visible in the MO2 setup whose saves should share these settings. MO2 profiles that expose the same configuration share the choices.
+
+The ZIP does **not** include an INI, so installing an update cannot replace your saved choices. You can move the generated INI from Overwrite into a dedicated enabled configuration mod if you prefer. The game needs write access to that configuration to remember subsequent changes.
+
+The file records `RememberAcrossSaves`, `FullyReenchanted`, `RefillHours` and `Hotkey` in a `[WhitePhial]` section. Missing configuration means sharing is off. A malformed or incomplete enabled profile is rejected and reported in the menu/log. A failed write leaves the previous file intact; the menu reports that the current game changed but the choices could not be remembered, and Apply can retry.
+
+Automatic application happens once after the loaded game is available. Loading-menu and main-menu close events complete deferred work when loading was still in progress. The menu does not continuously force the values during play; scripts/quest progress can still change them, and the remembered choices are reapplied at the next load. Load-time reads never replace the stored profile with the incoming save's values.
 
 ## Implementation
 
-The adapter locates unique `TESGlobal` records by their retained EditorIDs and checks their originating plugin. It does not depend on load-order FormIDs or an EditorID-retention extension. All reads and changes run through SKSE game-thread tasks; the render callback uses a locked snapshot. Stale edits are rejected if another script changed that field, and pending work is invalidated on save loads.
+The adapter locates unique `TESGlobal` records by their retained EditorIDs and checks their originating plugin. It does not depend on load-order FormIDs or an EditorID-retention extension. All reads and changes run through SKSE game-thread tasks; the render callback uses a locked snapshot. Stale edits are rejected if another script changed that field, and pending work is invalidated on save loads. File writes use a temporary file followed by replacement and report failures. See [Microsoft's MoveFileEx documentation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw) for the Windows replacement operation.
 
 For each changed field the native game command compiler runs one fixed, validated `set` command. This follows the same engine path as the author's documented console controls and retains normal save behavior. ConsoleUtil is not required and the console does not need to be open.
 
@@ -35,9 +59,9 @@ No original mod assets, ESP edits, new inventory items, quests, or Papyrus scrip
 
 ## Validation and first in-game check
 
-The package build compiles the DLL on Windows and runs native tests for exact command generation, invalid numeric values, partial edits, conflicting changes and save isolation. **It has not been tested in a running Skyrim instance.** BuildInfo.json records the source revision, dependency revisions and DLL hash.
+The package build compiles the DLL on Windows and runs native tests for exact command generation, invalid numeric values, partial edits, conflicting changes and save isolation. Persistence tests cover disk round trips, replacing an existing profile, restart/disable behavior, regional decimal formatting, corrupt/incomplete files and preserving the old file on a failed write. **It has not been tested in a running Skyrim instance or through MO2's virtual filesystem.** BuildInfo.json records the source revision, dependency revisions and DLL hash.
 
-For the first test, change the hotkey to a free key and refill time to 12 hours, click Apply, and check the Current values. Close the panel and try the filled potion phial. Save, quit to desktop and reload to confirm the settings remain. Finally, load another character's save and confirm its settings are read independently. Test re-enchantment with a phial obtained through the original quest; active refill behavior is determined by the original mod.
+For the first shared-settings test, choose a free hotkey and a 12-hour refill, enable Remember settings across saves and click Apply. Check the success message. Quit to desktop and load an older/different save: the menu's Current values should show the remembered choices without needing Apply again. Test a new game as well. To test opt-out, turn sharing off, Apply and restart; an older save should then retain its own values. Test re-enchantment with a phial obtained through the original quest; active refill behavior is determined by the original mod.
 
 If the page is missing, check `WhitePhialMenu.log` in the SKSE log folder. In Windows, open `shell:Personal`, then `My Games/Skyrim Special Edition/SKSE`. The log records menu registration, resolved globals, applied commands and readback results. A missing setting disables the page instead of guessing a FormID.
 
