@@ -2,22 +2,18 @@
 #include <SKSE/SKSE.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include "RewardRule.h"
+#include <atomic>
+#include <mutex>
 
 namespace
 {
-    using Menu = RE::CraftingSubMenus::ConstructibleObjectMenu;
-    using Callback = Menu::CreationConfirmCallback;
-    using Message = RE::IMessageBoxCallback::Message;
-    using Run = void (*)(Callback*, Message);
-
-    REL::Relocation<Run> original;
     RE::BGSConstructibleObject* recipe = nullptr;
     RE::AlchemyItem* filled = nullptr;
     RE::AlchemyItem* water = nullptr;
     RE::TESObjectMISC* empty = nullptr;
     RE::BGSKeyword* cooking = nullptr;
     bool ready = false;
-    thread_local bool inside = false;
+    std::atomic_bool awarding = false;
 
     bool validRecipe()
     {
@@ -29,63 +25,115 @@ namespace
             items.containerObjects[0]->obj == filled && items.containerObjects[0]->count == 1;
     }
 
-    waterskin::Counts inventory(RE::PlayerCharacter* player)
+    class Events final : public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
+                         public RE::BSTEventSink<RE::TESContainerChangedEvent>,
+                         public RE::BSTEventSink<RE::ItemCrafted::Event>
     {
-        waterskin::Counts result;
-        const auto counts = player->GetInventoryCounts([](RE::TESBoundObject& item) {
-            return &item == filled || &item == water || &item == empty;
-        });
-        for (const auto& [item, count] : counts) {
-            if (item == filled) result.filled = count;
-            else if (item == water) result.water = count;
-            else if (item == empty) result.empty = count;
-        }
-        return result;
-    }
+    public:
+        static Events& get() { static Events instance; return instance; }
+        using Result = RE::BSEventNotifyControl;
 
-    void hookedRun(Callback* self, Message message)
-    {
-        // Preserve the original confirmation behavior, including other hooks.
-        if (inside || !ready || !self || !self->menu || !validRecipe()) {
-            original(self, message);
-            return;
+        void reset()
+        {
+            std::lock_guard lock(mutex);
+            ++epoch; active = false; queued = false; pending = {};
         }
-        const auto menu = self->menu;
-        if (menu->currentCobjIdx >= menu->crafts.size() ||
-            menu->crafts[menu->currentCobjIdx].constructibleObject != recipe) {
-            original(self, message);
-            return;
+
+        Result ProcessEvent(const RE::MenuOpenCloseEvent* e, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+        {
+            if (!e || e->menuName != RE::CraftingMenu::MENU_NAME) return Result::kContinue;
+            std::lock_guard lock(mutex);
+            if (e->opening) {
+                ++epoch; queued = false; pending = {}; active = true;
+                SKSE::log::info("Crafting menu opened; recipe valid={}", ready && validRecipe());
+            } else {
+                active = false;
+                queue();
+                SKSE::log::info("Crafting menu closed");
+            }
+            return Result::kContinue;
         }
-        auto player = RE::PlayerCharacter::GetSingleton();
-        if (!player) {
-            original(self, message);
-            return;
+
+        Result ProcessEvent(const RE::TESContainerChangedEvent* e, RE::BSTEventSource<RE::TESContainerChangedEvent>*) override
+        {
+            if (!e || !ready || awarding.load() || e->itemCount <= 0) return Result::kContinue;
+            auto player = RE::PlayerCharacter::GetSingleton();
+            if (!player) return Result::kContinue;
+            const auto playerID = player->GetFormID();
+            const bool removedSkin = e->baseObj == filled->GetFormID() && e->oldContainer == playerID && e->newContainer == 0;
+            const bool addedWater = e->baseObj == water->GetFormID() && e->newContainer == playerID && e->oldContainer == 0;
+            const bool addedEmpty = e->baseObj == empty->GetFormID() && e->newContainer == playerID && e->oldContainer == 0;
+            if (!removedSkin && !addedWater && !addedEmpty) return Result::kContinue;
+            std::lock_guard lock(mutex);
+            if (!active) return Result::kContinue;
+            if (removedSkin) pending.skins += e->itemCount;
+            if (addedWater) pending.waters += e->itemCount;
+            if (addedEmpty) pending.empties += e->itemCount;
+            SKSE::log::info("Crafting inventory event: form={:08X}, count={}, removedSkin={}, addedWater={}, addedEmpty={}",
+                e->baseObj, e->itemCount, removedSkin, addedWater, addedEmpty);
+            queue();
+            return Result::kContinue;
         }
-        struct Guard {
-            Guard() { inside = true; }
-            ~Guard() { inside = false; }
-        } guard;
-        const auto before = inventory(player);
-        original(self, message);
-        // The callback may alter/close the menu: do not dereference it again.
-        const auto after = inventory(player);
-        const auto amount = waterskin::reward(true, before, after);
-        if (amount > 0) {
-            player->AddObjectToContainer(empty, nullptr, amount, nullptr);
-            SKSE::log::info("Returned {} empty waterskin(s) after recipe {:08X}", amount, recipe->GetFormID());
-        } else {
-            SKSE::log::info("No reward: filled {} -> {}, water {} -> {}, empty {} -> {}",
-                before.filled, after.filled, before.water, after.water, before.empty, after.empty);
+
+        Result ProcessEvent(const RE::ItemCrafted::Event* e, RE::BSTEventSource<RE::ItemCrafted::Event>*) override
+        {
+            if (!e || !e->item || !ready) return Result::kContinue;
+            std::lock_guard lock(mutex);
+            if (!active) return Result::kContinue;
+            if (e->item == water) ++pending.waterCrafts;
+            else ++pending.otherCrafts;
+            SKSE::log::info("ItemCrafted event: form={:08X}, bottledWater={}", e->item->GetFormID(), e->item == water);
+            queue();
+            return Result::kContinue;
         }
-    }
+
+    private:
+        struct Transaction {
+            std::int64_t skins = 0, waters = 0, empties = 0;
+            std::uint32_t waterCrafts = 0, otherCrafts = 0;
+        } pending;
+        std::mutex mutex;
+        std::uint64_t epoch = 0;
+        bool active = false, queued = false;
+
+        // Called with mutex held. SKSE tasks run after the current game operation.
+        // Ingredient/output/craft notifications can arrive in either order.
+        void queue()
+        {
+            if (queued) return;
+            queued = true;
+            const auto generation = epoch;
+            SKSE::GetTaskInterface()->AddTask([this, generation] { flush(generation); });
+        }
+
+        void flush(std::uint64_t generation)
+        {
+            Transaction transaction;
+            {
+                std::lock_guard lock(mutex);
+                if (generation != epoch) return;
+                queued = false;
+                if (active && pending.waterCrafts == 0 && pending.otherCrafts == 0) return;
+                transaction = pending;
+                pending = {}; // Claim once, before AddObjectToContainer emits more events.
+            }
+            const auto amount = waterskin::transactionReward(ready && validRecipe(), transaction.skins,
+                transaction.waters, transaction.empties, transaction.waterCrafts, transaction.otherCrafts);
+            if (auto player = RE::PlayerCharacter::GetSingleton(); player && amount > 0) {
+                awarding.store(true);
+                player->AddObjectToContainer(empty, nullptr, amount, nullptr);
+                awarding.store(false);
+                SKSE::log::info("Returned {} empty waterskin(s); consumed={}, crafted water={}", amount, transaction.skins, transaction.waters);
+            } else if (transaction.skins || transaction.waters || transaction.waterCrafts) {
+                SKSE::log::warn("No matched transaction: skins={}, waters={}, existing empties={}, water craft signals={}, other craft signals={}",
+                    transaction.skins, transaction.waters, transaction.empties, transaction.waterCrafts, transaction.otherCrafts);
+            }
+        }
+    };
 
     void onMessage(SKSE::MessagingInterface::Message* message)
     {
-        if (message->type == SKSE::MessagingInterface::kPostPostLoad) {
-            REL::Relocation<std::uintptr_t> table{ RE::VTABLE_CraftingSubMenus__ConstructibleObjectMenu__CreationConfirmCallback[0] };
-            original = table.write_vfunc(1, hookedRun);
-            SKSE::log::info("Installed crafting confirmation hook");
-        } else if (message->type == SKSE::MessagingInterface::kDataLoaded) {
+        if (message->type == SKSE::MessagingInterface::kDataLoaded) {
             auto data = RE::TESDataHandler::GetSingleton();
             recipe = data->LookupForm<RE::BGSConstructibleObject>(0x800, "Personal Tweaks.esp");
             filled = data->LookupForm<RE::AlchemyItem>(0x801, "Waterskin.esp");
@@ -94,14 +142,23 @@ namespace
             cooking = data->LookupForm<RE::BGSKeyword>(0xA5CB3, "Skyrim.esm");
             ready = validRecipe();
             if (ready) SKSE::log::info("Ready: original waterskin bottling recipe resolved and validated");
-            else SKSE::log::error("Disabled: expected recipe/items absent or overridden. Disable the old batch-item patch; expected one filled skin -> three original bottled waters at a cooking station.");
+            else SKSE::log::error("Disabled: expected recipe/items absent or overridden. Disable the old batch-item patch.");
+            auto& events = Events::get();
+            RE::UI::GetSingleton()->AddEventSink<RE::MenuOpenCloseEvent>(&events);
+            RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESContainerChangedEvent>(&events);
+            RE::ItemCrafted::GetEventSource()->AddEventSink(&events);
+            SKSE::log::info("Registered crafting menu, inventory and ItemCrafted listeners; no confirmation hook");
+        } else if (message->type == SKSE::MessagingInterface::kPreLoadGame ||
+                   message->type == SKSE::MessagingInterface::kNewGame ||
+                   message->type == SKSE::MessagingInterface::kPostLoadGame) {
+            Events::get().reset();
         }
     }
 }
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 0, 0, 0 });
+    data.PluginVersion({ 1, 1, 0, 0 });
     data.PluginName("WaterskinBottleReturn");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -122,6 +179,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WaterskinBottleReturn 1.0.0; target Skyrim 1.6.1170; no additional forms or scripts");
+    SKSE::log::info("WaterskinBottleReturn 1.1.0; target Skyrim 1.6.1170; no additional forms or scripts");
     return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
 }

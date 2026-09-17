@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable native mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Waterskin-BottleReturn-SKSE-v1
-          path: waterskin-native/_build/Waterskin_BottleReturn_SKSE_v1.zip
+          name: Waterskin-BottleReturn-SKSE-v2
+          path: waterskin-native/_build/Waterskin_BottleReturn_SKSE_v2.zip
           if-no-files-found: error

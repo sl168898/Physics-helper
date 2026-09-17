@@ -27,5 +27,15 @@ int main()
         after.empty += reward(true, now, after); now = after;
     }
     assert(now.filled == 0 && now.water == 300 && now.empty == 100);
+    using waterskin::transactionReward;
+    assert(transactionReward(true, 1, 3, 0, 1, 0) == 1);
+    assert(transactionReward(true, 1, 3, 0, 0, 0) == 0); // Inventory alone never awards
+    assert(transactionReward(true, 1, 3, 0, 1, 1) == 0); // Ambiguous mixed crafts fail closed
+    assert(transactionReward(true, 0, 3, 0, 1, 0) == 0); // Other water recipes
+    assert(transactionReward(true, 1, 0, 0, 1, 0) == 0); // No output received
+    assert(transactionReward(true, 5, 15, 0, 1, 0) == 5); // Batch craft signal
+    assert(transactionReward(true, 1, 3, 0, 3, 0) == 1); // Per-item craft signals do not multiply reward
+    assert(transactionReward(true, 1, 3, 1, 1, 0) == 0); // Another helper already returned it
+    assert(transactionReward(false, 1, 3, 0, 1, 0) == 0);
     std::cout << "PASS: success, batches, cancellation, wrong recipe/yield, no duplicate return, repeated crafts, bounds\n";
 }

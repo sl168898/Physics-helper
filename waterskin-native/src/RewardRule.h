@@ -24,4 +24,10 @@ namespace waterskin
         const auto alreadyReturned = std::max<std::int64_t>(0, after.empty - before.empty);
         return static_cast<std::int32_t>(std::max<std::int64_t>(0, consumed - alreadyReturned));
     }
+    constexpr std::int32_t transactionReward(bool validRecipe, std::int64_t skins,
+        std::int64_t waters, std::int64_t empties, std::uint32_t waterCrafts, std::uint32_t otherCrafts)
+    {
+        return reward(validRecipe && waterCrafts > 0 && otherCrafts == 0,
+            {skins, 0, 0}, {0, waters, empties});
+    }
 }

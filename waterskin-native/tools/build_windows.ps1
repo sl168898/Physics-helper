@@ -46,11 +46,11 @@ foreach ($Name in @('src/main.cpp','src/RewardRule.h','tests/reward_tests.cpp','
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'WaterskinBottleReturn'; version = '1.0.0'; runtime = '1.6.1170'
+    plugin = 'WaterskinBottleReturn'; version = '1.1.0'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; reward_tests = 'passed'; in_game_tested = $false
     no_esp = $true; no_new_forms = $true; no_papyrus_scripts = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Waterskin_BottleReturn_SKSE_v1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Waterskin_BottleReturn_SKSE_v2.zip')
