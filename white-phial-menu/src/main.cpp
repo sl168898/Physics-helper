@@ -122,9 +122,8 @@ namespace
                 // never touches another mod's registrations or restarts a spell.
                 RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback{
                     new KeyRegistrationComplete(epoch, key) };
-                auto keyArgument = key;
                 const bool accepted = vm->DispatchMethodCall(object, "RegisterForKey",
-                    RE::MakeFunctionArguments(keyArgument), callback);
+                    RE::MakeFunctionArguments(static_cast<std::int32_t>(key)), callback);
                 SKSE::log::info("Hotkey RegisterForKey queued: code={}; handle={:X}; accepted={}", key, handle, accepted);
                 if (accepted) { queued[handle] = key; changed = true; }
                 else failed = true;

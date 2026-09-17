@@ -35,6 +35,11 @@ $MainSource = [IO.File]::ReadAllText((Join-Path $Root 'src/main.cpp'))
 if ($MainSource -match 'script->|GetConcreteFormFactoryByType<RE::Script>|phial::command\(') {
     throw 'Unsafe command compilation returned to the settings writer'
 }
+# Compile the adapter first: catch API/template errors before building CommonLib.
+$MakeLine = Get-Content (Join-Path $Build 'CMakeCache.txt') | Where-Object { $_ -match '^CMAKE_MAKE_PROGRAM:FILEPATH=' } | Select-Object -First 1
+if (!$MakeLine) { throw 'CMake did not record MSBuild path' }
+$MSBuild = $MakeLine.Substring($MakeLine.IndexOf('=') + 1)
+Run $MSBuild @((Join-Path $Build 'WhitePhialMenu.vcxproj'), '/t:ClCompile', '/p:Configuration=Release', '/p:Platform=x64', '/p:BuildProjectReferences=false', '/verbosity:minimal')
 Run 'cmake' @('--build', $Build, '--config', 'Release', '--parallel', '2')
 Run 'ctest' @('--test-dir', $Build, '-C', 'Release', '--output-on-failure')
 # Copy only this DLL: CommonLib's install rules are not part of the mod package.
