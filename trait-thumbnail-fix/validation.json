@@ -1,0 +1,126 @@
+{
+  "baseline": "Biggie_Traits_Combined_Single_ESP_v2_1.zip",
+  "baseline_sha256": "e36454dca5cee4a8ee3bea86c0b62de7b3d5a5608fa75f5d3f4539edf6d2a198",
+  "repair_kind": "DDS header only; original compressed image payload preserved",
+  "reference_header_sha256": "33534d38dd2b32f9810e19dd0b26d8cc3c3ab0cbd4c7cc7653a7d41399cd741b",
+  "sources": [
+    "https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dds-header",
+    "https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dds-pixelformat"
+  ],
+  "textures": [
+    {
+      "file": "Interface/TraitPics/Traits_DevotedAlchemistAb.dds",
+      "trait": "Venom Harvester",
+      "before": {
+        "width": 1024,
+        "height": 704,
+        "fourcc": "DXT5",
+        "linear_size": 4108,
+        "required_linear_size": 720896,
+        "rgb_bit_count": 32,
+        "errors": [
+          "linear_size",
+          "rgb_bit_count"
+        ]
+      },
+      "after": {
+        "width": 1024,
+        "height": 704,
+        "fourcc": "DXT5",
+        "linear_size": 720896,
+        "required_linear_size": 720896,
+        "rgb_bit_count": 0,
+        "errors": []
+      },
+      "old_sha256": "8b89bb32ac7c5c8d3ddfc6d886dd403ad2b7b1d9f5b04026d685997a9704184a",
+      "new_sha256": "9714180f49e97c74cd39f217a627e53b9254e94447b9e98d550ab3d0a91bcd63",
+      "image_payload_sha256": "1d7b4119fdadde9c6b1493aada7e86484e36fa01a659055a53752b653fd67c88",
+      "image_payload_identical": true,
+      "decoded_pixels_identical": true,
+      "header_matches_original_mod": true,
+      "changed_byte_offsets": [
+        20,
+        21,
+        22,
+        88
+      ]
+    },
+    {
+      "file": "Interface/TraitPics/Traits_GreybeardTrainedAb.dds",
+      "trait": "Voice of Authority",
+      "before": {
+        "width": 1024,
+        "height": 704,
+        "fourcc": "DXT5",
+        "linear_size": 4108,
+        "required_linear_size": 720896,
+        "rgb_bit_count": 32,
+        "errors": [
+          "linear_size",
+          "rgb_bit_count"
+        ]
+      },
+      "after": {
+        "width": 1024,
+        "height": 704,
+        "fourcc": "DXT5",
+        "linear_size": 720896,
+        "required_linear_size": 720896,
+        "rgb_bit_count": 0,
+        "errors": []
+      },
+      "old_sha256": "d5f95dcf86a83d8043b867941f8860a19919b622bc58285ee8ca155afbec74e7",
+      "new_sha256": "ea8d91b7375196d70eed9318c18186e81c578c048e1d44ebaf7696f097cba9c3",
+      "image_payload_sha256": "a6e8b53d45e42c43b6ccfa2bc6f8a0137bcacd10ae94ab1b003d978a89543256",
+      "image_payload_identical": true,
+      "decoded_pixels_identical": true,
+      "header_matches_original_mod": true,
+      "changed_byte_offsets": [
+        20,
+        21,
+        22,
+        88
+      ]
+    },
+    {
+      "file": "Interface/TraitPics/Traits_SkaldAb.dds",
+      "trait": "Skald",
+      "before": {
+        "width": 1024,
+        "height": 704,
+        "fourcc": "DXT5",
+        "linear_size": 4108,
+        "required_linear_size": 720896,
+        "rgb_bit_count": 32,
+        "errors": [
+          "linear_size",
+          "rgb_bit_count"
+        ]
+      },
+      "after": {
+        "width": 1024,
+        "height": 704,
+        "fourcc": "DXT5",
+        "linear_size": 720896,
+        "required_linear_size": 720896,
+        "rgb_bit_count": 0,
+        "errors": []
+      },
+      "old_sha256": "04ac1b35e5c92c2682c1a96d4ea56b1b8e8ab1b0be1c058413bd6777fba8cd77",
+      "new_sha256": "1cd1ee5f40165e9877b4f1a19eca8cf96edc0ef8a8d9e0ea6821984643b8cbb3",
+      "image_payload_sha256": "cc79e3cd51367b46b2a3f217fe1393adf8ad1d734b68a510f512876bb8a057bc",
+      "image_payload_identical": true,
+      "decoded_pixels_identical": true,
+      "header_matches_original_mod": true,
+      "changed_byte_offsets": [
+        20,
+        21,
+        22,
+        88
+      ]
+    }
+  ],
+  "in_game_tested": false,
+  "visual_inspection": "passed",
+  "independent_decoders": "Pillow and ImageMagick agree within 3/255 per channel"
+}
