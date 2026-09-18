@@ -13,6 +13,8 @@ int main()
     assert(duration == 15 && magnitude == 0);
     assert(live(false, false, false, 9, 10, false));
     assert(!live(false, false, false, 10, 10, false));
+    assert(live(false, false, false, 10, 10, true));
+    assert(!live(false, false, false, 11, 10, true));
     assert(!live(false, false, false, 0, 0, false));
     assert(live(false, false, false, 0, 0, true));
     assert(!live(true, false, false, 0, 10, true));

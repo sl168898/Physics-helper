@@ -157,7 +157,7 @@ namespace
             if (app) {
                 actor.reset(effect->GetTargetActor());
                 eligible = live(effect, true, start);
-                aliveBefore = actor && actor->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
+                aliveBefore = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
             }
             executing = this;
         }
@@ -167,7 +167,7 @@ namespace
             // The engine may destroy the ActiveEffect inside Start/Update.
             // Only retained actor references and copied IDs are used here.
             if (!app || !actor || !eligible || !aliveBefore || generation != epoch.load() || !selected()) return;
-            const auto state = actor->GetLifeState();
+            const auto state = actor->AsActorState()->GetLifeState();
             if (state != RE::ACTOR_LIFE_STATE::kDying && state != RE::ACTOR_LIFE_STATE::kDead) return;
             {
                 std::lock_guard lock(mutex);
@@ -183,7 +183,7 @@ namespace
         const auto key = keyFor(effect);
         if (!key.actor) return;
         const auto actor = effect->GetTargetActor();
-        const auto state = actor->GetLifeState();
+        const auto state = actor->AsActorState()->GetLifeState();
         const bool dying = state == RE::ACTOR_LIFE_STATE::kDying || state == RE::ACTOR_LIFE_STATE::kDead;
         std::lock_guard lock(mutex);
         ledger.end(key, dying && live(effect));
@@ -298,7 +298,7 @@ namespace
         for (auto id : victims) {
             auto actor = RE::TESForm::LookupByID<RE::Actor>(id);
             if (!actor) continue;  // Unloaded references can resolve on a later poll.
-            const auto state = actor->GetLifeState();
+            const auto state = actor->AsActorState()->GetLifeState();
             if (state == RE::ACTOR_LIFE_STATE::kDying) continue;
             std::optional<harvest::ID> bottle;
             {
@@ -343,7 +343,7 @@ namespace
             const auto id = actor->GetFormID();
             bool playerKiller = event->actorKiller.get() == player;
             std::vector<harvest::Key> eligible;
-            if (auto effects = actor->GetActiveEffectList()) {
+            if (auto effects = actor->AsMagicTarget()->GetActiveEffectList()) {
                 for (auto effect : *effects) if (ownedPoison(effect) && live(effect)) eligible.push_back(keyFor(effect));
             }
             std::vector<harvest::Application> immediate;

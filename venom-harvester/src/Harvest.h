@@ -33,7 +33,9 @@ namespace harvest
     {
         if (dispelled || inactive || failedCondition || !std::isfinite(elapsed) ||
             !std::isfinite(duration) || duration < 0) return false;
-        return duration > 0 ? elapsed < duration : executing;
+        // A final damage tick can execute exactly at the duration boundary.
+        // That effect is eligible only inside its callback, not afterward.
+        return duration > 0 ? elapsed < duration || (executing && elapsed == duration) : executing;
     }
 
     inline void weaken(float& magnitude, float& duration, bool noMagnitude)

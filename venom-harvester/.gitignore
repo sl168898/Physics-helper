@@ -1,0 +1,9 @@
+/_build/
+/base/
+/reference/
+/staging/
+/headers/
+/compiled/
+/art/
+/download/
+*.pex
