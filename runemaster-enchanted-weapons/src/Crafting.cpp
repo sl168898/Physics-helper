@@ -12,7 +12,10 @@ std::array<Recipe, 8> recipes;
 bool (*enabled)() = nullptr;
 bool installed = false;
 thread_local bool insideRemove = false, insideAdd = false;
-using Remove = RE::ObjectRefHandle (*)(RE::PlayerCharacter*, RE::TESBoundObject*, std::int32_t,
+// RemoveItem returns a non-trivial handle by value. The MSVC member-function
+// ABI places its hidden return buffer AFTER this, unlike a free function.
+// Preserve that argument explicitly both in our thunk and the chained call.
+using Remove = RE::ObjectRefHandle* (*)(RE::PlayerCharacter*, RE::ObjectRefHandle*, RE::TESBoundObject*, std::int32_t,
     RE::ITEM_REMOVE_REASON, RE::ExtraDataList*, RE::TESObjectREFR*, const RE::NiPoint3*, const RE::NiPoint3*);
 using Add = void (*)(RE::PlayerCharacter*, RE::TESBoundObject*, RE::ExtraDataList*, std::int32_t, RE::TESObjectREFR*);
 REL::Relocation<Remove> originalRemove;
@@ -236,15 +239,16 @@ void queue() {  // Caller holds mutex; engine calls happen only in flush, outsid
     const auto epoch = generation;
     SKSE::GetTaskInterface()->AddTask([epoch] { flush(epoch); });
 }
-RE::ObjectRefHandle removeHook(RE::PlayerCharacter* player, RE::TESBoundObject* item, std::int32_t count,
+RE::ObjectRefHandle* removeHook(RE::PlayerCharacter* player, RE::ObjectRefHandle* returnBuffer,
+    RE::TESBoundObject* item, std::int32_t count,
     RE::ITEM_REMOVE_REASON reason, RE::ExtraDataList* extra, RE::TESObjectREFR* destination,
     const RE::NiPoint3* drop, const RE::NiPoint3* rotation) {
     const auto index = inputIndex(item);
     if (insideRemove || index < 0 || count != 1 || destination || !selectedRecipe(index))
-        return originalRemove(player, item, count, reason, extra, destination, drop, rotation);
+        return originalRemove(player, returnBuffer, item, count, reason, extra, destination, drop, rotation);
     struct Guard { Guard() { insideRemove = true; } ~Guard() { insideRemove = false; } } guard;
     auto before = inventory(player, recipes[index].input, true);
-    auto result = originalRemove(player, item, count, reason, extra, destination, drop, rotation);
+    auto result = originalRemove(player, returnBuffer, item, count, reason, extra, destination, drop, rotation);
     auto after = inventory(player, recipes[index].input, false);
     if (!before.valid || !after.valid || before.total - after.total != 1) return result;
     auto lost = singleLoss(before.stacks, after.stacks);
