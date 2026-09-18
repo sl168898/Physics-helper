@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs><linearGradient id="metal"><stop stop-color="#929ca5"/><stop offset=".35" stop-color="#eef1e9"/><stop offset=".6" stop-color="#c0c8c9"/><stop offset="1" stop-color="#6c7782"/></linearGradient>
+<linearGradient id="liquid" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#82909a"/><stop offset="1" stop-color="#4e5962"/></linearGradient>
+<clipPath id="vessel"><path d="M106 90H150V105C150 116 177 118 179 140L187 191Q188 221 161 225H95Q68 221 69 191L77 140C79 118 106 116 106 105Z"/></clipPath></defs>
+<path d="M98 72H158V102C158 112 185 117 187 139L196 191Q198 231 163 236H93Q58 231 60 191L69 139C71 117 98 112 98 102Z" fill="#182027" fill-opacity=".94" stroke="#0c1118" stroke-width="8" stroke-linejoin="round"/>
+<path d="M98 72H158V102C158 112 185 117 187 139L196 191Q198 231 163 236H93Q58 231 60 191L69 139C71 117 98 112 98 102Z" fill="none" stroke="url(#metal)" stroke-width="8" stroke-linejoin="round"/>
+<path d="M55 181Q100 174 128 181T200 181V237H55Z" clip-path="url(#vessel)" fill="url(#liquid)" opacity="0.28"/>
+<path d="M82 157L77 192Q77 212 97 216" fill="none" stroke="#f2f1df" stroke-opacity=".56" stroke-width="5" stroke-linecap="round"/>
+<path d="M104 71L101 51L128 25L155 51L152 71Z" fill="url(#metal)" stroke="#222c35" stroke-width="5" stroke-linejoin="round"/>
+<path d="M109 52L128 34L147 52L128 63Z" fill="#eef0e8"/><path d="M128 34V63" stroke="#9faeb5" stroke-width="3"/>
+<rect x="91" y="71" width="74" height="17" rx="5" fill="url(#metal)" stroke="#253039" stroke-width="4"/>
+<path d="M99 108Q128 125 157 108M77 147Q128 162 179 147" fill="none" stroke="#c2c7c2" stroke-width="4"/>
+<path d="M128 118L139 132L128 146L117 132Z" fill="#dae0d6" stroke="#45545c" stroke-width="3"/>
+<path d="M97 224H159" stroke="#e3e6d9" stroke-width="4" stroke-linecap="round"/>
+</svg>

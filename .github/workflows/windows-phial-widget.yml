@@ -1,0 +1,30 @@
+name: Build White Phial native widget
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/phial-widget-native']
+permissions:
+  contents: read
+concurrency:
+  group: white-phial-widget-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: waterskin-windows2022-staticmd-vcpkg-60b06921-v1
+      - name: Build DLL and run widget tests
+        shell: pwsh
+        run: '& .\white-phial-widget-native\tools\build_windows.ps1'
+      - name: Upload installable widget
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: White-Phial-Status-Widget-SKSE-v2
+          path: white-phial-widget-native/_build/White_Phial_Status_Widget_SKSE_v2_0.zip
+          if-no-files-found: error
