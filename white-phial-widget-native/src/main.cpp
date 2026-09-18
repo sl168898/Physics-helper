@@ -58,14 +58,25 @@ namespace
         }
         if (!ticket) return;
         SKSE::GetTaskInterface()->AddTask([ticket] {
-            std::lock_guard lock(stateMutex);
-            if (ticket != session.epoch || !session.pending || !session.view.active) return;
+            {
+                std::lock_guard lock(stateMutex);
+                if (ticket != session.epoch || !session.pending || !session.view.active) return;
+            }
+            // Never hold our mutex across game/UI calls: menu notifications
+            // also acquire it and may arrive while the UI owns an internal lock.
+            auto publish = [ticket](const widget::Snapshot& value) {
+                std::lock_guard lock(stateMutex);
+                if (ticket != session.epoch || !session.pending) return;
+                if (value.ready && !value.blocked && value.state != session.view.state)
+                    SKSE::log::info("White Phial inventory state: {}", widget::label(value.state));
+                session.finish(ticket, value);
+            };
             widget::Snapshot out;
             out.active = true;
             out.ready = formsReady;
             auto ui = RE::UI::GetSingleton();
             auto player = RE::PlayerCharacter::GetSingleton();
-            if (!ui || !player) { session.finish(ticket, out); return; }
+            if (!ui || !player) { publish(out); return; }
             out.blocked = !ui->IsShowingMenus() || ui->IsMenuOpen(RE::MainMenu::MENU_NAME) ||
                 ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) || !ui->IsMenuOpen(RE::HUDMenu::MENU_NAME);
             out.inMenu = ui->GameIsPaused();
@@ -86,9 +97,7 @@ namespace
                 const bool potion = std::any_of(potions.begin(), potions.end(), has);
                 out.state = widget::classify(has(emptyPhial), potion, has(poisonPhial));
             }
-            if (out.ready && !out.blocked && out.state != session.view.state)
-                SKSE::log::info("White Phial inventory state: {}", widget::label(out.state));
-            session.finish(ticket, out);
+            publish(out);
         });
     }
 
