@@ -175,7 +175,7 @@ bool transfer(RE::PlayerCharacter* player, RE::TESObjectWEAP* output, const Cons
     list->Add(new RE::ExtraEnchantment(item.enchantment.get(), item.identity.capacity, false));
     if (auto charge = list->GetByType<RE::ExtraCharge>()) charge->charge = item.identity.charge;
     else {
-        auto charge = new RE::ExtraCharge(); charge->charge = item.identity.charge; list->Add(charge);
+        auto newCharge = new RE::ExtraCharge(); newCharge->charge = item.identity.charge; list->Add(newCharge);
     }
     if (item.identity.health != 1.f) {
         if (auto health = list->GetByType<RE::ExtraHealth>()) health->health = item.identity.health;
