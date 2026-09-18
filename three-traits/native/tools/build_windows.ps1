@@ -44,18 +44,18 @@ Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Rules.h','tests/rules_tests.cpp','CMakeLists.txt','vcpkg.json')) {
+foreach ($Name in @('src/main.cpp','src/Rules.h','src/LabVisit.h','tests/rules_tests.cpp','tests/lab_tests.cpp','CMakeLists.txt','vcpkg.json')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'BiggieTraitMechanics'; version = '1.0.0'; runtime = '1.6.1170'
+    plugin = 'BiggieTraitMechanics'; version = '1.1.0'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; rules_tests = 'passed'; in_game_tested = $false
-    combined_version = "2.4"; no_new_inventory_items = $true
+    combined_version = "2.4.1"; no_new_inventory_items = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
 Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Biggie_Trait_Mechanics_v1.zip')

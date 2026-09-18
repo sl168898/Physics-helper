@@ -6,11 +6,17 @@
 #include <mutex>
 #include <unordered_set>
 #include "Rules.h"
+#include "LabVisit.h"
 
 namespace {
 constexpr auto pluginFile = "Biggie Traits - Combined.esp";
 RE::SpellItem *burden = nullptr, *guard = nullptr, *echo = nullptr;
 RE::BGSKeyword* blessing = nullptr;
+RE::SpellItem *labTrait = nullptr, *labBonus = nullptr;
+RE::EffectSetting* labBonusEffect = nullptr;
+traits::LabVisit labVisit;
+std::atomic_uint64_t labEpoch = 0;
+bool hadLabTrait = false;
 std::atomic_bool ready = false, session = false;
 std::recursive_mutex stateMutex;
 traits::Combat combat;
@@ -24,9 +30,77 @@ bool selected(RE::SpellItem* spell) {
     auto p = RE::PlayerCharacter::GetSingleton();
     return ready && session && p && spell && p->HasSpell(spell);
 }
+bool selectedLab() {
+    auto p = RE::PlayerCharacter::GetSingleton();
+    return session && p && labTrait && labBonus && labBonusEffect && p->HasSpell(labTrait);
+}
 void reset() {
     std::lock_guard lock(stateMutex); combat = {}; lastData = nullptr; lastState = RE::ATTACK_STATE_ENUM::kNone;
+    labVisit.cancel(); ++labEpoch; hadLabTrait = false;
 }
+bool alchemyFurniture(RE::TESObjectREFR* ref) {
+    auto base = ref ? ref->GetBaseObject() : nullptr;
+    auto furniture = base ? base->As<RE::TESFurniture>() : nullptr;
+    using Bench = RE::TESFurniture::WorkBenchData::BenchType;
+    return furniture && (furniture->workBenchData.benchType == Bench::kAlchemy ||
+        furniture->workBenchData.benchType == Bench::kAlchemyExperiment);
+}
+bool alchemyMenu() {
+    auto ui = RE::UI::GetSingleton();
+    auto menu = ui ? ui->GetMenu<RE::CraftingMenu>() : nullptr;
+    auto sub = menu ? menu->GetCraftingSubMenu() : nullptr;
+    // The pinned CommonLib header nests this class in a second CraftingSubMenus namespace.
+    using AlchemyMenu = RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu;
+    return sub && skyrim_cast<AlchemyMenu*>(sub);
+}
+void dispelLab(RE::PlayerCharacter* p) {
+    if (!p || !labBonus) return;
+    auto handle = p->GetHandle();
+    p->GetMagicTarget()->DispelEffect(labBonus, handle);
+}
+void finishLab(const char* reason) {
+    if (!labVisit.finish()) return;
+    const auto epoch = labEpoch.load();
+    SKSE::GetTaskInterface()->AddTask([epoch, reason] {
+        std::lock_guard lock(stateMutex);
+        auto p = RE::PlayerCharacter::GetSingleton();
+        if (epoch != labEpoch || !selectedLab() || p->IsDead()) return;
+        auto caster = p->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+        if (!caster) { SKSE::log::error("Lab Skeever: instant caster unavailable"); return; }
+        dispelLab(p);
+        caster->CastSpellImmediate(labBonus, true, p, 1.f, false, 0.f, p);
+        SKSE::log::info("Lab Skeever: {} -> 20-second bonus cast; active={}", reason,
+            p->GetMagicTarget()->HasMagicEffect(labBonusEffect));
+    });
+}
+class LabEvents final : public RE::BSTEventSink<RE::TESFurnitureEvent>, public RE::BSTEventSink<RE::MenuOpenCloseEvent> {
+public:
+    RE::BSEventNotifyControl ProcessEvent(const RE::TESFurnitureEvent* e, RE::BSTEventSource<RE::TESFurnitureEvent>*) override {
+        if (!e || !selectedLab() || e->actor.get() != RE::PlayerCharacter::GetSingleton()) return RE::BSEventNotifyControl::kContinue;
+        std::lock_guard lock(stateMutex);
+        if (e->type == RE::TESFurnitureEvent::FurnitureEventType::kEnter) {
+            labVisit.enter(alchemyFurniture(e->targetFurniture.get()));
+            if (labVisit.armed) SKSE::log::info("Lab Skeever: entered alchemy workbench");
+        } else if (e->type == RE::TESFurnitureEvent::FurnitureEventType::kExit) {
+            finishLab("workbench exit");
+        }
+        return RE::BSEventNotifyControl::kContinue;
+    }
+    RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* e, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override {
+        if (!e || e->menuName != RE::CraftingMenu::MENU_NAME || !selectedLab()) return RE::BSEventNotifyControl::kContinue;
+        std::lock_guard lock(stateMutex);
+        if (e->opening) {
+            auto p = RE::PlayerCharacter::GetSingleton();
+            auto ref = p->GetOccupiedFurniture().get();
+            if (alchemyMenu() || alchemyFurniture(ref.get())) {
+                labVisit.confirmAlchemyMenu();
+                SKSE::log::info("Lab Skeever: alchemy crafting menu opened");
+            } else if (ref) labVisit.cancel();
+        } else finishLab("alchemy menu closed");
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+LabEvents labEvents;
 RE::BGSAttackData* attackData(RE::Actor* actor) {
     auto process = actor ? actor->GetActorRuntimeData().currentProcess : nullptr;
     return process && process->high ? process->high->attackData.get() : nullptr;
@@ -59,10 +133,16 @@ void update(RE::PlayerCharacter* p, float dt) {
     auto ui = RE::UI::GetSingleton();
     if (ui && ui->GameIsPaused()) return;
     std::lock_guard lock(stateMutex);
+    const bool labSelected = selectedLab();
+    if (!labSelected) {
+        labVisit.cancel();
+        if (hadLabTrait) { ++labEpoch; dispelLab(p); }
+    }
+    hadLabTrait = labSelected;
     combat.tick(dt);
     if (!selected(guard)) combat.clearGuard();
     if (!selected(echo)) combat.clearEcho();
-    if (p->IsDead()) { combat = {}; return; }
+    if (p->IsDead()) { combat = {}; labVisit.cancel(); return; }
     observeAttack(p);
 }
 void processHit(RE::Actor* target, RE::HitData& hit) {
@@ -198,6 +278,14 @@ void message(SKSE::MessagingInterface::Message* msg) {
         guard = data->LookupForm<RE::SpellItem>(0xF10, pluginFile);
         echo = data->LookupForm<RE::SpellItem>(0xF20, pluginFile);
         blessing = RE::TESForm::LookupByID<RE::BGSKeyword>(0xFB98C);
+        labTrait = data->LookupForm<RE::SpellItem>(0xE00, pluginFile);
+        labBonus = data->LookupForm<RE::SpellItem>(0xE03, pluginFile);
+        labBonusEffect = data->LookupForm<RE::EffectSetting>(0xE04, pluginFile);
+        if (labTrait && labBonus && labBonusEffect) {
+            RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESFurnitureEvent>(&labEvents);
+            RE::UI::GetSingleton()->AddEventSink<RE::MenuOpenCloseEvent>(&labEvents);
+            SKSE::log::info("Lab Skeever ready: native alchemy workbench/menu detection; 20 seconds, 30x duration, 1.1x potency");
+        } else SKSE::log::error("Lab Skeever: required forms missing; activation disabled");
         if (!burden || !guard || !echo || !blessing) { SKSE::log::error("Combined v2.4 forms missing; helper disabled"); return; }
         // Actor::ProcessHitData (all ordinary physical hits, including arrows).
         // ID and signature corroborated by Acheron and Valhalla Combat sources.
@@ -218,7 +306,7 @@ void message(SKSE::MessagingInterface::Message* msg) {
 }
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
-    SKSE::PluginVersionData d{}; d.PluginVersion({1,0,0,0}); d.PluginName("BiggieTraitMechanics");
+    SKSE::PluginVersionData d{}; d.PluginVersion({1,1,0,0}); d.PluginName("BiggieTraitMechanics");
     d.AuthorName("Physics-helper contributors"); d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -228,6 +316,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(),true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("BiggieTraitMechanics 1.0.0; Skyrim 1.6.1170");
+    SKSE::log::info("BiggieTraitMechanics 1.1.0; Skyrim 1.6.1170");
     return SKSE::GetMessagingInterface()->RegisterListener(message);
 }
