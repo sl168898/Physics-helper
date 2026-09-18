@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include "Rules.h"
+#include "Crafting.h"
 
 namespace {
 constexpr auto sourceFile = "RunemasterMagic.esl";
@@ -17,6 +18,16 @@ struct Rune {
     const char* name{};
 };
 std::array<Rune, 8> runeData;
+struct PermanentRune {
+    RE::TESObjectWEAP* weapon{};
+    RE::EnchantmentItem* enchantment{};
+    RE::SpellItem *bridge{}, *cooldown{};
+    RE::BGSConstructibleObject* recipe{};
+    const char* name{};
+};
+std::array<PermanentRune, 8> permanentData;
+RE::EffectSetting* runicCooldown{};
+RE::BGSKeyword* disallowEnchanting{};
 std::atomic_bool ready = false, session = false;
 std::atomic_uint64_t epoch = 0;
 std::uint32_t diagnosticHits = 0;
@@ -71,8 +82,8 @@ bool effectPresent(RE::Actor* actor, RE::EffectSetting* base) {
         if (active(effect) && effect->GetBaseObject() == base) return true;
     return false;
 }
-bool cannotRecast(RE::Actor* target, const Rune& rune) {
-    for (auto effect : rune.bridge->effects)
+bool cannotRecast(RE::Actor* target, RE::SpellItem* spell) {
+    for (auto effect : spell->effects)
         if (effect && effect->baseEffect &&
             effect->baseEffect->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoRecast) &&
             effectPresent(target, effect->baseEffect)) return true;
@@ -85,7 +96,7 @@ void applyHit(RE::Actor* attacker, RE::Actor* victim, RE::FormID weaponID) {
     expireOtherRunes(attacker, current.effect);
     // The original impact effects use No Recast. This also filters duplicate
     // hit notifications emitted by enchanted weapons before Papyrus runs.
-    if (cannotRecast(victim, *current.rune)) return;
+    if (cannotRecast(victim, current.rune->bridge)) return;
     auto caster = attacker->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
     if (!caster) return;
     auto& rune = *current.rune;
@@ -98,6 +109,35 @@ void applyHit(RE::Actor* attacker, RE::Actor* victim, RE::FormID weaponID) {
         SKSE::log::info("Rune hit: {}; attacker={:08X}; target={:08X}; weapon={:08X}; single-use={}",
             rune.name, attacker->GetFormID(), victim->GetFormID(), weaponID, rune.singleUse);
         if (diagnosticHits == 24) SKSE::log::info("Routine hit logging suppressed for the remainder of this session");
+    }
+}
+
+void applyPermanentHit(RE::Actor* attacker, RE::Actor* victim, RE::FormID weaponID) {
+    if (!attacker || !victim || attacker == victim) return;
+    PermanentRune* found = nullptr;
+    for (auto& rune : permanentData)
+        if (rune.weapon && rune.weapon->GetFormID() == weaponID) { found = &rune; break; }
+    if (!found) return;
+    auto target = attacker->GetMagicTarget();
+    if (!target || target->HasMagicEffect(runicCooldown) || cannotRecast(victim, found->bridge)) return;
+    // Match the original impact conditions before applying its cooldown.
+    // In particular, its Swap Subject/Target condition checks the wielder.
+    for (auto effect : found->bridge->effects) {
+        if (!effect->conditions.IsTrue(victim, attacker) ||
+            !effect->baseEffect->conditions.IsTrue(victim, attacker)) return;
+    }
+    auto caster = attacker->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+    if (!caster) return;
+    caster->CastSpellImmediate(found->bridge, false, victim, 1.f, false, 0.f, attacker);
+    // Apply the SAME original cooldown spell immediately, closing the gap
+    // before its Papyrus script runs. Its existing condition prevents a second
+    // application from refreshing or stacking the cooldown later.
+    caster->CastSpellImmediate(found->cooldown, true, attacker, 1.f, false, 0.f, attacker);
+    if (diagnosticHits < 24) {
+        ++diagnosticHits;
+        SKSE::log::info("Permanent rune hit: {}; attacker={:08X}; target={:08X}; source weapon={:08X}; cooldown active={}",
+            found->name, attacker->GetFormID(), victim->GetFormID(), weaponID,
+            target->HasMagicEffect(runicCooldown));
     }
 }
 
@@ -121,6 +161,7 @@ public:
             if (!ready || !session || epoch != generation) return;
             auto attacker = attackerHandle.get(), victim = victimHandle.get();
             applyHit(attacker.get(), victim.get(), weaponID);
+            applyPermanentHit(attacker.get(), victim.get(), weaponID);
         });
         return RE::BSEventNotifyControl::kContinue;
     }
@@ -154,19 +195,19 @@ void copyConditions(RE::TESCondition& destination, const RE::TESCondition& sourc
         tail = &copy->next;
     }
 }
-void copyImpactEffects(Rune& rune) {
-    for (auto effect : rune.bridge->effects) delete effect;
-    rune.bridge->effects.clear();
-    for (auto effect : rune.enchantment->effects) {
+void copyImpactEffects(RE::EnchantmentItem* enchantment, RE::SpellItem* bridge) {
+    for (auto effect : bridge->effects) delete effect;
+    bridge->effects.clear();
+    for (auto effect : enchantment->effects) {
         auto copy = new RE::Effect();
         copy->baseEffect = effect->baseEffect;
         copy->effectItem = effect->effectItem;
         copy->cost = effect->cost;
         copyConditions(copy->conditions, effect->conditions);
-        rune.bridge->effects.push_back(copy);
+        bridge->effects.push_back(copy);
     }
-    rune.bridge->hostileCount = rune.enchantment->hostileCount;
-    rune.bridge->avEffectSetting = rune.enchantment->avEffectSetting;
+    bridge->hostileCount = enchantment->hostileCount;
+    bridge->avEffectSetting = enchantment->avEffectSetting;
 }
 bool resolve() {
     auto data = RE::TESDataHandler::GetSingleton();
@@ -214,12 +255,50 @@ bool resolve() {
     }
     return true;
 }
+bool resolvePermanent() {
+    auto data = RE::TESDataHandler::GetSingleton();
+    runicCooldown = data->LookupForm<RE::EffectSetting>(0x82F, sourceFile);
+    disallowEnchanting = data->LookupForm<RE::BGSKeyword>(0xC27BD, "Skyrim.esm");
+    if (!runicCooldown || !disallowEnchanting) return false;
+    for (std::size_t i = 0; i < permanentData.size(); ++i) {
+        const auto& def = runes::permanentDefinitions[i];
+        auto& rune = permanentData[i];
+        rune.name = def.name;
+        rune.weapon = data->LookupForm<RE::TESObjectWEAP>(def.weapon, sourceFile);
+        rune.enchantment = data->LookupForm<RE::EnchantmentItem>(def.enchantment, sourceFile);
+        rune.bridge = data->LookupForm<RE::SpellItem>(def.bridge, bridgeFile);
+        rune.cooldown = data->LookupForm<RE::SpellItem>(def.cooldown, sourceFile);
+        rune.recipe = data->LookupForm<RE::BGSConstructibleObject>(def.recipe, sourceFile);
+        if (!rune.weapon || !rune.enchantment || !rune.bridge || !rune.cooldown || rune.enchantment->effects.empty()) {
+            SKSE::log::error("Missing permanent rune forms for {}; install the matching 1.1 ESP and DLL", def.name);
+            return false;
+        }
+        for (auto effect : rune.enchantment->effects) {
+            if (!effect || !effect->baseEffect ||
+                effect->baseEffect->data.castingType != RE::MagicSystem::CastingType::kFireAndForget ||
+                effect->baseEffect->data.delivery != RE::MagicSystem::Delivery::kTouch) {
+                SKSE::log::error("Unsupported permanent rune effects on {}", def.name); return false;
+            }
+        }
+        bool hasCooldown = false;
+        for (auto effect : rune.cooldown->effects)
+            if (effect && effect->baseEffect == runicCooldown) hasCooldown = true;
+        if (!hasCooldown) { SKSE::log::error("Unexpected cooldown spell on {}", def.name); return false; }
+        if (rune.recipe && rune.recipe->createdItem != rune.weapon) {
+            SKSE::log::warn("Recipe for {} has a different output; crafting preservation disabled for this recipe", def.name);
+            rune.recipe = nullptr;
+        }
+    }
+    return true;
+}
+bool enabled() { return ready && session; }
 void initialize() {
     auto holder = RE::ScriptEventSourceHolder::GetSingleton();
-    if (!holder || !resolve()) return;
+    if (!holder || !resolve() || !resolvePermanent()) return;
     // Resolve and validate everything before changing the source's live forms.
-    // No weapon, inventory extra data, charge, enchantment, perk or script is edited.
-    for (auto& rune : runeData) copyImpactEffects(rune);
+    // Keep winning stats, effect definitions, costs, perks and scripts.
+    for (auto& rune : runeData) copyImpactEffects(rune.enchantment, rune.bridge);
+    for (auto& rune : permanentData) copyImpactEffects(rune.enchantment, rune.bridge);
     for (auto& rune : runeData) {
         for (auto effect : {rune.self, rune.transfer}) {
             effect->data.archetype = RE::EffectArchetypes::ArchetypeID::kScript;
@@ -230,13 +309,29 @@ void initialize() {
         SKSE::log::info("Prepared {}: self={:08X}; transfer={:08X}; impact={:08X}; single-use={}",
             rune.name, rune.self->GetFormID(), rune.transfer->GetFormID(), rune.bridge->GetFormID(), rune.singleUse);
     }
+    std::array<RE::BGSConstructibleObject*, 8> recipes;
+    for (std::size_t i = 0; i < permanentData.size(); ++i) {
+        auto& rune = permanentData[i];
+        // Only detach this weapon's original permanent rune enchantment.
+        // A different base enchantment installed by another patch is retained.
+        if (rune.weapon->formEnchanting == rune.enchantment) {
+            rune.weapon->formEnchanting = nullptr;
+            rune.weapon->amountofEnchantment = 0;
+        }
+        rune.weapon->RemoveKeyword(disallowEnchanting);
+        recipes[i] = rune.recipe;
+        SKSE::log::info("Permanent rune ready: {}; weapon={:08X}; normal base enchantment retained={}",
+            rune.name, rune.weapon->GetFormID(), rune.weapon->formEnchanting != nullptr);
+    }
+    runes::crafting::install(recipes, enabled);
     holder->AddEventSink<RE::TESHitEvent>(&events);
     holder->AddEventSink<RE::TESMagicEffectApplyEvent>(&events);
     ready = true;
-    SKSE::log::info("Ready: eight additive runes and eight Transfer Rune variants; original weapon enchantments retained");
+    SKSE::log::info("Ready: eight castable runes, eight Transfer Rune variants, eight enchantable permanent rune weapons");
 }
 void newSession(bool successful) {
     session = false;
+    runes::crafting::reset();
     ++epoch;
     diagnosticHits = 0;
     session = successful;
@@ -253,7 +348,7 @@ void message(SKSE::MessagingInterface::Message* message) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({1,0,0,0}); data.PluginName("RunemasterEnchantmentBridge");
+    data.PluginVersion({1,1,0,0}); data.PluginName("RunemasterEnchantmentBridge");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1,6,1170,0}}); return data;
@@ -266,6 +361,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Runemaster Enchanted Weapons 1.0.0; Skyrim 1.6.1170; original Runemaster Magic 1.5 required");
+    SKSE::log::info("Runemaster Enchanted Weapons 1.1.0; Skyrim 1.6.1170; original Runemaster Magic 1.5 required");
     return SKSE::GetMessagingInterface()->RegisterListener(message);
 }

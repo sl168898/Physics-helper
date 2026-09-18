@@ -39,4 +39,13 @@ int main() {
         assert(spellIDs.insert(def.bridge).second);
     }
     assert(singleUse == 5 && buffIDs.size() == 16 && spellIDs.size() == 8);
+    std::set<std::uint32_t> weapons;
+    for (auto def : permanentDefinitions) {
+        assert(weapons.insert(def.weapon).second);
+        assert(spellIDs.insert(def.bridge).second);
+        assert(def.cooldown >= 0x850 && def.cooldown <= 0x855);
+    }
+    assert(weapons.size() == 8 && spellIDs.size() == 16);
+    assert(permanentDefinitions[1].weapon == 0x8A2); // Bow is matched by hit source.
+    assert(permanentDefinitions[4].cooldown == 0x855); // Actual Baleful cooldown.
 }

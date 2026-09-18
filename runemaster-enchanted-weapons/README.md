@@ -1,79 +1,106 @@
-# Runemaster Enchanted Weapons 1.0.0
+# Runemaster Enchanted Weapons 1.1.0
 
-Adds Runemaster's rune hit effects alongside an existing weapon enchantment.
-For Skyrim SE 1.6.1170, SKSE64, the matching Address Library, and Kittytail's
-Runemaster Magic 1.5 (`RunemasterMagic.esl`). Windows x64 only.
+Use Runemaster runes alongside normal weapon enchantments. Version 1.1 also
+makes all eight permanent rune weapons enchantable and preserves player-made
+enchantments when an ebony weapon is converted at the forge.
 
-## Installation in Mod Organizer 2
+Requires Skyrim SE **1.6.1170**, SKSE64, the matching Address Library, and
+Kittytail's Runemaster Magic **1.5** (`RunemasterMagic.esl`). Windows x64 only.
 
-1. Before enabling this add-on, let all active Runemaster weapon runes expire
-   on yourself and nearby companions. In the original mod they last 30 seconds;
-   if your balance patch extends them, wait until those effects have ended.
-   Save and quit. This avoids changing the native effect type of a saved rune
-   while it is active.
-2. Install this ZIP as a new mod. Keep the original Runemaster mod enabled.
-3. Enable `Runemaster Enchanted Weapons.esp` in the right pane and place it
-   after Runemaster and your Runemaster/LoreRim balance patches. It is ESL
-   flagged and contains only eight new hidden impact spells.
-4. Launch through SKSE. Cast a rune normally while wielding an enchanted
-   weapon, then hit an enemy. No new power, item, menu or hotkey is added.
+## Install or update in Mod Organizer 2
 
-## Behavior
+1. Let active castable Runemaster weapon runes expire on yourself and nearby
+   companions. Unequip permanent rune weapons, save and quit the game.
+2. Install this ZIP. If updating from 1.0, **replace the previous add-on**.
+   Keep the original Runemaster mod enabled. This is the complete updated mod;
+   no separate hotfix or extra dependency is required.
+3. Enable `Runemaster Enchanted Weapons.esp` after Runemaster and your
+   Runemaster/LoreRim balance patches. It is ESL flagged, with sixteen hidden
+   impact spells. The original eight spell IDs remain unchanged from 1.0.
+4. Launch through SKSE. Existing permanent rune weapons are supported; you do
+   not need to obtain new copies. No new power, inventory item or hotkey is added.
 
-- Supports Stunning Blast, Almighty Bolt, Runestorm, Sundering Inferno,
-  Havoc, Spectral Slash, Umbral Veil and Baleful Glow, including Transfer Rune
-  on companions. One-handed and two-handed weapon strikes use the same route;
-  either hand can trigger the active rune when dual wielding.
-- Your weapon's normal enchantment and charge usage are handled by Skyrim as
-  usual. The rune is a separate timed effect; it does not alter, replace or
-  save a new enchantment onto the weapon. It needs no soul charge of its own.
-- Original powers, costs, rune items, perk requirements, scripts and damage
-  effects remain in use. The DLL uses the winning loaded rune records, so
-  an ESP here does not overwrite your existing balance/perk integration.
-- Almighty Bolt, Runestorm, Sundering Inferno, Havoc and Umbral Veil consume
-  the rune on a hit. Stunning Blast, Spectral Slash and Baleful Glow stay active
-  for their original duration. The original effect's No Recast restriction
-  prevents duplicate impacts on an already affected target.
-- Casting another rune replaces the previous active rune. Runes do not stack.
-  A one-use rune is consumed by the first eligible hit across either hand.
-- Unenchanted weapons still work. Spell hits, staff attacks, unarmed attacks
-  and bashes cannot trigger rune impacts. Existing casting/equipment conditions
-  are retained; this does not broaden which weapon types the powers accept.
-- No changes to Runemaster's permanent runic weapons or to the enchanting tree.
-- Original impact/explosion visuals remain in use. The temporary weapon glow
-  may differ because the replacement weapon enchantment is no longer installed.
+## Permanent rune weapons (new in 1.1)
 
-## Validation and first in-game check
+The Sundering Runic Battleaxe, Almighty Runic Bow, Spectral Runic Dagger,
+Umbral Runic Greatsword, Baleful Runic Mace, Tempest Runic Sword, Stunning Runic
+War Axe and Kinetic Runic Warhammer can receive ordinary player enchantments
+at an arcane enchanter. Their permanent runes remain attached to the weapon type.
 
-Windows compilation and automated selection/filtering checks are provided.
-This release has NOT been tested inside Skyrim; treat it as a test build.
+- The permanent rune activates from that weapon's physical hits, including
+  arrows from the Almighty Runic Bow. Using another weapon does not trigger it.
+- Original rune effects, scripts and shared cooldown spells remain in use.
+  A rune does not require soul charge. An added normal enchantment consumes
+  charge as usual and can be recharged normally.
+- Converting a player-enchanted ebony weapon through its original rune recipe
+  preserves the enchantment definition/strength, maximum and remaining charge,
+  player-set name and tempering of the actual consumed inventory copy.
+  An unenchanted input still produces the usual unenchanted runic weapon.
+- The winning recipe still decides which ingredients are accepted and which
+  perks are required. This does not make every separately defined enchanted
+  loot weapon an eligible ingredient, or add alternative recipes.
+- Weapon stats, meshes, crafting costs and perk requirements are unchanged.
+  A different base enchantment added by another patch is left intact; ordinary
+  Skyrim enchanting restrictions still apply to that other enchantment.
 
-1. Try a normally enchanted weapon and a player-enchanted weapon. Confirm the
-   ordinary enchantment still activates and still consumes charge as usual.
-2. Apply Stunning Blast and strike a target: confirm both effects activate.
-3. Try Almighty Bolt: confirm its original delayed impact happens once and
-   the rune ends. Try another hit without recasting: no second rune impact.
-4. Let a sustained rune expire, and test dual wielding/two-handed weapons or
-   Transfer Rune if you use those features. Save/reload with a newly cast rune
-   to verify its remaining duration is retained.
+The DLL removes the original rune enchantment and its enchanting prohibition
+from the eight loaded weapon records, then handles rune hits separately. The
+original plugin on disk is not edited. Their original rune description may
+therefore no longer appear in the weapon's ordinary enchantment panel.
 
-The SKSE log directory contains `RunemasterEnchantmentBridge.log`. A successful
-initialization reports `Ready: eight additive runes...`. The first 24 impacts
-per session are logged for diagnosis; no on-screen notifications are shown.
-If forms are missing or a different mod fundamentally changes the rune
-implementation, the DLL logs a reason and leaves the original system intact.
+## Castable runes (included from 1.0)
 
-Before disabling this add-on, let active runes expire again and save. Keep a
-save made before installation while evaluating the test build.
+- Supports Stunning Blast, Almighty Bolt, Runestorm, Sundering Inferno, Havoc,
+  Spectral Slash, Umbral Veil and Baleful Glow, including Transfer Rune on
+  companions. One-handed and two-handed strikes are supported; either hand
+  can trigger the active rune when dual wielding.
+- Normal weapon enchantments and charge usage remain handled by Skyrim.
+  The castable rune is a separate timed effect, with no soul charge of its own.
+- Original powers, costs, rune items, conditions, perks and scripts remain in
+  use. The DLL reads the winning loaded records rather than overriding your
+  balance patches with copies of the original records.
+- Almighty Bolt, Runestorm, Sundering Inferno, Havoc and Umbral Veil consume the
+  castable rune on a hit. Stunning Blast, Spectral Slash and Baleful Glow remain
+  for their original duration. No Recast restrictions remain in use.
+- A new castable rune replaces the previous one. Spell hits, staff attacks,
+  unarmed attacks and bashes do not trigger rune impacts.
+- Original impact and explosion visuals remain. The temporary weapon glow
+  may differ because a replacement weapon enchantment is no longer installed.
 
-## Implementation / credits
+## Validation and first in-game checks
 
-At DataLoaded, the DLL validates all eight runes and their transfer variants,
-copies the winning enchantment impact effects/conditions into eight carrier
-spells, and changes only the rune buffs' EnhanceWeapon scaffolding to Script.
-The original cost scripts still execute. Physical TESHitEvent notifications
-apply the carriers on the game task queue using safe actor handles. It does
-not detour the combat damage function or edit inventory enchantment data.
+The Windows DLL build and automated rune/crafting checks must pass before
+packaging. **This release has not been tested inside Skyrim.**
+
+1. Enchant a permanent rune weapon at an arcane enchanter, then hit an enemy.
+   Check that both effects work and that subsequent rune activations respect
+   the cooldown. Recharge the normal enchantment as usual.
+2. Convert a player-enchanted ebony weapon at the forge. Check its enchantment
+   and remaining charge, then save/reload and check again. For a clear first
+   test, carry just one eligible ebony weapon.
+3. Cast a temporary rune on an ordinarily enchanted weapon and check that both
+   effects still work. Test a one-use rune and a sustained rune.
+
+`RunemasterEnchantmentBridge.log` is in your SKSE log directory. Successful
+startup reports eight castable runes and eight enchantable permanent rune
+weapons. Successful crafting transfer logs `Preserved crafted enchantment`.
+Unexpected or ambiguous inventory changes are logged and left untouched.
+There are no on-screen notifications. The first 24 rune impacts per session
+are logged for diagnosis.
+
+Keep a pre-installation save while evaluating the build. To remove the add-on,
+return to that save: normal enchantments placed on permanent rune weapons now
+depend on the add-on separating the rune from the normal enchantment slot.
+
+## Implementation and credits
+
+Sixteen hidden carrier spells reference the original rune effects. The DLL
+copies their winning effect conditions, preserves the original Papyrus proc
+scripts, and applies physical-hit effects on the game task queue. Permanent
+weapon cooldowns use the original spells. Temporary runes retain their original
+cost scripts and duration. Source weapon/output inventory snapshots plus the
+crafting event identify the consumed enchantment and the newly crafted copy;
+no extra weapon is added or removed by the transfer.
 
 Runemaster Magic and all rune content are by Kittytail:
 https://www.nexusmods.com/skyrimspecialedition/mods/145420

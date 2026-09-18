@@ -45,18 +45,18 @@ Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Rules.h','tests/rules_tests.cpp','tools/build_plugin.py','CMakeLists.txt','vcpkg.json')) {
+foreach ($Name in @('src/main.cpp','src/Rules.h','src/Crafting.cpp','src/Crafting.h','src/CraftingRules.h','tests/rules_tests.cpp','tests/crafting_tests.cpp','tools/build_plugin.py','CMakeLists.txt','vcpkg.json')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'RunemasterEnchantmentBridge'; version = '1.0.0'; runtime = '1.6.1170'
+    plugin = 'RunemasterEnchantmentBridge'; version = '1.1.0'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; rules_tests = 'passed'; in_game_tested = $false
-    runemaster_version = '1.5'; no_new_inventory_items = $true
+    runemaster_version = '1.5'; no_new_inventory_items = $true; permanent_weapons = 8; crafting_preservation_tests = 'passed'
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Runemaster_Enchanted_Weapons_v1_0.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Runemaster_Enchanted_Weapons_v1_1.zip')

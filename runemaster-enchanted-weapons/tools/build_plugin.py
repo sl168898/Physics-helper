@@ -1,4 +1,4 @@
-"""Build eight new hidden impact spells. No original records or assets copied.
+"""Build sixteen new hidden impact spells. No original records or assets copied.
 
 Masters: Skyrim.esm (00), RunemasterMagic.esl (01); this light plugin is 02.
 The DLL refreshes these effects from the winning rune enchantments at load time.
@@ -21,14 +21,19 @@ def make_plugin():
     impacts = [0x802, 0x809, 0x812, 0x817, 0x81D, 0x821, 0x825, 0x82A]
     names = ['StunningBlast', 'AlmightyBolt', 'Runestorm', 'SunderingInferno',
              'Havoc', 'SpectralSlash', 'UmbralVeil', 'BalefulGlow']
-    header = sub(b'HEDR', struct.pack('<fII', 1.7, 9, 0x808))  # Eight records + one group.
+    entries = [(0x800 + i, name, impact) for i, (name, impact) in enumerate(zip(names, impacts))]
+    weapon_impacts = [0x835, 0x82D, 0x833, 0x832, 0x82E, 0x831, 0x834, 0x830]
+    weapon_names = ['SunderingBattleaxe', 'AlmightyBow', 'SpectralDagger', 'UmbralGreatsword',
+                    'BalefulMace', 'TempestSword', 'StunningWarAxe', 'KineticWarhammer']
+    entries += [(0x810 + i, name, impact) for i, (name, impact) in enumerate(zip(weapon_names, weapon_impacts))]
+    header = sub(b'HEDR', struct.pack('<fII', 1.7, 17, 0x818))  # Sixteen records + one group.
     header += sub(b'CNAM', b'Physics-helper contributors\0')
     header += sub(b'SNAM', b'Additive rune impacts for RunemasterEnchantmentBridge; requires its DLL.\0')
     for master in ['Skyrim.esm', 'RunemasterMagic.esl']:
         header += sub(b'MAST', master.encode() + b'\0') + sub(b'DATA', bytes(8))
-    result = rec(b'TES4', 0, header, 0x200)  # ESL flagged ESP; local forms 800-807.
+    result = rec(b'TES4', 0, header, 0x200)  # Keep 800-807 stable; add 810-817.
     spells = b''
-    for index, (name, impact) in enumerate(zip(names, impacts)):
+    for local_id, name, impact in entries:
         body = sub(b'EDID', ('REW_' + name + '_Impact').encode() + b'\0')
         body += sub(b'OBND', bytes(12))
         body += sub(b'FULL', ('Runemaster Bridge: ' + name).encode() + b'\0')
@@ -38,7 +43,7 @@ def make_plugin():
         body += sub(b'SPIT', struct.pack('<IIIfIIffI', 0, flags, 0, 0., 1, 1, 0., 0., 0))
         body += sub(b'EFID', struct.pack('<I', 0x01000000 | impact))
         body += sub(b'EFIT', struct.pack('<fII', 10., 0, 1))
-        spells += rec(b'SPEL', 0x02000800 + index, body)
+        spells += rec(b'SPEL', 0x02000000 | local_id, body)
     result += struct.pack('<4sI4sIHHHH', b'GRUP', 24 + len(spells), b'SPEL', 0, 0, 0, 0, 0) + spells
     return result
 
@@ -49,4 +54,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.destination.parent.mkdir(parents=True, exist_ok=True)
     args.destination.write_bytes(make_plugin())
-    print(f'Built {args.destination.name}: {len(make_plugin())} bytes, eight new spells, no overrides')
+    print(f'Built {args.destination.name}: {len(make_plugin())} bytes, sixteen new spells, no overrides')
