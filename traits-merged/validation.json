@@ -1,0 +1,16 @@
+{
+  "single_esp": true,
+  "esl_flagged": true,
+  "private_records": 34,
+  "record_bindings": "passed",
+  "quest_alias_and_seq": "passed",
+  "all_four_traits_registered": true,
+  "thumbnails_preserved": 4,
+  "unaffected_pex_preserved": 5,
+  "compiled_scripts": {
+    "FD_PowerGrantAlias": "same instructions and properties after reversing only merged lookup literals; identifier case ignored",
+    "WSN_TrackerQuest_Quest": "same instructions and properties after reversing only merged lookup literals; identifier case ignored"
+  },
+  "in_game_tested": false,
+  "save_migration_supported": false
+}

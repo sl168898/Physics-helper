@@ -1,0 +1,11 @@
+{
+  "plugin": "Biggie Traits - Combined.esp",
+  "records": 34,
+  "esl_flagged": true,
+  "new_record_range": "0x800-0xB05",
+  "references_checked": 144,
+  "script_lookups_remapped": 7,
+  "old_plugins_are_masters": false,
+  "requires_fresh_save": true,
+  "in_game_tested": false
+}
