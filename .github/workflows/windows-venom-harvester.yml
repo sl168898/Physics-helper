@@ -1,4 +1,4 @@
-name: Build venom-harvester return SKSE
+name: Build Venom Harvester SKSE
 on:
   workflow_dispatch:
   push:
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: venom-harvester-native-${{ github.ref }}
+  group: venom-harvester-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -21,10 +21,10 @@ jobs:
           key: waterskin-windows2022-staticmd-vcpkg-60b06921-v1
       - name: Build DLL and run harvest tests
         shell: pwsh
-        run: '& .\venom-harvester-native\tools\build_windows.ps1'
+        run: '& .\venom-harvester\tools\build_windows.ps1'
       - name: Upload installable native mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Venom-Harvester-SKSE-v1
-          path: venom-harvester-native/_build/Venom_Harvester_SKSE_v1.zip
+          path: venom-harvester/_build/Venom_Harvester_SKSE_v1.zip
           if-no-files-found: error
