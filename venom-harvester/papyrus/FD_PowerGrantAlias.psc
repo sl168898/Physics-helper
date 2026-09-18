@@ -22,7 +22,6 @@ Event OnUpdate()
     Spell penalty = Game.GetFormFromFile(0x830, "Biggie Traits - Fully Devoted.esp") as Spell
     Bool hasTrait = player.HasSpell(TraitAbility)
     MigrateVenomHarvester(player)
-    VH_Native.Poll()
     ; Retire the old activation power on existing saves.
     If player.HasSpell(PledgePower)
         player.RemoveSpell(PledgePower)
@@ -53,6 +52,7 @@ Event OnUpdate()
         Tracker.FDRemoveTrait(PreviousTarget.GetValue())
     EndIf
     RegisterForSingleUpdate(0.5)
+    VH_Native.Poll()
 EndEvent
 
 Function GrantClothingOnce(Actor player)

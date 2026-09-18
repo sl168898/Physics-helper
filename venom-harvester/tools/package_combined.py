@@ -13,6 +13,7 @@ STAGE = ROOT / 'staging'
 BASE = ROOT / 'base/extracted'
 sha = lambda b: hashlib.sha256(b).hexdigest()
 archive, commit, run = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+trait_commit = sys.argv[4] if len(sys.argv) > 4 else commit
 with zipfile.ZipFile(archive) as z:
     assert z.testzip() is None
     payload = {n.replace('\\', '/'): z.read(n) for n in z.namelist() if not n.endswith('/')}
@@ -69,6 +70,7 @@ for call in ['callstatic VH_Native Poll', 'callmethod MigrateVenomHarvester', 'c
              'callmethod RemovePerk', 'callmethod FDRemoveTrait']:
     assert call in controller, call
 assert 'callmethod AddItem' not in controller
+assert controller.index('callmethod FDRemoveTrait') < controller.index('callstatic VH_Native Poll')
 
 from PIL import Image
 thumbnail = STAGE / 'Interface/TraitPics/Traits_DevotedAlchemistAb.dds'
@@ -98,7 +100,7 @@ report = {
     'compiled_papyrus_interface_and_migration': 'verified', 'in_game_tested': False,
     'unchanged_other_trait_esps_and_thumbnails': True,
     'unchanged_other_scripts_except_shared_controller': True,
-    'source_commit': commit, 'windows_build_run': run,
+    'native_source_commit': commit, 'trait_source_commit': trait_commit, 'windows_build_run': run,
 }
 (docs / 'Validation.json').write_text(json.dumps(report, indent=2) + '\n')
 new = {str(p.relative_to(STAGE)): p.read_bytes() for p in STAGE.rglob('*') if p.is_file()}

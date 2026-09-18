@@ -76,8 +76,9 @@ before = '''    Spell alchemistTrait = Game.GetFormFromFile(0x800, "Biggie Trait
 '''
 assert script.count(before) == 1
 script = script.replace(before, '''    MigrateVenomHarvester(player)
-    VH_Native.Poll()
 ''')
+# Keep the existing controller and next tick alive even if the native DLL is missing.
+script = script.replace('    RegisterForSingleUpdate(0.5)\nEndEvent', '    RegisterForSingleUpdate(0.5)\n    VH_Native.Poll()\nEndEvent')
 start = script.index('Function GrantAlchemyGiftOnce(Actor player)')
 assert script[start:].strip().endswith('EndFunction')
 script = script[:start] + '''Function GrantAlchemyGiftOnce(Actor player)
