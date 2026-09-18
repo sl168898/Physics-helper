@@ -12,6 +12,9 @@ Original VenomHarvester.dll and all previous trait gameplay remain unchanged.
 
 Technical sources:
 - CommonLibSSE-NG b93280e832f263dbef44e44cbe2936622a02f91a (headers).
+- InventoryChanges::GetInventoryWeight is carried load; Actor::GetTotalCarryWeight
+  is capacity. This distinction is corroborated by OAR's inventory-weight condition:
+  https://github.com/ersh1/OpenAnimationReplacer/blob/f4e7688b065175aff70aa523073857911e15aca3/src/Conditions.cpp
 - Actor::ProcessHitData ID 37633/38586 and Actor*, HitData& signature:
   https://github.com/KrisV-777/Acheron/blob/ab9d303af7636ad6b25d04d9a61d82e497890249/src/Acheron/Hooks/Hooks.cpp
   https://github.com/D7ry/valhallaCombat/blob/48fb4c3b9bb6bbaa691ce41dbd33f096b74c07e3/src/include/Hooks.h

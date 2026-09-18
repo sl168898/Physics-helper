@@ -133,7 +133,10 @@ template<class T> struct BlessingHook {
         adjusting.erase(ae);
         auto p = RE::PlayerCharacter::GetSingleton();
         if (!selected(burden) || !target || target->GetTargetAsActor() != p || !isBlessing(ae)) return;
-        if (!traits::lightLoad(p->GetTotalCarryWeight(), p->AsActorValueOwner()->GetActorValue(RE::ActorValue::kCarryWeight))) return;
+        // GetTotalCarryWeight is the maximum capacity, NOT the inventory load.
+        // Use the same load/capacity pair as OAR's inventory-weight condition.
+        auto inventory = p->GetInventoryChanges(true);
+        if (!inventory || !traits::lightLoad(inventory->GetInventoryWeight(), p->GetTotalCarryWeight())) return;
         const auto flags = ae->effect->baseEffect->data.flags;
         if (!flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoMagnitude) && std::isfinite(ae->magnitude)) ae->magnitude *= 1.25f;
         if (ae->duration > 0 && std::isfinite(ae->duration)) ae->duration *= 2;

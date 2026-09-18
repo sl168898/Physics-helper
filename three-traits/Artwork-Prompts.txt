@@ -1,0 +1,20 @@
+Three separate images created with the built-in image generation tool.
+Common style: Skyrim trait menu thumbnails, painterly dark Nordic fantasy,
+wide landscape 1024x704, realistic gritty materials, cinematic chiaroscuro,
+muted earthy colors, full-bleed composition, no text, borders or watermark.
+
+Burden of Devotion: Humble cloaked pilgrim kneeling before a weathered Nordic
+stone shrine in a mountain sanctuary, small nearly empty leather satchel,
+golden sacred light over bowed figure, cold slate stone and pale mist.
+
+Unbroken Guard: Battle-worn Nordic warrior braced behind a battered iron-rimmed
+round shield as an enemy axe strikes its upper rim with sparks, determined
+face above shield, planted stance in snow, cold blue steel and warm sparks.
+
+Echoing Steel: Rugged Nordic warrior swinging a two-handed greatsword on a
+windswept mountain battlefield, both hands gripping one hilt, pale blue waves
+of resonating air following the blade like a dragon shout's echo, strong
+diagonal action, drifting snow, storm-grey sky and subdued gold highlights.
+
+Packaged artwork: Interface/TraitPics/Traits_BurdenOfDevotionAb.dds,
+Traits_UnbrokenGuardAb.dds and Traits_EchoingSteelAb.dds.
