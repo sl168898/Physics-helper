@@ -2,7 +2,7 @@ name: Build Venom Harvester SKSE
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/venom-harvester']
+    branches: ['codex/venom-harvester-merged']
 permissions:
   contents: read
 concurrency:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable native mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Venom-Harvester-SKSE-v1
-          path: venom-harvester/_build/Venom_Harvester_SKSE_v1.zip
+          name: Venom-Harvester-SKSE-v1-1
+          path: venom-harvester/_build/Venom_Harvester_SKSE_v1_1.zip
           if-no-files-found: error

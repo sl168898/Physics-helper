@@ -1,6 +1,6 @@
 # Venom Harvester
 
-Native backend for the Venom Harvester replacement in Biggie Traits Combined v1.6.
+Native backend 1.1.0 for Venom Harvester in Biggie Traits Combined v1.6 or the single-ESP v2.0 package.
 Requires Skyrim 1.6.1170, matching SKSE and Address Library for AE. Install the
 complete combined archive; this DLL alone does not add a selectable trait.
 
@@ -33,7 +33,7 @@ A private saved form list retains dynamic brewed poisons. Keep the matching
 `.skse` co-save with each Skyrim save. With a missing co-save, the plugin cannot
 recover old application history; start with a freshly poisoned target.
 
-The combined package retains the legacy `Biggie Traits - Devoted Alchemist.esp`
+The four-ESP package retains the legacy `Biggie Traits - Devoted Alchemist.esp`
 filename, its internal trait IDs and thumbnail path for upgrades. A one-time
 controller migration refreshes the selected ability, removes the retired crafting
 perk and disease effect, and disables future starting gifts. Items already gifted
@@ -57,3 +57,5 @@ API references (pinned CommonLib b93280e832f263dbef44e44cbe2936622a02f91a):
 - include/RE/T/TESDeathEvent.h
 - include/RE/B/BGSListForm.h
 - include/SKSE/Interfaces.h
+
+Single-ESP v2.0 resolves Venom Harvester at local ID 0xA00 in Biggie Traits - Combined.esp, with its private saved form list at 0xA06. The legacy four-plugin layout remains supported. This selection does not migrate saved game state between plugin layouts. Use the merged package on a new game or a save made before installing the four addons.

@@ -7,7 +7,8 @@
 
 namespace
 {
-    constexpr auto traitFile = "Biggie Traits - Devoted Alchemist.esp";
+    constexpr auto legacyTraitFile = "Biggie Traits - Devoted Alchemist.esp";
+    constexpr auto mergedTraitFile = "Biggie Traits - Combined.esp";
     constexpr auto phialFile = "The White Phial - Tweaks and Enhancements.esp";
     constexpr std::uint32_t saveID = 0x56484D31;  // VHM1, dedicated SKSE co-save section
     constexpr std::uint32_t recordID = 0x48415256;
@@ -413,9 +414,12 @@ namespace
     {
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
             auto data = RE::TESDataHandler::GetSingleton();
-            trait = data->LookupForm<RE::SpellItem>(0x800, traitFile);
-            retained = data->LookupForm<RE::BGSListForm>(0x806, traitFile);
-            const auto migration = data->LookupForm<RE::TESGlobal>(0x805, traitFile);
+            const bool merged = data->LookupModByName(mergedTraitFile) != nullptr;
+            const auto traitFile = merged ? mergedTraitFile : legacyTraitFile;
+            const RE::FormID base = merged ? 0xA00 : 0x800;
+            trait = data->LookupForm<RE::SpellItem>(base, traitFile);
+            retained = data->LookupForm<RE::BGSListForm>(base + 6, traitFile);
+            const auto migration = data->LookupForm<RE::TESGlobal>(base + 5, traitFile);
             phialPoison = data->LookupForm<RE::AlchemyItem>(0x80C, phialFile);
             phials = data->LookupForm<RE::BGSListForm>(0x817, phialFile);
             selectedLiquid = data->LookupForm<RE::BGSListForm>(0xD4A, phialFile);
@@ -423,13 +427,14 @@ namespace
             refillPotion = data->LookupForm<RE::EffectSetting>(0x9D6, "Update.esm");
             ready.store(trait && retained && migration);
             if (!ready.load()) {
-                SKSE::log::error("Disabled: enable the Venom Harvester ESP from Biggie Traits Combined v1.6 or later");
+                SKSE::log::error("Disabled: enable the Venom Harvester ESP from Biggie Traits Combined v1.6 or the single-ESP v2.0 package");
                 return;
             }
             auto source = RE::ScriptEventSourceHolder::GetSingleton();
             source->AddEventSink<RE::TESDeathEvent>(&Events::get());
             source->AddEventSink<RE::TESFormDeleteEvent>(&Events::get());
             installHooks();
+            SKSE::log::info("Trait layout: {}; plugin {}", merged ? "merged" : "four ESPs", traitFile);
             SKSE::log::info("Ready; trait {:08X}; White Phial mapping available={}", trait->GetFormID(),
                 phialPoison && phials && selectedLiquid && refillPoison && refillPotion);
         } else if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
@@ -444,7 +449,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 0, 0, 0 });
+    data.PluginVersion({ 1, 1, 0, 0 });
     data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -464,7 +469,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("VenomHarvester 1.0.0; Skyrim 1.6.1170; instance penalty 0.75; one poison per victim");
+    SKSE::log::info("VenomHarvester 1.1.0; Skyrim 1.6.1170; instance penalty 0.75; one poison per victim");
     auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID);
     serialization->SetSaveCallback(save);
