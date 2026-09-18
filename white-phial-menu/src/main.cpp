@@ -16,6 +16,7 @@ namespace
     namespace imgui = ImGuiMCP;
     using Clock = std::chrono::steady_clock;
     constexpr auto originalPlugin = "The White Phial - Tweaks and Enhancements.esp";
+    constexpr auto decantPlugin = "White Phial - Decanting.esp";
     std::array<RE::TESGlobal*, phial::count> globals{};
     bool formsReady = false;  // Only read/written by game thread tasks and SKSE messages.
     bool registered = false;
@@ -27,6 +28,7 @@ namespace
         std::uint64_t epoch = 1;
         bool session = false;
         bool ready = false;
+        bool decantAvailable = false;
         bool pollPending = false;
         bool applyPending = false;
         bool remember = false;
@@ -52,7 +54,7 @@ namespace
     phial::Values readValues()
     {
         phial::Values values{};
-        for (std::size_t i = 0; i < phial::count; ++i) values[i] = globals[i]->value;
+        for (std::size_t i = 0; i < phial::count; ++i) values[i] = globals[i] ? globals[i]->value : 0.0f;
         return values;
     }
 
@@ -183,6 +185,7 @@ namespace
             bool restored = true;
             if (restore) {
                 for (std::size_t i = 0; i < phial::count; ++i) {
+                    if (i == phial::autoDecant && !globals[i]) continue;
                     if (!phial::equal(globals[i]->value, profile.values[i]) && !writeSetting(i, profile.values[i])) {
                         restored = false;
                         break;
@@ -197,6 +200,7 @@ namespace
             shared.pollPending = false;
             const bool wasReady = shared.ready;
             shared.ready = ready;
+            shared.decantAvailable = globals[phial::autoDecant] != nullptr;
             if (!ready) {
                 if (formsReady && !shared.configError) shared.status = "Waiting for loading to finish...";
                 return;  // Keep restorePending for the loading-menu close event.
@@ -360,8 +364,19 @@ namespace
         imgui::Spacing();
         imgui::Separator();
 
+        imgui::BeginDisabled(!view.decantAvailable);
+        bool automatic = draft.request.desired[phial::autoDecant] >= 1;
+        if (imgui::Checkbox("Automatically decant at 8:00 AM", &automatic))
+            draft.edit(phial::autoDecant, automatic ? 1.0f : 0.0f);
+        imgui::EndDisabled();
+        if (view.decantAvailable)
+            imgui::TextWrapped("Once each in-game morning, bottle one dose if the White Phial is full and in your inventory. It then refills normally. Sleeping or traveling past 8:00 checks once when gameplay resumes.");
+        else
+            imgui::TextWrapped("Install and enable White Phial - Decanting v1.1 or later to use this option.");
+        imgui::Spacing();
+
         imgui::Checkbox("Remember settings across saves", &draft.request.remember);
-        imgui::TextWrapped("Apply to remember all three settings, including re-enchantment status, for other saves and new characters.");
+        imgui::TextWrapped("Apply to remember these settings, including re-enchantment status and daily decanting, for other saves and new characters.");
         imgui::Spacing();
         imgui::BeginDisabled(!draft.validEdits() && !view.saveFailed && !view.configError);
         if (imgui::Button("Apply changes")) requestApply(draft.request);
@@ -382,6 +397,8 @@ namespace
         imgui::TextWrapped("Current: %s | Refill: %.2f hours | Hotkey: %s",
             view.values[phial::repaired] >= 1 ? "Fully re-enchanted" : "Partially repaired",
             view.values[phial::hours], currentKey.c_str());
+        if (view.decantAvailable)
+            imgui::TextWrapped("Daily decanting at 8:00 AM: %s", view.values[phial::autoDecant] >= 1 ? "On" : "Off");
     }
 
     void registerMenu()
@@ -435,8 +452,13 @@ namespace
         formsReady = true;
         for (std::size_t i = 0; i < phial::count; ++i) {
             auto origin = globals[i] ? globals[i]->GetFile(0) : nullptr;
-            const bool valid = matches[i] == 1 && origin && _stricmp(origin->GetFilename().data(), originalPlugin) == 0;
+            const auto owner = i == phial::autoDecant ? decantPlugin : originalPlugin;
+            const bool valid = matches[i] == 1 && origin && _stricmp(origin->GetFilename().data(), owner) == 0;
             if (valid) SKSE::log::info("Resolved {} -> {:08X}; value={}", phial::editorIDs[i], globals[i]->GetFormID(), globals[i]->value);
+            else if (i == phial::autoDecant) {
+                globals[i] = nullptr;  // Optional addon must not disable the original settings.
+                SKSE::log::info("Daily decanting unavailable: enable White Phial - Decanting v1.1 or later");
+            }
             else {
                 formsReady = false;
                 SKSE::log::error("Missing/ambiguous global {} (matches={}) or unexpected owning plugin", phial::editorIDs[i], matches[i]);
@@ -488,7 +510,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 1, 2, 0 });
+    data.PluginVersion({ 1, 2, 0, 0 });
     data.PluginName("WhitePhialMenu");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -509,6 +531,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialMenu 1.1.2; Skyrim 1.6.1170; direct global writes; live hotkey registration; shared settings supported");
+    SKSE::log::info("WhitePhialMenu 1.2.0; Skyrim 1.6.1170; direct global writes; live hotkey registration; shared settings and daily 8 AM decanting supported");
     return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
 }

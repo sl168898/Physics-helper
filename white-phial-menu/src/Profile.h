@@ -37,12 +37,12 @@ namespace phial
         if (contents.size() > 16384) return { {}, "Configuration exceeds 16 KiB." };
         if (contents.starts_with("\xEF\xBB\xBF")) contents.remove_prefix(3);
         Profile result;
-        std::array<bool, 4> seen{};
+        std::array<bool, count + 1> seen{};
         bool section = false;
         std::istringstream input{ std::string(contents) };
         std::string raw;
-        constexpr std::array<std::string_view, 4> names{
-            "RememberAcrossSaves", "FullyReenchanted", "RefillHours", "Hotkey"
+        constexpr std::array<std::string_view, count + 1> names{
+            "RememberAcrossSaves", "FullyReenchanted", "RefillHours", "Hotkey", "AutoDecantAt8AM"
         };
         while (std::getline(input, raw)) {
             auto line = trim(raw);
@@ -75,6 +75,8 @@ namespace phial
         if (!seen[0]) return { {}, "RememberAcrossSaves is missing." };
         if (result.enabled && (!seen[1] || !seen[2] || !seen[3]))
             return { {}, "Shared settings require enchantment, refill time and hotkey values." };
+        // Profiles written by v4 omit AutoDecantAt8AM: keep their settings,
+        // with the new feature off until the player explicitly enables it.
         return { result, {} };
     }
 
@@ -84,7 +86,7 @@ namespace phial
         std::string text = "; Managed by White Phial Menu. Configure through White Phial > Settings.\n[WhitePhial]\nRememberAcrossSaves=";
         text += profile.enabled ? "1\n" : "0\n";
         if (!profile.enabled) return text;
-        constexpr std::array<std::string_view, count> names{ "FullyReenchanted", "RefillHours", "Hotkey" };
+        constexpr std::array<std::string_view, count> names{ "FullyReenchanted", "RefillHours", "Hotkey", "AutoDecantAt8AM" };
         for (std::size_t i = 0; i < count; ++i) {
             char number[64];
             const auto [end, error] = std::to_chars(number, number + sizeof(number), profile.values[i], std::chars_format::fixed);

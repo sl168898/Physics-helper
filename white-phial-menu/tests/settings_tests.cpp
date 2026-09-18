@@ -109,4 +109,16 @@ int main()
     draft.request.remember = true;
     assert(!draft.validEdits());
     assert(!canApply(draft.request, 4, draft.current));
+
+    // The fourth field participates in dirty masks and save-load isolation.
+    assert(valid(autoDecant, 0) && valid(autoDecant, 1) && !valid(autoDecant, 2));
+    draft.reset(5, Values{ 1, 24, 45, 0 });
+    draft.edit(autoDecant, 1);
+    assert(draft.request.dirty == 8 && draft.validEdits());
+    assert(canApply(draft.request, 5, draft.current));
+    assert(!canApply(draft.request, 6, draft.current));
+    draft.receive(5, Values{ 1, 24, 45, 1 });
+    assert(!draft.request.dirty && draft.request.desired[autoDecant] == 1);
+    draft.edit(autoDecant, 0.5f);
+    assert(!draft.validEdits());
 }

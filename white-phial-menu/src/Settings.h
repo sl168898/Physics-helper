@@ -9,10 +9,10 @@
 
 namespace phial
 {
-    enum Field : std::size_t { repaired, hours, hotkey, count };
+    enum Field : std::size_t { repaired, hours, hotkey, autoDecant, count };
     using Values = std::array<float, count>;
     inline constexpr std::array<std::string_view, count> editorIDs{
-        "TWPTE_PhialIsFullyRepaired", "TWPTE_ResetHours", "TWPTE_HotkeyButton"
+        "TWPTE_PhialIsFullyRepaired", "TWPTE_ResetHours", "TWPTE_HotkeyButton", "WPD_AutoDecantAt8AM"
     };
     inline constexpr float minHours = 0.1f, maxHours = 8760.0f;
 
@@ -21,7 +21,8 @@ namespace phial
     {
         if (!std::isfinite(value)) return false;
         switch (field) {
-        case repaired: return value == 0 || value == 1;
+        case repaired:
+        case autoDecant: return value == 0 || value == 1;
         case hours: return value >= minHours && value <= maxHours;
         case hotkey: return value >= 1 && value <= 281 && std::floor(value) == value;
         default: return false;
@@ -39,7 +40,7 @@ namespace phial
     inline bool canApply(const Request& request, std::uint64_t epoch, const Values& current,
         bool remember = false, bool retrySave = false)
     {
-        if (request.epoch != epoch || request.expectedRemember != remember || (request.dirty & ~7u)) return false;
+        if (request.epoch != epoch || request.expectedRemember != remember || (request.dirty & ~((1u << count) - 1u))) return false;
         if (!request.dirty && request.remember == remember && !retrySave) return false;
         for (std::size_t i = 0; i < count; ++i) {
             if (!(request.dirty & (1u << i))) continue;

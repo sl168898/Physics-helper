@@ -12,11 +12,15 @@ struct CommaDecimal : std::numpunct<char>
 int main()
 {
     using namespace phial;
-    Profile remembered{ true, { 1, 12.5f, 68 } };
+    Profile remembered{ true, { 1, 12.5f, 68, 1 } };
     auto encoded = serializeProfile(remembered);
     assert(encoded);
     auto parsed = parseProfile(*encoded);
     assert(parsed && parsed.profile.enabled && parsed.profile.values == remembered.values);
+    const auto legacy = parseProfile("[WhitePhial]\nRememberAcrossSaves=1\nFullyReenchanted=1\nRefillHours=24\nHotkey=45\n");
+    assert(legacy && legacy.profile.values == (Values{ 1, 24, 45, 0 }));
+    assert(!parseProfile("[WhitePhial]\nRememberAcrossSaves=0\nAutoDecantAt8AM=2\n"));
+    assert(!parseProfile("[WhitePhial]\nRememberAcrossSaves=0\nAutoDecantAt8AM=1\nAutoDecantAt8AM=0\n"));
     assert(!parseProfile("[WhitePhial]\nRememberAcrossSaves=1\nHotkey=68\n"));
     assert(!parseProfile("[WhitePhial]\nRememberAcrossSaves=1\nFullyReenchanted=1\nRefillHours=NaN\nHotkey=68\n"));
     assert(!parseProfile("[WhitePhial]\nRememberAcrossSaves=1\nFullyReenchanted=1\nRefillHours=12\nHotkey=9999\n"));
