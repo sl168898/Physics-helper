@@ -166,10 +166,14 @@ namespace
         imgui::Checkbox("Show text label", &settings.showLabel);
         imgui::Checkbox("Hide when the phial is not carried", &settings.hideAbsent);
         imgui::Checkbox("Hide in menus", &settings.hideInMenus);
-        imgui::SliderFloat("Horizontal position", &settings.x, 0, 100, "%.1f%%");
-        imgui::SliderFloat("Vertical position", &settings.y, 0, 100, "%.1f%%");
-        imgui::SliderFloat("Size", &settings.scale, 50, 250, "%.0f%%");
-        imgui::SliderFloat("Opacity", &settings.opacity, 10, 100, "%.0f%%");
+        imgui::SliderFloat("Horizontal position", &settings.x, 0, 100, "%.1f%%", imgui::ImGuiSliderFlags_AlwaysClamp);
+        imgui::SliderFloat("Vertical position", &settings.y, 0, 100, "%.1f%%", imgui::ImGuiSliderFlags_AlwaysClamp);
+        imgui::SliderFloat("Size", &settings.scale, 50, 250, "%.0f%%", imgui::ImGuiSliderFlags_AlwaysClamp);
+        imgui::SliderFloat("Opacity", &settings.opacity, 10, 100, "%.0f%%", imgui::ImGuiSliderFlags_AlwaysClamp);
+        if (!widget::valid(settings)) {
+            settings = savedSettings;
+            settingsMessage = "Invalid display value; saved settings restored.";
+        }
         imgui::TextWrapped("Changes take effect immediately. Save settings to keep them across saves and game restarts.");
         if (imgui::Button("Preview empty")) { previewState = widget::State::empty; previewUntil = Clock::now() + std::chrono::seconds(10); }
         imgui::SameLine();
@@ -236,7 +240,13 @@ namespace
         RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* event,
             RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
         {
-            if (event && event->opening && event->menuName == RE::MainMenu::MENU_NAME) resetSession(false);
+            if (event && event->opening) {
+                if (event->menuName == RE::MainMenu::MENU_NAME) resetSession(false);
+                else if (event->menuName == RE::LoadingMenu::MENU_NAME) {
+                    std::lock_guard lock(stateMutex);
+                    session.view.blocked = true;
+                }
+            }
             return RE::BSEventNotifyControl::kContinue;
         }
     } menuEvents;
