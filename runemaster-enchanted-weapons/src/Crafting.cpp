@@ -153,6 +153,17 @@ RE::InventoryEntryData* liveEntry(RE::PlayerCharacter* player, RE::TESBoundObjec
         for (auto entry : *changes->entryList) if (entry && entry->object == item) return entry;
     return nullptr;
 }
+RE::ExtraDataList* createExtraList() {
+    // AE 1.6.629+ adds a BaseExtraList vtable. CommonLib's portable declaration
+    // is opaque on AE: sizeof(ExtraDataList) and its C++ new/delete are not usable.
+    // Allocate the real 1.6.1170 size and run Skyrim's constructor, which also
+    // initializes the vtable and inventory-list lock.
+    auto memory = RE::malloc(0x20);
+    if (!memory) return nullptr;
+    using Constructor = RE::ExtraDataList* (*)(void*);
+    REL::Relocation<Constructor> construct{RELOCATION_ID(11437, 11583)};
+    return construct(memory);
+}
 bool transfer(RE::PlayerCharacter* player, RE::TESObjectWEAP* output, const Consumed& item, const Output& evidence) {
     if (!transferable(item.identity)) return true;
     auto entry = liveEntry(player, output);
@@ -169,11 +180,11 @@ bool transfer(RE::PlayerCharacter* player, RE::TESObjectWEAP* output, const Cons
     } else {
         const auto now = inventory(player, output, false);
         if (!now.valid || now.plain < 1) return false;
-        list = new RE::ExtraDataList();
     }
-    if (!reference(item.enchantment.get(), true)) {
-        if (!evidence.extraAddress) delete list;
-        return false;
+    if (!reference(item.enchantment.get(), true)) return false;
+    if (!list) {
+        list = createExtraList();
+        if (!list) { reference(item.enchantment.get(), false); return false; }
     }
     list->Add(new RE::ExtraEnchantment(item.enchantment.get(), item.identity.capacity, false));
     if (auto charge = list->GetByType<RE::ExtraCharge>()) charge->charge = item.identity.charge;

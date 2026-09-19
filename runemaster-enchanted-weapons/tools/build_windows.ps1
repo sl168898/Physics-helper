@@ -32,6 +32,9 @@ $VSWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer
 $MSBuild = (& $VSWhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1)
 if (!$MSBuild -or !(Test-Path $MSBuild)) { throw 'MSBuild was not found by vswhere' }
 Run $MSBuild @((Join-Path $Build 'RunemasterEnchantmentBridge.vcxproj'), '/t:ClCompile', '/p:Configuration=Release', '/p:Platform=x64', '/p:BuildProjectReferences=false', '/verbosity:minimal')
+# Run independent rules and ABI checks before the full support-library build.
+Run 'cmake' @('--build', $Build, '--config', 'Release', '--target', 'rules_tests', 'crafting_tests', 'abi_tests', '--parallel', '2')
+Run 'ctest' @('--test-dir', $Build, '-C', 'Release', '--output-on-failure')
 Run 'cmake' @('--build', $Build, '--config', 'Release', '--parallel', '2')
 Run 'ctest' @('--test-dir', $Build, '-C', 'Release', '--output-on-failure')
 # Copy only this DLL: CommonLib's install rules are not part of the mod package.
