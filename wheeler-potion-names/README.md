@@ -26,7 +26,9 @@ Your current Wheeler settings and visual assets are not included in this patch.
   Their counts and activation use the matching name, with a fresh inventory lookup
   immediately before use. Names are compared exactly, including case.
 - The batch name is stored in Wheeler's existing SKSE co-save data. No pointer to
-  an inventory stack is saved or retained between uses.
+  an inventory stack is saved or retained by the patch between uses. Rendered
+  names are copied when Wheeler refreshes its existing inventory snapshot, so
+  drawing does not dereference a stack that has since been consumed.
 - Renamed poisons carry their name through Refined's deferred poison-use flow.
 - Existing slots upgrade automatically when all owned copies of that potion have
   one custom name. If you own several differently named batches, **remove the old

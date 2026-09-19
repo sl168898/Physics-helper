@@ -1,3 +1,43 @@
+diff --git a/src/bin/Utilities/InventorySnapshotCache.cpp b/src/bin/Utilities/InventorySnapshotCache.cpp
+index 81f1b5a..712960e 100644
+--- a/src/bin/Utilities/InventorySnapshotCache.cpp
++++ b/src/bin/Utilities/InventorySnapshotCache.cpp
+@@ -1,5 +1,6 @@
+ #include "InventorySnapshotCache.h"
+ #include "Utils.h"
++#include "bin/Wheeler/WheelItems/WheelItemAlchemy.h"
+ 
+ #include "imgui.h"
+ 
+@@ -25,6 +26,7 @@ void InventorySnapshotCache::InitializeLogWindow(double a_now)
+ 
+ void InventorySnapshotCache::Invalidate()
+ {
++	WheelItemAlchemy::ForgetInventoryNames(_map);
+ 	_map.clear();
+ 	_nextRefreshTime = 0.0;
+ 	_valid = false;
+@@ -64,17 +66,20 @@ RE::TESObjectREFR::InventoryItemMap& InventorySnapshotCache::Get(
+ 
+ 	if (!a_player) {
+ 		_map.clear();
++		WheelItemAlchemy::CacheInventoryNames(_map);
+ 		_valid = false;
+ 		_nextRefreshTime = now + refreshIntervalSeconds;
+ 	} else if (shouldRefresh) {
+ 		const auto refreshStart = Clock::now();
+ 		if (!Utils::Inventory::TryGetInventorySnapshot(a_player, _map, "InventorySnapshotCache")) {
++			WheelItemAlchemy::CacheInventoryNames(_map);
+ 			_valid = false;
+ 			_nextRefreshTime = now + refreshIntervalSeconds;
+ 			_lastRefreshMs = 0.0;
+ 			_visibleLastFrame = true;
+ 			return _map;
+ 		}
++		WheelItemAlchemy::CacheInventoryNames(_map);
+ 		const auto refreshEnd = Clock::now();
+ 
+ 		_valid = true;
 diff --git a/src/bin/Wheeler/WheelItems/AlchemyBatch.h b/src/bin/Wheeler/WheelItems/AlchemyBatch.h
 new file mode 100644
 index 0000000..fa02a9f
@@ -57,10 +97,10 @@ index 0000000..fa02a9f
 +    }
 +}
 diff --git a/src/bin/Wheeler/WheelItems/WheelItemAlchemy.cpp b/src/bin/Wheeler/WheelItems/WheelItemAlchemy.cpp
-index 383e0f0..6b23a7d 100644
+index 383e0f0..8ae0fed 100644
 --- a/src/bin/Wheeler/WheelItems/WheelItemAlchemy.cpp
 +++ b/src/bin/Wheeler/WheelItems/WheelItemAlchemy.cpp
-@@ -4,12 +4,48 @@
+@@ -4,12 +4,57 @@
  #include "bin/Texts.h"
  #include "bin/Config.h"
  #include "WheelItemAlchemy.h"
@@ -68,9 +108,18 @@ index 383e0f0..6b23a7d 100644
  #include "RE/B/BGSEntryPointPerkEntry.h"
  
  #include <unordered_set>
++#include <unordered_map>
++#include <mutex>
  
  namespace
  {
++	// Refined retains inventory snapshots for 250 ms. Their ExtraDataList pointers
++	// can be freed by a consumed item before the next refresh. Cache owned strings
++	// at snapshot creation, never dereference those pointers on later draw frames.
++	using BatchNames = std::unordered_map<RE::FormID, std::vector<AlchemyBatch::Stack>>;
++	std::unordered_map<const RE::TESObjectREFR::InventoryItemMap*, BatchNames> cachedBatchNames;
++	std::mutex cachedBatchNamesMutex;
++
 +	struct InventoryBatches
 +	{
 +		std::vector<AlchemyBatch::Stack> stacks;
@@ -109,7 +158,7 @@ index 383e0f0..6b23a7d 100644
  	constexpr RE::FormID kTrackedI4DiagFormID = 0x00057A7A;
  
  	static std::int32_t GetPlayerItemCount(RE::AlchemyItem* a_item)
-@@ -374,14 +410,14 @@ void WheelItemAlchemy::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectRE
+@@ -374,14 +419,14 @@ void WheelItemAlchemy::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectRE
  		// Item no longer exists (e.g. crafted potion consumed), treat slot as empty.
  		return;
  	}
@@ -126,7 +175,7 @@ index 383e0f0..6b23a7d 100644
  	this->drawSlotText(a_center, text.data(), a_drawArgs);
  	this->drawSlotTexture(a_center, a_drawArgs);
  	// Potion cooldown overlays intentionally skipped unless a supporting mod is integrated.
-@@ -393,7 +429,7 @@ void WheelItemAlchemy::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Invento
+@@ -393,7 +438,7 @@ void WheelItemAlchemy::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Invento
  	if (!alchemyItem) {
  		return;
  	}
@@ -135,7 +184,7 @@ index 383e0f0..6b23a7d 100644
  	const bool keepMissing = IsKeepMissingCategoryEnabled(MissingCategory::Consumable);
  	const bool isDeployable = _alchemyItemType == WheelItemAlchemyType::kDeployable;
  	if (Config::WheelBehavior::ClearDepletedConsumables && itemCount <= 0 && !keepMissing && !isDeployable) {
-@@ -401,7 +437,7 @@ void WheelItemAlchemy::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Invento
+@@ -401,7 +446,7 @@ void WheelItemAlchemy::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Invento
  		return;
  	}
  	const float textShiftY = calculateHighlightTextShiftY(this->_description.c_str());
@@ -144,7 +193,7 @@ index 383e0f0..6b23a7d 100644
  	this->drawHighlightTexture(a_center, a_drawArgs);
  	if (!this->_description.empty()) {
  		this->drawHighlightDescription(a_center, this->_description.data(), a_drawArgs, textShiftY);
-@@ -419,7 +455,7 @@ bool WheelItemAlchemy::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
+@@ -419,7 +464,7 @@ bool WheelItemAlchemy::IsAvailable(RE::TESObjectREFR::InventoryItemMap& a_inv)
  	if (!alchemyItem) {
  		return false;
  	}
@@ -153,7 +202,7 @@ index 383e0f0..6b23a7d 100644
  }
  
  void WheelItemAlchemy::ActivateItemPrimary()
-@@ -477,6 +513,7 @@ void WheelItemAlchemy::SerializeIntoJsonObj(nlohmann::json& a_json)
+@@ -477,6 +522,7 @@ void WheelItemAlchemy::SerializeIntoJsonObj(nlohmann::json& a_json)
  {
  	a_json["type"] = WheelItemAlchemy::ITEM_TYPE_STR;
  	a_json["formID"] = this->_formID;
@@ -161,7 +210,7 @@ index 383e0f0..6b23a7d 100644
  }
  
  void WheelItemAlchemy::consume()
-@@ -491,7 +528,9 @@ void WheelItemAlchemy::consume()
+@@ -491,7 +537,9 @@ void WheelItemAlchemy::consume()
  	if (!pc) {
  		return;
  	}
@@ -172,7 +221,7 @@ index 383e0f0..6b23a7d 100644
  	if (countBefore <= 0) {
  		if (Config::WheelBehavior::ClearDepletedConsumables &&
  			!IsKeepMissingCategoryEnabled(MissingCategory::Consumable) &&
-@@ -500,11 +539,11 @@ void WheelItemAlchemy::consume()
+@@ -500,11 +548,11 @@ void WheelItemAlchemy::consume()
  		}
  		return;
  	}
@@ -186,7 +235,7 @@ index 383e0f0..6b23a7d 100644
  	if (Config::WheelBehavior::ClearDepletedConsumables && countBefore <= 1 &&
  		!IsKeepMissingCategoryEnabled(MissingCategory::Consumable) &&
  		_alchemyItemType != WheelItemAlchemyType::kDeployable) {
-@@ -537,8 +576,11 @@ void WheelItemAlchemy::applyPoison()
+@@ -537,8 +585,11 @@ void WheelItemAlchemy::applyPoison()
  		return;
  	}
  
@@ -200,7 +249,7 @@ index 383e0f0..6b23a7d 100644
  	if (Config::WheelBehavior::ClearDepletedConsumables && countBefore <= 1 &&
  		!IsKeepMissingCategoryEnabled(MissingCategory::Consumable)) {
  		Wheeler::QueueDepletedConsumablesCleanup();
-@@ -551,7 +593,11 @@ bool WheelItemAlchemy::IsDepletedInPlayerInventory()
+@@ -551,7 +602,11 @@ bool WheelItemAlchemy::IsDepletedInPlayerInventory()
  	if (!alchemyItem) {
  		return true;
  	}
@@ -213,7 +262,7 @@ index 383e0f0..6b23a7d 100644
  }
  
  RE::AlchemyItem* WheelItemAlchemy::ResolveAlchemyItem()
-@@ -582,6 +628,35 @@ RE::AlchemyItem* WheelItemAlchemy::ResolveAlchemyItem()
+@@ -582,6 +637,65 @@ RE::AlchemyItem* WheelItemAlchemy::ResolveAlchemyItem()
  
  const char* WheelItemAlchemy::GetItemName() const
  {
@@ -226,10 +275,40 @@ index 383e0f0..6b23a7d 100644
 +{
 +	auto* item = RE::TESForm::LookupByID<RE::AlchemyItem>(_formID);
 +	if (!item) return 0;
-+	const auto batches = DescribeBatches(item, inventory);
 +	const char* baseName = item->GetName();
++	{
++		std::lock_guard lock(cachedBatchNamesMutex);
++		if (const auto cached = cachedBatchNames.find(&inventory); cached != cachedBatchNames.end()) {
++			const auto found = cached->second.find(_formID);
++			if (found == cached->second.end()) return 0;
++			AlchemyBatch::AdoptUnambiguousName(found->second, baseName ? baseName : "", _inventoryName);
++			return AlchemyBatch::Select(found->second, _inventoryName).count;
++		}
++	}
++	// All other callers supply a fresh, local inventory snapshot.
++	const auto batches = DescribeBatches(item, inventory);
 +	AlchemyBatch::AdoptUnambiguousName(batches.stacks, baseName ? baseName : "", _inventoryName);
 +	return AlchemyBatch::Select(batches.stacks, _inventoryName).count;
++}
++
++void WheelItemAlchemy::CacheInventoryNames(RE::TESObjectREFR::InventoryItemMap& inventory)
++{
++	BatchNames names;
++	for (auto& [object, data] : inventory) {
++		if (object && data.first > 0) {
++			if (auto* item = object->As<RE::AlchemyItem>()) {
++				names.emplace(item->GetFormID(), DescribeBatches(item, inventory).stacks);
++			}
++		}
++	}
++	std::lock_guard lock(cachedBatchNamesMutex);
++	cachedBatchNames[&inventory] = std::move(names);
++}
++
++void WheelItemAlchemy::ForgetInventoryNames(RE::TESObjectREFR::InventoryItemMap& inventory)
++{
++	std::lock_guard lock(cachedBatchNamesMutex);
++	cachedBatchNames.erase(&inventory);
 +}
 +
 +bool WheelItemAlchemy::EquipInventoryBatch(RE::FormID formID, const std::optional<std::string>& name)
@@ -250,7 +329,7 @@ index 383e0f0..6b23a7d 100644
 +	return true;
 +}
 diff --git a/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h b/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h
-index 12f36a8..5913b05 100644
+index 12f36a8..37b59cb 100644
 --- a/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h
 +++ b/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h
 @@ -1,5 +1,7 @@
@@ -261,7 +340,7 @@ index 12f36a8..5913b05 100644
  class WheelItemAlchemy : public WheelItem
  {
  public:
-@@ -27,6 +29,12 @@ public:
+@@ -27,6 +29,14 @@ public:
  	// Safe for dynamic (crafted) items: returns true if the form cannot be resolved or player has 0 copies.
  	bool IsDepletedInPlayerInventory();
  	
@@ -270,11 +349,13 @@ index 12f36a8..5913b05 100644
 +	const std::optional<std::string>& GetInventoryName() const { return _inventoryName; }
 +	bool HasInventoryName() const { return _inventoryName.has_value(); }
 +	static bool EquipInventoryBatch(RE::FormID a_formID, const std::optional<std::string>& a_name);
++	static void CacheInventoryNames(RE::TESObjectREFR::InventoryItemMap& a_inventory);
++	static void ForgetInventoryNames(RE::TESObjectREFR::InventoryItemMap& a_inventory);
 +
  	// Inventory sync overrides
  	virtual bool IsInventoryBacked() const override { return true; }
  	virtual bool IsInPlayerInventory() const override { 
-@@ -51,6 +59,8 @@ private:
+@@ -51,6 +61,8 @@ private:
  	RE::AlchemyItem* _alchemyItem = nullptr;
  	// FormID used to safely re-resolve the item from the game's form table.
  	RE::FormID _formID = 0;
@@ -399,7 +480,7 @@ index 5f14a40..97065be 100644
 +	std::optional<std::string> _alchemyName;
  };
 diff --git a/src/bin/Wheeler/Wheeler.cpp b/src/bin/Wheeler/Wheeler.cpp
-index 0c8adfb..76678b9 100644
+index 0c8adfb..c17a544 100644
 --- a/src/bin/Wheeler/Wheeler.cpp
 +++ b/src/bin/Wheeler/Wheeler.cpp
 @@ -3990,7 +3990,7 @@ bool Wheeler::TryActivateHoveredEntryRTU(bool logDelaySkip)
@@ -447,7 +528,7 @@ index 0c8adfb..76678b9 100644
  						inInventory = true;
  						usedInventoryFallback = true;
  					}
-@@ -12000,6 +12004,9 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
+@@ -12000,8 +12004,10 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
  							missingItem->GetFormID(),
  							resolvedUniqueID);
  						if (resolved) {
@@ -455,9 +536,20 @@ index 0c8adfb..76678b9 100644
 +								alchemy->SetInventoryName(missingItem->GetAlchemyName());
 +							}
  							resolved->SetMissingCategory(category);
- 							entry->ReplaceItemAt(i, resolved);
+-							entry->ReplaceItemAt(i, resolved);
  							if (logMissing) {
-@@ -12026,7 +12033,9 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
+ 								MainWheelDebug::Log(MainWheelDebug::Category::Input, "InventoryPrune",
+ 									"restored wheel={} slot={} itemIdx={} formID={:08X} name='{}' type={} reason={}",
+@@ -12009,6 +12015,8 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
+ 									missingItem->GetItemName() ? missingItem->GetItemName() : "(null)",
+ 									missingItem->GetOriginalType(), reasonStr);
+ 							}
++							// Log before replacing the sole owner of the old placeholder.
++							entry->ReplaceItemAt(i, resolved);
+ 						}
+ 					}
+ 					continue;
+@@ -12026,12 +12034,13 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
  							if (auto mutableItem = dynamic_cast<WheelItemMutable*>(item)) {
  								uniqueID = mutableItem->GetUniqueID();
  							}
@@ -466,8 +558,16 @@ index 0c8adfb..76678b9 100644
 +							auto missingItem = std::make_shared<WheelItemMissing>(typeName, formID, uniqueID, category, name,
 +								alchemy ? alchemy->GetInventoryName() : std::nullopt);
  							missingItem->SetMissingCategory(category);
- 							// Replace this specific item in the stack
- 							if (i == entry->GetSelectedItemIndex()) {
+-							// Replace this specific item in the stack
+-							if (i == entry->GetSelectedItemIndex()) {
+-								entry->ReplaceSelectedItem(missingItem);
+-							}
++							// Preserve names for every item in the slot, including hidden ones.
++							entry->ReplaceItemAt(i, missingItem);
++							item = missingItem.get();
+ 						}
+ 					}
+ 					if (logMissing) {
 @@ -12069,7 +12078,8 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
  					std::uint16_t inventoryUniqueID = 0;
  					if (selectedItem->IsInventoryBacked()) {
@@ -478,18 +578,25 @@ index 0c8adfb..76678b9 100644
  							const int countByForm = getInventoryInfoByFormID(selectedItem->GetFormID(), &inventoryUniqueID);
  							if (countByForm > 0) {
  								selectedInInventory = true;
-@@ -12086,7 +12096,10 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
+@@ -12086,6 +12096,9 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
  								missingItem->GetFormID(),
  								resolvedUniqueID);
  							if (resolved) {
--								resolved->SetMissingCategory(category);
 +								if (auto alchemy = std::dynamic_pointer_cast<WheelItemAlchemy>(resolved)) {
-+								alchemy->SetInventoryName(missingItem->GetAlchemyName());
-+							}
-+							resolved->SetMissingCategory(category);
++									alchemy->SetInventoryName(missingItem->GetAlchemyName());
++								}
+ 								resolved->SetMissingCategory(category);
  								entry->ReplaceSelectedItem(resolved);
  								if (logMissing) {
- 									MainWheelDebug::Log(MainWheelDebug::Category::Input, "InventoryPrune",
+@@ -12094,6 +12107,8 @@ void Wheeler::PruneWheelEntries_NotInInventory(PruneReason reason)
+ 										w, s, selectedItem->GetFormID(), selectedItem->GetItemName() ? selectedItem->GetItemName() : "(null)",
+ 										selectedItem->GetItemTypeName(), reasonStr);
+ 								}
++								selectedItem = resolved;
++								selectedInInventory = resolved->IsAvailable(inventoryMap);
+ 							}
+ 						}
+ 					}
 diff --git a/src/bin/Wheeler/Wheeler.h b/src/bin/Wheeler/Wheeler.h
 index 4fc712f..87a039e 100644
 --- a/src/bin/Wheeler/Wheeler.h
