@@ -1,0 +1,30 @@
+name: Build Soul Gem Recharge Manual Menu
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/soul-recharge-manual-menu']
+permissions:
+  contents: read
+concurrency:
+  group: soul-recharge-manual-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: waterskin-windows2022-staticmd-vcpkg-60b06921-v1
+      - name: Build and test recharge menu and native bridge
+        shell: pwsh
+        run: '& .\soul-recharge-manual\tools\build_windows.ps1'
+      - name: Upload installable mod
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Soul-Gem-Recharge-Manual-Menu-v1-2
+          path: soul-recharge-manual/_build/Soul_Gem_Recharge_Manual_Menu_v1_2.zip
+          if-no-files-found: error

@@ -1,0 +1,3 @@
+Scriptname SKI_ConfigManager extends SKI_QuestBase
+Int Function UnregisterMod(SKI_ConfigBase menu)
+EndFunction
