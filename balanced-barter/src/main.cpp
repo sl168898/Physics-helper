@@ -416,10 +416,10 @@ void message(SKSE::MessagingInterface::Message* m) {
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version=[] {
     SKSE::PluginVersionData data{}; data.PluginVersion({0,1,0,0}); data.PluginName("BalancedBarter");
     data.AuthorName("Shen Lin custom mods"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
-    data.CompatibleVersions({SKSE::RUNTIME_SSE_1_6_1170}); return data;
+    data.CompatibleVersions({REL::Version{1,6,1170,0}}); return data;
 }();
 extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
-    if(skse->RuntimeVersion()!=SKSE::RUNTIME_SSE_1_6_1170) return false;
+    if(skse->RuntimeVersion()!=REL::Version{1,6,1170,0}) return false;
     SKSE::Init(skse);
     if(auto path=SKSE::log::log_directory()) {
         *path/="BalancedBarter.log";

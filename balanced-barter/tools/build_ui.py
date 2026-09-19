@@ -1,5 +1,6 @@
 """Build the single SkyUI 6.11 barter override using its pinned FFDec toolchain."""
 from pathlib import Path
+import os
 import re
 import subprocess
 import sys
@@ -52,11 +53,15 @@ def build(upstream, work, output):
             index=content.index('{')+1
             content=content[:index]+'\n   static var SKYUI_RELEASE_IDX = 2026;\n   static var SKYUI_VERSION_MAJOR = 6;\n   static var SKYUI_VERSION_MINOR = 11;\n   static var SKYUI_VERSION_STRING = "6.11 SE";\n'+content[index:]
         dest=stage/relative; dest.parent.mkdir(parents=True,exist_ok=True); dest.write_text(content,encoding='utf-8')
-    ffdec=upstream/'tools/FFDec/ffdec-cli.exe'
+    # Invoke the bundled CLI jar directly. Its Windows launcher only searches
+    # registry-installed JREs, whereas the runner supplies a portable JDK.
+    java_home=os.environ.get('JAVA_HOME_17_X64') or os.environ.get('JAVA_HOME')
+    java=str(Path(java_home)/'bin/java.exe') if java_home and sys.platform=='win32' else 'java'
+    ffdec=[java,'-Djava.awt.headless=true','-jar',upstream/'tools/FFDec/ffdec-cli.jar']
     output.parent.mkdir(parents=True,exist_ok=True)
     base=work/'barter-base.swf'
-    run(ffdec,'-xml2swf',upstream/'source/swf/bartermenu.xml',base)
-    run(ffdec,'-config','autoDeobfuscate=false,decompile=false','-onerror','abort','-importScript',base,output,stage.parent)
+    run(*ffdec,'-xml2swf',upstream/'source/swf/bartermenu.xml',base)
+    run(*ffdec,'-config','autoDeobfuscate=false,decompile=false','-onerror','abort','-importScript',base,output,stage.parent)
     data=output.read_bytes()
     if data[:3]==b'CWS': data=data[:8]+zlib.decompress(data[8:])
     assert data[:3] in (b'CWS',b'FWS') and len(data)>20000
