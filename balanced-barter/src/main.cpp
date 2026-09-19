@@ -3,6 +3,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -387,7 +388,9 @@ public:
 };
 bool registerScaleform(RE::GFxMovieView* movie,RE::GFxValue* root) {
     const char* url=movie->GetMovieDef()->GetFileURL();
-    if(!url || std::string_view(url).find("bartermenu.swf")==std::string_view::npos) return true;
+    std::string path=url ? url : "";
+    std::ranges::transform(path,path.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
+    if(path.find("bartermenu.swf")==std::string::npos) return true;
     auto state=std::make_shared<State>(); state->movie=movie;
     {std::scoped_lock lock(activeMutex);active=state;}
     for(auto [name,op]:{std::pair{"Open",Operation::open},{"Queue",Operation::queue},{"Remove",Operation::remove},{"Clear",Operation::clear},{"Commit",Operation::commit},{"Close",Operation::close},{"Status",Operation::status}}) {
@@ -415,7 +418,7 @@ void message(SKSE::MessagingInterface::Message* m) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version=[] {
     SKSE::PluginVersionData data{}; data.PluginVersion({0,1,0,0}); data.PluginName("BalancedBarter");
-    data.AuthorName("Shen Lin custom mods"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
+    data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1,6,1170,0}}); return data;
 }();
 extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse) {
@@ -428,5 +431,5 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         spdlog::set_default_logger(std::move(logger)); spdlog::flush_on(spdlog::level::info);
     }
     SKSE::log::info("Balanced Barter 0.1.0; Skyrim 1.6.1170; SkyUI 6.11");
-    return SKSE::GetScaleformInterface()->Register("BalancedBarter",registerScaleform) && SKSE::GetMessagingInterface()->RegisterListener(message);
+    return SKSE::GetScaleformInterface()->Register(registerScaleform,"BalancedBarter") && SKSE::GetMessagingInterface()->RegisterListener(message);
 }

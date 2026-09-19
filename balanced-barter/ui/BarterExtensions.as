@@ -40,6 +40,21 @@ class BalancedBarterExtensions
          this.BBResult(this._bbAPI.Status(this._playerGold,this._vendorGold));
       }
    }
+   function setConfig(a_config)
+   {
+      super.setConfig(a_config);
+      var list = this.inventoryLists.itemList;
+      list.addDataProcessor(new BarterDataSetter(this._buyMult,this._sellMult));
+      list.addDataProcessor(new InventoryIconSetter(a_config.Appearance));
+      list.addDataProcessor(new skyui.props.PropertyDataExtender(a_config.Appearance,a_config.Properties,"itemProperties","itemIcons","itemCompoundProperties"));
+      var layout = skyui.components.list.ListLayoutManager.createLayout(a_config.ListLayout,"ItemListLayout");
+      list.layout = layout;
+      if(this.inventoryLists.categoryList.selectedEntry)
+      {
+         layout.changeFilterFlag(this.inventoryLists.categoryList.selectedEntry.flag);
+      }
+      this.BBLayout();
+   }
    function onItemSelect(event)
    {
       if(this._bbAPI == undefined || this._bbState.busy || this._bbSubMenu || event.entry == undefined)
@@ -95,6 +110,10 @@ class BalancedBarterExtensions
          this._bbAPI.Close();
       }
       gfx.io.GameDelegate.call("CloseMenu",[]);
+   }
+   function onExitMenuRectClick()
+   {
+      this.onExitButtonPress();
    }
    function handleInput(details, pathToFocus)
    {
@@ -290,8 +309,10 @@ class BalancedBarterExtensions
             var item = rows[this._bbPage * 4 + row];
             if(item != undefined)
             {
-               var label = "- " + item.count + "x " + item.name + "  (" + item.count * item.price + ")";
-               this.BBButton("row" + side + "_" + row,8 + side * (column + 8),26 + row * 21,column - 1,label,"BBRemove",item.id);
+               var label = "- " + item.count + "x " + item.name;
+               var rowButton = this.BBButton("row" + side + "_" + row,8 + side * (column + 8),26 + row * 21,column - 1,label,"BBRemove",item.id);
+               rowButton.label._width = column - 72;
+               this.BBText(rowButton,"value",column - 66,0,62,String(item.count * item.price),12,0xdfcd9a);
             }
          }
       }
@@ -300,7 +321,7 @@ class BalancedBarterExtensions
       this.BBText(panel,"balance",8,112,width - 16,balance,14,this._bbState.ready ? 0xb9dba7 : 0xe0b7a7);
       this.BBText(panel,"message",8,132,width - 16,this._bbState.message,11,0xcacaca);
       var confirm = this._platform == 0 ? "[Ctrl+Enter] Exchange" : "[X] Exchange";
-      var clear = this._platform == 0 ? "[Ctrl+Backspace] Clear" : "[Y] Clear";
+      var clear = this._platform == 0 ? "[Ctrl+Bksp] Clear" : "[Y] Clear";
       this.BBButton("confirm",8,157,column - 4,confirm,"BBConfirm",0);
       this.BBButton("clearOffer",column + 12,157,column - 75,clear,"BBClear",0);
       this.BBButton("previous",width - 68,157,27,"<","BBPage",-1);
