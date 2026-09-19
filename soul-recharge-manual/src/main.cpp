@@ -172,6 +172,11 @@ bool gameplayBlocked() {
     return !ui || ui->GameIsPaused() || ui->IsMenuOpen(RE::Console::MENU_NAME) || Menu::IsAnyBlockingWindowOpened();
 }
 using InputFunction=RE::BSEventNotifyControl(*)(void*,RE::InputEvent* const*,RE::BSTEventSource<RE::InputEvent*>*);
+struct EventDeleter {
+    void operator()(RE::ButtonEvent* event) const {
+        if(event) {std::destroy_at(&event->userEvent);RE::free(event);}
+    }
+};
 RE::BSEventNotifyControl inputRelay(void* self,RE::InputEvent* const* events,RE::BSTEventSource<RE::InputEvent*>* source) {
     if(!events) return RE::BSEventNotifyControl::kContinue;
     const bool blocked=gameplayBlocked();
@@ -186,9 +191,10 @@ RE::BSEventNotifyControl inputRelay(void* self,RE::InputEvent* const* events,RE:
             lastRequest=now;
         }
         // Private copy passed only to this mod's original sink, never broadcast.
-        RE::ButtonEvent copy=*button;copy.next=nullptr;
-        copy.idCode=action==sr::InputAction::recharge ? sr::bridge::rechargeKey() : sr::bridge::snapshotKey();
-        RE::InputEvent* head=&copy;
+        const auto key=action==sr::InputAction::recharge ? sr::bridge::rechargeKey() : sr::bridge::snapshotKey();
+        std::unique_ptr<RE::ButtonEvent,EventDeleter> copy(RE::ButtonEvent::Create(RE::INPUT_DEVICE::kKeyboard,button->userEvent,key,button->Value(),button->HeldDuration()));
+        if(!copy) continue;
+        RE::InputEvent* head=copy.get();
         reinterpret_cast<InputFunction>(sr::bridge::originalInput)(self,&head,source);
     }
     return RE::BSEventNotifyControl::kContinue;
@@ -254,7 +260,13 @@ void __stdcall menuEvent(Menu::Model::EventType type) {
 void message(SKSE::MessagingInterface::Message* message) {
     switch(message->type) {
     case SKSE::MessagingInterface::kPostPostLoad: {
-        frameworkAvailable=GetModuleHandleW(L"SKSEMenuFramework.dll") && Menu::GetMenuFrameworkVersion()>=3.18f;
+        // The framework's legacy float is an API revision (currently 3.8),
+        // not its Nexus release version. Check the required exports instead.
+        if(auto module=GetModuleHandleW(L"SKSEMenuFramework.dll")) {
+            frameworkAvailable=true;
+            for(auto symbol:{"AddSectionItem","RegisterInpoutEvent","IsAnyBlockingWindowOpened","RegisterEventPriority","SetHotkeyEnabled","IsHotkeyEnabled"})
+                frameworkAvailable=frameworkAvailable && GetProcAddress(module,symbol)!=nullptr;
+        }
         if(sr::bridge::install(GetModuleHandleW(L"AGH_SoulRecharge_G0.dll"),bridgeError)) {
             loadPreferences();
             if(!sr::bridge::installInput(reinterpret_cast<std::uintptr_t>(&inputRelay))) {
