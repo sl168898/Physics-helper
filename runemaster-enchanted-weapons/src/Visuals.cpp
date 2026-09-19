@@ -97,7 +97,7 @@ bool belongsTo(RE::NiAVObject* model, RE::NiAVObject* root) {
 }
 
 void updateActor(RE::Actor* actor, bool firstPerson) {
-    if (!actor || !eligible(actor->Is3DLoaded(), !actor->IsDead(), actor->IsWeaponDrawn(), true, false, false)) return;
+    if (!actor || !eligible(actor->Is3DLoaded(), !actor->IsDead(), actor->AsActorState()->IsWeaponDrawn(), true, false, false)) return;
     const auto& biped = actor->GetBiped(firstPerson);
     if (!biped || !biped->root) return;
     auto right = actor->GetEquippedObject(false);
