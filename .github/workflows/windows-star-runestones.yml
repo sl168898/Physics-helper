@@ -1,0 +1,30 @@
+name: Build Star runestone recipes
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/star-runestone-recipes']
+permissions:
+  contents: read
+concurrency:
+  group: star-runestone-recipes-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: waterskin-windows2022-staticmd-vcpkg-60b06921-v1
+      - name: Build DLL and test soul crafting
+        shell: pwsh
+        run: '& .\star-runestone-recipes\tools\build_windows.ps1'
+      - name: Upload installable Star recipes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Star-Runestone-Recipes-v1-0
+          path: star-runestone-recipes/_build/Star_Runestone_Recipes_v1_0.zip
+          if-no-files-found: error
