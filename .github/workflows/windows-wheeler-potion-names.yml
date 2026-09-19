@@ -1,0 +1,30 @@
+name: Build Wheeler Refined Rename Potions Patch
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/wheeler-rename-potions']
+permissions:
+  contents: read
+concurrency:
+  group: wheeler-rename-potions-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: wheeler-windows2022-staticmd-vcpkg-382c5b8a-v1
+      - name: Build and test Wheeler name compatibility
+        shell: pwsh
+        run: '& .\wheeler-potion-names\tools\build_windows.ps1'
+      - name: Upload installable mod
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Wheeler-Refined-Rename-Potions-Patch-v1-0
+          path: wheeler-potion-names/_build/Wheeler_Refined_Rename_Potions_Patch_v1_0.zip
+          if-no-files-found: error
