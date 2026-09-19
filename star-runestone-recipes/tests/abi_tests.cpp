@@ -3,6 +3,7 @@
 // of Skyrim, so swapping the implicit result buffer and this fails the test.
 #include <cassert>
 #include <cstdint>
+#include <memory>
 #include <type_traits>
 
 struct Handle {
@@ -22,9 +23,14 @@ struct Actor {
 using Remove = Handle* (*)(Actor*, Handle*, void*, std::int32_t, void*, void*);
 Remove original;
 bool reached = false;
+bool preserve = false;
 Handle* thunk(Actor* actor, Handle* result, void* item, std::int32_t count, void* extra, void* destination) {
     assert(actor->marker == 0x12345678 && result);
     reached = true;
+    if (preserve) {
+        std::construct_at(result);
+        return result;
+    }
     return original(actor, result, item, count, extra, destination);
 }
 __declspec(noinline) Handle invoke(Actor* actor) {
@@ -39,6 +45,9 @@ int main() {
     void* replacement[] = {reinterpret_cast<void*>(&thunk)};
     table = replacement;
     auto result = invoke(&actor);
+    preserve = true;
+    auto retained = invoke(&actor);
     table = saved;
     assert(reached && result.value == actor.marker);
+    assert(retained.value == 0 && actor.marker == 0x12345678);
 }

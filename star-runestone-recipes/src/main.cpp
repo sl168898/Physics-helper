@@ -181,7 +181,8 @@ void initialize() {
     auto command = RE::SCRIPT_FUNCTION::LocateScriptCommand("GetGlobalValue");
     if (!command || !command->conditionFunction) { SKSE::log::error("GetGlobalValue condition is unavailable"); return; }
     originalGlobalCondition = command->conditionFunction;
-    REL::safe_write(reinterpret_cast<std::uintptr_t>(&command->conditionFunction), &globalCondition);
+    REL::safe_write(reinterpret_cast<std::uintptr_t>(&command->conditionFunction),
+        reinterpret_cast<std::uintptr_t>(&globalCondition));
     REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
     originalRemove = table.write_vfunc(0x56, removeHook);
     originalAdd = table.write_vfunc(0x5A, addHook);
