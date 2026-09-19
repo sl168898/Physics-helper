@@ -53,9 +53,10 @@ is never silently discarded. Leaving the menu discards an unconfirmed offer.
   another inventory hook prevents a move; a recovery failure is logged.
 - No temporary gold grant, persistent credit account, power, quest or Papyrus
   script. Pending offers do not survive closing the menu or loading a save.
-- Awards Speech experience using the total underlying item value of the units
-  exchanged, including enchanted value. This is explicit batch experience;
-  mods changing the vanilla individual-transaction XP path may not affect it.
+- Sends the total underlying value of all exchanged units, including enchanted
+  value, through the engine's Speech skill-use function. The engine applies its
+  skill-use multiplier and experience bonuses. Mods changing only the vanilla
+  individual-transaction callback may still need a compatibility patch.
 - Native inventory transfers replace the vanilla per-item barter callback.
   Mods hooking that callback, custom currencies, sale-specific scripts,
   unusual merchant containers and unpaused barter need separate game testing.

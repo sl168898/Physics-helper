@@ -290,8 +290,9 @@ void commit(const std::shared_ptr<State>& state) {
             ok=barter::transact(prepared,tx.items.size());
         }
         if(ok) {
-            // Use actual item values, including enchantments, and every unit.
-            if(tx.experience>0) player->AddSkillExperience(RE::ActorValue::kSpeech,static_cast<float>(std::min(tx.experience,double(barter::limit))));
+            // Route the total item value through normal skill use so the game
+            // applies the Speech skill's use multiplier and experience bonuses.
+            if(tx.experience>0) player->UseSkill(RE::ActorValue::kSpeech,static_cast<float>(std::min(tx.experience,double(barter::limit))),nullptr);
             state->vendorGold+=tx.settlement.net;
             state->playerGold=count(player,gold());
             state->offers.clear(); state->status="Exchange complete";
