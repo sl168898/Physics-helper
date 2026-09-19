@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable rune compatibility patch
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Runemaster-Enchanted-Weapons-v1-1
-          path: runemaster-enchanted-weapons/_build/Runemaster_Enchanted_Weapons_v1_1.zip
+          name: Runemaster-Enchanted-Weapons-v1-2
+          path: runemaster-enchanted-weapons/_build/Runemaster_Enchanted_Weapons_v1_2.zip
           if-no-files-found: error

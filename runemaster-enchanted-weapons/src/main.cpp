@@ -6,6 +6,8 @@
 #include <vector>
 #include "Rules.h"
 #include "Crafting.h"
+#include "Visuals.h"
+#include "VisualRules.h"
 
 namespace {
 constexpr auto sourceFile = "RunemasterMagic.esl";
@@ -292,6 +294,27 @@ bool resolvePermanent() {
     return true;
 }
 bool enabled() { return ready && session; }
+runes::visuals::Appearance visualAppearance(RE::Actor* actor, RE::TESObjectWEAP* weapon) {
+    auto current = select(actor);
+    RE::EnchantmentItem* permanent = nullptr;
+    for (const auto& rune : permanentData)
+        if (rune.weapon == weapon) { permanent = rune.enchantment; break; }
+    const auto selected = runes::visuals::choose(
+        current.rune ? current.rune->enchantment->GetFormID() : 0,
+        permanent ? permanent->GetFormID() : 0);
+    auto enchantment = current.rune && selected == current.rune->enchantment->GetFormID()
+        ? current.rune->enchantment : permanent;
+    if (!enchantment) return {};
+    // Read the winning original effect's visual assets. No duplicate artwork,
+    // replacement enchantment, or edits to a normal enchantment are needed.
+    for (auto effect : enchantment->effects) {
+        if (!effect || !effect->baseEffect) continue;
+        const auto& data = effect->baseEffect->data;
+        if (data.enchantEffectArt || data.enchantShader)
+            return {data.enchantEffectArt, data.enchantShader};
+    }
+    return {};
+}
 void initialize() {
     auto holder = RE::ScriptEventSourceHolder::GetSingleton();
     if (!holder || !resolve() || !resolvePermanent()) return;
@@ -327,10 +350,12 @@ void initialize() {
     holder->AddEventSink<RE::TESHitEvent>(&events);
     holder->AddEventSink<RE::TESMagicEffectApplyEvent>(&events);
     ready = true;
+    runes::visuals::install(enabled, visualAppearance);
     SKSE::log::info("Ready: eight castable runes, eight Transfer Rune variants, eight enchantable permanent rune weapons");
 }
 void newSession(bool successful) {
     session = false;
+    runes::visuals::reset();
     runes::crafting::reset();
     ++epoch;
     diagnosticHits = 0;
@@ -348,7 +373,7 @@ void message(SKSE::MessagingInterface::Message* message) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({1,1,0,0}); data.PluginName("RunemasterEnchantmentBridge");
+    data.PluginVersion({1,2,0,0}); data.PluginName("RunemasterEnchantmentBridge");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1,6,1170,0}}); return data;
@@ -361,6 +386,6 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Runemaster Enchanted Weapons 1.1.0; Skyrim 1.6.1170; original Runemaster Magic 1.5 required");
+    SKSE::log::info("Runemaster Enchanted Weapons 1.2.0; Skyrim 1.6.1170; original Runemaster Magic 1.5 required");
     return SKSE::GetMessagingInterface()->RegisterListener(message);
 }

@@ -1,6 +1,6 @@
-# Runemaster Enchanted Weapons 1.1.0
+# Runemaster Enchanted Weapons 1.2.0
 
-Use Runemaster runes alongside normal weapon enchantments. Version 1.1 also
+Use Runemaster runes alongside normal weapon enchantments. The add-on also
 makes all eight permanent rune weapons enchantable and preserves player-made
 enchantments when an ebony weapon is converted at the forge.
 
@@ -11,7 +11,7 @@ Kittytail's Runemaster Magic **1.5** (`RunemasterMagic.esl`). Windows x64 only.
 
 1. Let active castable Runemaster weapon runes expire on yourself and nearby
    companions. Unequip permanent rune weapons, save and quit the game.
-2. Install this ZIP. If updating from 1.0, **replace the previous add-on**.
+2. Install this ZIP. If updating from 1.0 or 1.1, **replace the previous add-on**.
    Keep the original Runemaster mod enabled. This is the complete updated mod;
    no separate hotfix or extra dependency is required.
 3. Enable `Runemaster Enchanted Weapons.esp` after Runemaster and your
@@ -20,7 +20,34 @@ Kittytail's Runemaster Magic **1.5** (`RunemasterMagic.esl`). Windows x64 only.
 4. Launch through SKSE. Existing permanent rune weapons are supported; you do
    not need to obtain new copies. No new power, inventory item or hotkey is added.
 
-## Permanent rune weapons (new in 1.1)
+## Rune weapon visuals (new in 1.2)
+
+The original Arcane and Tenebrous rune art and surface shaders are now applied
+independently to the actual drawn weapon model. Normal enchantments still use
+their ordinary slot, charge, strength and hit effects.
+
+- Supports castable runes, Transfer Rune recipients and all eight permanent
+  rune weapons. Uses the visual assets in your winning Runemaster records.
+- Updates the player's active first/third-person model, each weapon model
+  when dual wielding, two-handed weapons and the permanent runic bow.
+- Temporary visuals end when the rune expires or is consumed. When a castable
+  rune is on a permanent rune weapon, its appearance takes precedence until
+  it ends, then the permanent appearance returns. Combat effects are unchanged.
+- Visuals stop on sheathing, unequipping, death or leaving loaded actor range,
+  and are reconstructed after loading a save or changing the weapon model.
+  Reconciliation happens on the game thread up to four times per second.
+- Only this add-on's visual instances are stopped. Surface glow may blend with
+  or visually cover the normal enchantment's glow; this is not a guarantee of
+  two distinct surface glows at once. Both enchantment and rune effects work
+  through their existing combat paths regardless of that presentation.
+- The controller does not save extra visual instances. No new meshes, textures,
+  Papyrus scripts, inventory enchantments or dependencies are installed.
+
+This implementation reuses the original artwork, but its actual alignment,
+first-person visibility and shader interaction still require in-game checking.
+There is no claim of verified pixel-for-pixel parity with the original visuals.
+
+## Permanent rune weapons
 
 The Sundering Runic Battleaxe, Almighty Runic Bow, Spectral Runic Dagger,
 Umbral Runic Greatsword, Baleful Runic Mace, Tempest Runic Sword, Stunning Runic
@@ -64,8 +91,8 @@ therefore no longer appear in the weapon's ordinary enchantment panel.
   for their original duration. No Recast restrictions remain in use.
 - A new castable rune replaces the previous one. Spell hits, staff attacks,
   unarmed attacks and bashes do not trigger rune impacts.
-- Original impact and explosion visuals remain. The temporary weapon glow
-  may differ because a replacement weapon enchantment is no longer installed.
+- Original impact and explosion visuals remain. Version 1.2 also applies the
+  original weapon rune art and shader independently of the enchantment slot.
 
 ## Validation and first in-game checks
 
@@ -78,12 +105,16 @@ packaging. **This release has not been tested inside Skyrim.**
 2. Convert a player-enchanted ebony weapon at the forge. Check its enchantment
    and remaining charge, then save/reload and check again. For a clear first
    test, carry just one eligible ebony weapon.
-3. Cast a temporary rune on an ordinarily enchanted weapon and check that both
+3. Check the rune artwork in first and third person, draw/sheathe, switch
+   weapons and let a rune expire. Confirm old visuals disappear and save/reload
+   does not duplicate them. Try dual wielding if you use it.
+4. Cast a temporary rune on an ordinarily enchanted weapon and check that both
    effects still work. Test a one-use rune and a sustained rune.
 
 `RunemasterEnchantmentBridge.log` is in your SKSE log directory. Successful
 startup reports eight castable runes and eight enchantable permanent rune
 weapons. Successful crafting transfer logs `Preserved crafted enchantment`.
+Visual attachments log `Rune visuals` (first sixteen per loaded game).
 Unexpected or ambiguous inventory changes are logged and left untouched.
 There are no on-screen notifications. The first 24 rune impacts per session
 are logged for diagnosis.
