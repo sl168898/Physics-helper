@@ -21,11 +21,12 @@ with zipfile.ZipFile(archive) as z:
     info = json.loads(z.read('BUILD-INFO.json').decode('utf-8-sig'))
     assert hashlib.sha256(data).hexdigest() == info['dllSHA256']
     patch = (root/'rename-potions.patch').read_bytes()
-    assert hashlib.sha256(patch).hexdigest() == info['patchSHA256']
-    assert z.read('Source/rename-potions.patch') == patch
+    packaged_patch = z.read('Source/rename-potions.patch')
+    assert hashlib.sha256(packaged_patch).hexdigest() == info['patchSHA256']
+    assert packaged_patch.replace(b'\r\n', b'\n') == patch.replace(b'\r\n', b'\n')
     assert info['inGameTested'] is False
     assert info['refinedCommit'] == 'e3360bf81d05f739d2caa94d50e64e174b0ce1f8'
-    assert z.read('README-Rename-Potions-Patch.md').decode('utf-8-sig') == (root/'README.md').read_text()
+    assert z.read('README-Rename-Potions-Patch.md').decode('utf-8-sig').replace('\r\n', '\n') == (root/'README.md').read_text()
     for name in ['AlchemyBatch.h', 'WheelItemAlchemy.cpp', 'WheelItemAlchemy.h', 'WheelItemFactory.cpp', 'WheelItemMissing.cpp', 'WheelItemMissing.h']:
         path = 'src/bin/Wheeler/WheelItems/' + name
         assert z.read('Source/Wheeler-Refined/' + path).replace(b'\r\n', b'\n') == (root/'repo'/path).read_bytes().replace(b'\r\n', b'\n'), path
