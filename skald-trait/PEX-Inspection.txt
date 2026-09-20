@@ -1,0 +1,153 @@
+read file: `/workspace/scratch/4816bf463fa1/skald-rebuild/repo/skald-trait/compiled/BT_SkaldHitEffect.pex`
+&==============================Header==============================
+magic_number: 0xfa57c0de
+major_version: 3
+minor_version: 2
+game_id: skyrim
+compilation_time: 1789870964
+src_file_name: BT_SkaldHitEffect.psc
+user_name: ::USERNAME::
+machine_name: localhost
+============================================================
+==============================String table==============================
+String table[42]:
+string_table[0] = 'BT_SkaldHitEffect', string_table[1] = 'ActiveMagicEffect', string_table[2] = '', string_table[3] = 'conditional', string_table[4] = 'hidden', string_table[5] = 'GetState', string_table[6] = 'String', string_table[7] = 'Function that returns the current state', string_table[8] = '::State', string_table[9] = 'GotoState', string_table[10] = 'None', string_table[11] = 'Function that switches this object to the specified state', string_table[12] = 'newState', string_table[13] = '::NoneVar', string_table[14] = 'onEndState', string_table[15] = 'self', string_table[16] = 'onBeginState', string_table[17] = 'PlayerRef', string_table[18] = 'Actor', string_table[19] = '::PlayerRef_var', string_table[20] = 'TraitAbility', string_table[21] = 'Spell', string_table[22] = '::TraitAbility_var', string_table[23] = 'RecoverySeconds', string_table[24] = 'Float', string_table[25] = '::RecoverySeconds_var', string_table[26] = 'originalSkald', string_table[27] = 'OnEffectStart', string_table[28] = 'akTarget', string_table[29] = 'akCaster', string_table[30] = 'OnHit', string_table[31] = 'akAggressor', string_table[32] = 'ObjectReference', string_table[33] = 'akSource', string_table[34] = 'Form', string_table[35] = 'akProjectile', string_table[36] = 'Projectile', string_table[37] = 'abPowerAttack', string_table[38] = 'Bool', string_table[39] = 'abSneakAttack', string_table[40] = 'abBashAttack', string_table[41] = 'abHitBlocked'
+
+============================================================
+==============================Debug Info==============================
+modification_time: 1616261626
+functions[4]: 
+	object name: 'BT_SkaldHitEffect'
+	state name: ''
+	func name: 'GetState'
+	type: 0
+	instruction count: 0
+
+	object name: 'BT_SkaldHitEffect'
+	state name: ''
+	func name: 'GotoState'
+	type: 0
+	instruction count: 0
+
+	object name: 'BT_SkaldHitEffect'
+	state name: ''
+	func name: 'OnEffectStart'
+	type: 0
+	instruction count: 0
+
+	object name: 'BT_SkaldHitEffect'
+	state name: ''
+	func name: 'OnHit'
+	type: 0
+	instruction count: 0
+	
+============================================================
+==============================Objects==============================
+Objects[1]:
+	name: 'BT_SkaldHitEffect'
+	size: 0xfc
+	parent: 'ActiveMagicEffect'
+	doc: ''
+	user flags(0x0): []
+	auto state name: ''
+	variables[4]:
+		name: '::PlayerRef_var'
+		type name: 'Actor'
+		user flags(0): []
+		data: none
+		
+		name: '::TraitAbility_var'
+		type name: 'Spell'
+		user flags(0): []
+		data: none
+		
+		name: '::RecoverySeconds_var'
+		type name: 'Float'
+		user flags(0): []
+		data: none
+		
+		name: 'originalSkald'
+		type name: 'Spell'
+		user flags(0): []
+		data: none
+		
+	properties[3]: 
+		name: 'PlayerRef'
+		type name: 'Actor'
+		doc string: ''
+		user flags(0x0): []
+		flags(0x07): '['Read', 'Write', 'AutoVar']'
+		auto var name: '::PlayerRef_var'
+		
+		name: 'TraitAbility'
+		type name: 'Spell'
+		doc string: ''
+		user flags(0x0): []
+		flags(0x07): '['Read', 'Write', 'AutoVar']'
+		auto var name: '::TraitAbility_var'
+		
+		name: 'RecoverySeconds'
+		type name: 'Float'
+		doc string: ''
+		user flags(0x0): []
+		flags(0x07): '['Read', 'Write', 'AutoVar']'
+		auto var name: '::RecoverySeconds_var'
+		
+	states[1]:
+		name: ''
+		functions[4]:
+			name: 'GetState'
+			typ: 'String'
+			doc: 'Function that returns the current state'
+			user_flags(0x0): []
+			flags(0x00): []
+			params count: '0'
+			locals count: '0'
+			instructions count: '1'
+				opcode: 'ret', args: [ident(::State)]
+			
+			name: 'GotoState'
+			typ: 'None'
+			doc: 'Function that switches this object to the specified state'
+			user_flags(0x0): []
+			flags(0x00): []
+			params count: '1'
+				String newState
+			locals count: '1'
+				None ::NoneVar
+			instructions count: '3'
+				opcode: 'callmethod', args: [ident(onEndState), ident(self), ident(::NoneVar), integer(0)]
+				opcode: 'assign', args: [ident(::State), ident(newState)]
+				opcode: 'callmethod', args: [ident(onBeginState), ident(self), ident(::NoneVar), integer(0)]
+			
+			name: 'OnEffectStart'
+			typ: 'None'
+			doc: ''
+			user_flags(0x0): []
+			flags(0x00): []
+			params count: '2'
+				Actor akTarget
+				Actor akCaster
+			locals count: '0'
+			instructions count: '0'
+			
+			name: 'OnHit'
+			typ: 'None'
+			doc: ''
+			user_flags(0x0): []
+			flags(0x00): []
+			params count: '7'
+				ObjectReference akAggressor
+				Form akSource
+				Projectile akProjectile
+				Bool abPowerAttack
+				Bool abSneakAttack
+				Bool abBashAttack
+				Bool abHitBlocked
+			locals count: '0'
+			instructions count: '0'
+			
+		
+============================================================
+
+finish 0.106 ms

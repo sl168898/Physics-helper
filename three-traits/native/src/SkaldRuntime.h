@@ -202,7 +202,7 @@ public:
         if (!caster || spell->GetCastingType() != RE::MagicSystem::CastingType::kFireAndForget) return false;
         RE::NiPointer<RE::TESObjectREFR> target;
         using Delivery = RE::MagicSystem::Delivery;
-        if (spell->GetDelivery() == Delivery::kSelf) target = p;
+        if (spell->GetDelivery() == Delivery::kSelf) target.reset(p);
         else if (spell->GetDelivery() != Delivery::kAimed) {
             auto pick = RE::CrosshairPickData::GetSingleton();
             if (pick) target = pick->targetActor.get();
