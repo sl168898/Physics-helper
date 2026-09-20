@@ -7,6 +7,7 @@
 #include "Rules.h"
 #include "LabVisit.h"
 #include "SkaldRuntime.h"
+#include "EchoDiagnostics.h"
 
 namespace {
 constexpr auto pluginFile = "Biggie Traits - Combined.esp";
@@ -20,6 +21,7 @@ std::atomic_bool ready = false, session = false;
 std::recursive_mutex stateMutex;
 traits::Combat combat;
 traits::SkaldRuntime skald;
+EchoDiagnostics echoDiagnostics;
 RE::ATTACK_STATE_ENUM lastState = RE::ATTACK_STATE_ENUM::kNone;
 RE::BGSAttackData* lastData = nullptr;
 using HitFunction = void (*)(RE::Actor*, RE::HitData&);
@@ -36,6 +38,7 @@ bool selectedLab() {
 }
 void reset() {
     std::lock_guard lock(stateMutex); combat = {}; lastData = nullptr; lastState = RE::ATTACK_STATE_ENUM::kNone;
+    echoDiagnostics.reset();
     labVisit.cancel(); ++labEpoch; hadLabTrait = false;
 }
 bool alchemyFurniture(RE::TESObjectREFR* ref) {
@@ -110,26 +113,42 @@ RE::TESObjectWEAP* weapon(RE::Actor* actor, RE::BGSAttackData* ad) {
     auto obj = actor->GetEquippedObject(ad && ad->IsLeftAttack());
     return obj ? obj->As<RE::TESObjectWEAP>() : nullptr;
 }
-void beginAttack(RE::Actor* actor, RE::BGSAttackData* ad) {
-    if (!ad) return;
+void beginAttack(RE::Actor* actor, RE::BGSAttackData* ad, const char* source) {
+    if (!ad) {
+        if (echoDiagnostics.take()) SKSE::log::info("[EchoDiag] ATTACK REJECTED: source={}, attack data missing", source);
+        return;
+    }
     auto w = weapon(actor, ad);
     const bool bash = ad->data.flags.any(RE::AttackData::AttackFlag::kBashAttack);
     const bool power = ad->data.flags.any(RE::AttackData::AttackFlag::kPowerAttack);
     const bool melee = !w || w->IsMelee();
-    combat.beginSwing(bash, power, melee, twoHanded(w), selected(guard), selected(echo));
+    const auto until = combat.echoUntil;
+    const bool held = combat.echoHeld, echoSelected = selected(echo);
+    combat.beginSwing(bash, power, melee, twoHanded(w), selected(guard), echoSelected);
+    echoDiagnostics.begin(source, echoSelected, bash, power, melee, twoHanded(w),
+        combat.now, until, held, combat.swingMultiplier);
     // Snapshot any old Echoing Steel bonus BEFORE Skald arms the next attack.
-    if (skald.attack(RE::PlayerCharacter::GetSingleton(), bash, power, melee) && selected(echo)) combat.shoutFromAttack();
+    if (skald.attack(RE::PlayerCharacter::GetSingleton(), bash, power, melee) && selected(echo)) {
+        combat.shoutFromAttack();
+        echoDiagnostics.armed("Skald", combat.echoUntil);
+    }
     lastData = ad;
     lastState = actor->AsActorState()->GetAttackState();
 }
 void observeAttack(RE::PlayerCharacter* p) {
     auto state = p->AsActorState()->GetAttackState();
     auto ad = attackData(p);
+    if (echoDiagnostics.enabled && echoDiagnostics.attackState != static_cast<int>(state)) {
+        echoDiagnostics.attackState = static_cast<int>(state);
+        if (echoDiagnostics.take()) SKSE::log::info("[EchoDiag] PHASE: state={}, attack_data={}, power={}, tracking_swing={}",
+            static_cast<int>(state), ad != nullptr,
+            ad && ad->data.flags.any(RE::AttackData::AttackFlag::kPowerAttack), combat.swing);
+    }
     if (state == RE::ATTACK_STATE_ENUM::kFollowThrough || state == RE::ATTACK_STATE_ENUM::kNextAttack) combat.finishPhase();
     const bool active = state == RE::ATTACK_STATE_ENUM::kSwing || state == RE::ATTACK_STATE_ENUM::kHit || state == RE::ATTACK_STATE_ENUM::kBash;
     const bool newPhase = active && (!combat.swing || ad != lastData ||
         (lastState == RE::ATTACK_STATE_ENUM::kFollowThrough || lastState == RE::ATTACK_STATE_ENUM::kNextAttack));
-    if (newPhase) beginAttack(p, ad);
+    if (newPhase) beginAttack(p, ad, "player update");
     if (state == RE::ATTACK_STATE_ENUM::kNone || state == RE::ATTACK_STATE_ENUM::kDraw) combat.endSwing();
     lastState = state; lastData = ad;
 }
@@ -145,10 +164,15 @@ void update(RE::PlayerCharacter* p, float dt) {
         if (hadLabTrait) { ++labEpoch; dispelLab(p); }
     }
     hadLabTrait = labSelected;
+    const bool wasArmed = combat.now <= combat.echoUntil;
     combat.tick(dt);
+    if (wasArmed && combat.now > combat.echoUntil && echoDiagnostics.take())
+        SKSE::log::info("[EchoDiag] EXPIRED: five-second window ended before consumption");
     skald.tick(p, dt);
     if (!selected(guard)) combat.clearGuard();
-    if (!selected(echo)) combat.clearEcho();
+    const bool echoSelected = selected(echo);
+    echoDiagnostics.selected(echoSelected, echo ? echo->GetFormID() : 0);
+    if (!echoSelected) combat.clearEcho();
     if (p->IsDead()) { combat = {}; labVisit.cancel(); return; }
     observeAttack(p);
 }
@@ -163,18 +187,30 @@ void processHit(RE::Actor* target, RE::HitData& hit) {
     const bool power = hit.flags.any(RE::HitData::Flag::kPowerAttack);
     const bool melee = bash || (hit.weapon ? hit.weapon->IsMelee() : hit.flags.any(RE::HitData::Flag::kMeleeAttack));
     float mult = 1;
+    bool captureHit = false, echoHit = false;
+    const float beforeTotal = hit.totalDamage, beforePhysical = hit.physicalDamage;
+    const float beforeResisted = hit.resistedPhysicalDamage;
     {
         std::lock_guard lock(stateMutex);
         if (attacker.get() == p && target && target != p && melee) {
             // Collision mods may deliver a hit before the animation callback.
             // Begin its swing from authoritative HitData in that case.
             if (!combat.swing || combat.bash != bash || combat.power != power) {
-                combat.beginSwing(bash, power, melee, twoHanded(hit.weapon), selected(guard), selected(echo));
+                const auto until = combat.echoUntil;
+                const bool held = combat.echoHeld, echoSelected = selected(echo);
+                combat.beginSwing(bash, power, melee, twoHanded(hit.weapon), selected(guard), echoSelected);
+                echoDiagnostics.begin("hit fallback", echoSelected, bash, power, melee, twoHanded(hit.weapon),
+                    combat.now, until, held, combat.swingMultiplier);
                 lastData = hit.attackData.get();
                 lastState = p->AsActorState()->GetAttackState();
-                if (skald.attack(p, bash, power, melee) && selected(echo)) combat.shoutFromAttack();
+                if (skald.attack(p, bash, power, melee) && selected(echo)) {
+                    combat.shoutFromAttack();
+                    echoDiagnostics.armed("Skald hit fallback", combat.echoUntil);
+                }
             }
             if ((bash && selected(guard)) || (!bash && selected(echo))) mult *= combat.damage(bash, power, melee);
+            captureHit = echoDiagnostics.take();
+            echoHit = !bash && power && selected(echo) && mult > 1;
         }
         if (target == p && attacker && attacker.get() != p && selected(guard)) {
             if (blocked) combat.block();
@@ -188,6 +224,16 @@ void processHit(RE::Actor* target, RE::HitData& hit) {
         hit.physicalDamage *= mult;
         hit.resistedPhysicalDamage *= mult;
     }
+    if (captureHit) {
+        const bool applied = echoHit && std::isfinite(beforeTotal) && beforeTotal > 0;
+        SKSE::log::info("[EchoDiag] HIT: swing={}, target={:08X}, weapon={:08X}, bash={}, power={}, "
+            "blocked={}, multiplier={:.2f}, echo_applied={}, total={:.3f}->{:.3f}, physical={:.3f}->{:.3f}, "
+            "resisted={:.3f}->{:.3f}; these are HitData values before downstream processing, not final HP loss",
+            echoDiagnostics.swing, target->GetFormID(), hit.weapon ? hit.weapon->GetFormID() : 0,
+            bash, power, blocked, mult, applied, beforeTotal, hit.totalDamage, beforePhysical,
+            hit.physicalDamage, beforeResisted, hit.resistedPhysicalDamage);
+        echoDiagnostics.applied(applied);
+    }
     originalHit(target, hit);
 }
 class Actions final : public RE::BSTEventSink<SKSE::ActionEvent> {
@@ -195,14 +241,25 @@ public:
     RE::BSEventNotifyControl ProcessEvent(const SKSE::ActionEvent* event, RE::BSTEventSource<SKSE::ActionEvent>*) override {
         if (!event || !ready || !session || event->actor != RE::PlayerCharacter::GetSingleton()) return RE::BSEventNotifyControl::kContinue;
         std::lock_guard lock(stateMutex);
-        if (event->type == SKSE::ActionEvent::Type::kVoiceFire && !skald.casting() && event->sourceForm && event->sourceForm->As<RE::TESShout>() && selected(echo)) combat.shout();
+        if (event->type == SKSE::ActionEvent::Type::kVoiceFire) {
+            const bool isShout = event->sourceForm && event->sourceForm->As<RE::TESShout>();
+            if (echoDiagnostics.take()) SKSE::log::info("[EchoDiag] VOICE: source={:08X}, is_shout={}, selected={}, skald_casting={}",
+                event->sourceForm ? event->sourceForm->GetFormID() : 0, isShout, selected(echo), skald.casting());
+            if (!skald.casting() && isShout && selected(echo)) {
+                combat.shout();
+                echoDiagnostics.armed("manual shout", combat.echoUntil);
+            }
+        }
         if (event->type == SKSE::ActionEvent::Type::kWeaponSwing) {
             auto ad = attackData(event->actor);
             if (lastState == RE::ATTACK_STATE_ENUM::kFollowThrough || lastState == RE::ATTACK_STATE_ENUM::kNextAttack) combat.finishPhase();
             // The engine action callback precedes damage; a missed swing also
             // spends the token. Update detects bash starts and combo transitions.
-            if (!combat.swing || ad != lastData || lastState == RE::ATTACK_STATE_ENUM::kFollowThrough ||
-                lastState == RE::ATTACK_STATE_ENUM::kNextAttack) beginAttack(event->actor, ad);
+            const bool begin = !combat.swing || ad != lastData || lastState == RE::ATTACK_STATE_ENUM::kFollowThrough ||
+                lastState == RE::ATTACK_STATE_ENUM::kNextAttack;
+            if (echoDiagnostics.take()) SKSE::log::info("[EchoDiag] WEAPON EVENT: attack_data={}, power={}, begin={}, prior_state={}",
+                ad != nullptr, ad && ad->data.flags.any(RE::AttackData::AttackFlag::kPowerAttack), begin, static_cast<int>(lastState));
+            if (begin) beginAttack(event->actor, ad, "weapon swing event");
             lastData = ad;
             lastState = event->actor->AsActorState()->GetAttackState();
         }
@@ -246,7 +303,7 @@ void message(SKSE::MessagingInterface::Message* msg) {
 }
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
-    SKSE::PluginVersionData d{}; d.PluginVersion({1,3,1,0}); d.PluginName("BiggieTraitMechanics");
+    SKSE::PluginVersionData d{}; d.PluginVersion({1,3,2,0}); d.PluginName("BiggieTraitMechanics");
     d.AuthorName("Physics-helper contributors"); d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -256,7 +313,8 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(),true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("BiggieTraitMechanics 1.3.1; Skyrim 1.6.1170");
+    SKSE::log::info("BiggieTraitMechanics 1.3.2; Skyrim 1.6.1170");
+    echoDiagnostics.configure();
     auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(0x42544D33); // BTM3, separate from Venom Harvester
     serialization->SetSaveCallback([](SKSE::SerializationInterface* api) { skald.save(api); });

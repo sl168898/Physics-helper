@@ -45,4 +45,24 @@ int main() {
     c.endSwing(); c.tick(5.01f);
     c.beginSwing(false, true, true, false, false, true);
     assert(c.damage(false, true, true) == 1); // expired echo
+
+    // Combo animation transitions may reach NextAttack without an idle frame.
+    traits::Combat combo;
+    combo.beginSwing(false, true, true, false, false, true);
+    combo.shoutFromAttack();
+    assert(combo.damage(false, true, true) == 1);
+    combo.finishPhase(); combo.tick(0.5f);
+    combo.beginSwing(false, true, true, false, false, true);
+    assert(combo.damage(false, true, true) == 1.5f);
+    assert(combo.damage(false, true, true) == 1.5f); // second contact, not another charge
+    combo.finishPhase(); combo.beginSwing(false, true, true, false, false, true);
+    assert(combo.damage(false, true, true) == 1);
+
+    // Waiting longer than Echo's window loses the token, even if Skald's
+    // separate ten-second recovery has not ended.
+    traits::Combat slow;
+    slow.beginSwing(false, true, true, true, false, true); slow.shoutFromAttack();
+    slow.endSwing(); slow.tick(5.01f);
+    slow.beginSwing(false, true, true, true, false, true);
+    assert(slow.damage(false, true, true) == 1);
 }

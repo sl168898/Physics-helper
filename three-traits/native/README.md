@@ -1,6 +1,39 @@
 # Biggie Trait Mechanics
 
-SKSE helper 1.3.1 for Skyrim 1.6.1170 and Biggie Traits Combined v2.6.1.
+SKSE helper 1.3.2 for Skyrim 1.6.1170 and Biggie Traits Combined v2.6.2.
+
+1.3.2 adds a bounded Echoing Steel diagnostic capture. The shipped
+SKSE/Plugins/BiggieTraitMechanics.ini enables it; set Enabled=0 and restart
+Skyrim to disable both tracing and diagnostic notifications. With no INI,
+diagnostics are off. No combat rules, ESP records or saved data formats change.
+
+The capture records trait selection, normal VoiceFire events, Skald arming,
+attack phases, attack flags, bonus consumption/expiry, and outgoing melee
+HitData immediately before/after the plugin's damage multiplier. It stops
+after 200 records per save load. Existing callbacks are used: there is no
+new polling script, timer or event listener. Optional notifications say
+"primed" on arming and "bonus applied to hit" only when this damage hook
+multiplies a positive, finite outgoing power-attack hit. The hit message is
+shown once per tracked swing. These verify this plugin's damage change;
+they do not measure final enemy HP loss after other mods and engine rules.
+
+IN-GAME DIAGNOSTIC CHECK (not performed in the build environment):
+1. Install the full combined archive, with its DLL and INI winning MO2 file
+   conflicts. Start Skyrim and load your save. Keep Echoing Steel selected.
+2. Manually shout, then land a melee power attack within 5 seconds. Look for
+   "primed" and "bonus applied to hit". Repeat with a two-handed weapon.
+3. With Skald selected and a stored shout, wait for its recovery, then make
+   a power attack to release that shout. Land the FOLLOWING power attack
+   within 5 seconds. This second attack should receive Echoing Steel.
+4. Exit Skyrim and copy Documents/My Games/Skyrim Special Edition/SKSE/
+   BiggieTraitMechanics.log BEFORE restarting. Its first line must say 1.3.2.
+   A successful HIT record has echo_applied=true and multiplier=1.50 or 2.00.
+
+The earlier user log contains startup lines only, so it cannot establish
+whether Echoing Steel affected damage. The existing and expanded pure rule
+tests pass; this release provides runtime evidence rather than asserting an
+unobserved gameplay failure was fixed. The real game still needs the check.
+
 Handles rolling block counts, single-attack tokens after blocks/shouts, and
 Lab Skeever activation. Burden of Devotion now uses an ESP incoming-spell
 magnitude perk (1.5x, MagicBlessing only) and a -100 carry-capacity effect.
