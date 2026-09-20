@@ -1,0 +1,33 @@
+name: Build Phial Lifetime Trace
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/phial-lifetime-trace']
+    paths:
+      - 'phial-lifetime-trace/**'
+      - '.github/workflows/windows-phial-lifetime-trace.yml'
+permissions:
+  contents: read
+concurrency:
+  group: phial-lifetime-trace-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: phial-trace-windows2022-staticmd-vcpkg-60b06921-v1
+          restore-keys: |
+            waterskin-windows2022-staticmd-vcpkg-60b06921-v1
+      - name: Build diagnostic DLL
+        shell: pwsh
+        run: '& .\phial-lifetime-trace\tools\build_windows.ps1'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Phial-Lifetime-Trace-v0-1
+          path: phial-lifetime-trace/_build/Phial_Lifetime_Trace_v0_1.zip
+          if-no-files-found: error
