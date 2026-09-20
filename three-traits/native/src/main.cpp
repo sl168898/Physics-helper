@@ -6,6 +6,7 @@
 #include <mutex>
 #include "Rules.h"
 #include "LabVisit.h"
+#include "SkaldRuntime.h"
 
 namespace {
 constexpr auto pluginFile = "Biggie Traits - Combined.esp";
@@ -18,6 +19,7 @@ bool hadLabTrait = false;
 std::atomic_bool ready = false, session = false;
 std::recursive_mutex stateMutex;
 traits::Combat combat;
+traits::SkaldRuntime skald;
 RE::ATTACK_STATE_ENUM lastState = RE::ATTACK_STATE_ENUM::kNone;
 RE::BGSAttackData* lastData = nullptr;
 using HitFunction = void (*)(RE::Actor*, RE::HitData&);
@@ -113,11 +115,17 @@ void beginAttack(RE::Actor* actor, RE::BGSAttackData* ad) {
     auto w = weapon(actor, ad);
     const bool bash = ad->data.flags.any(RE::AttackData::AttackFlag::kBashAttack);
     const bool power = ad->data.flags.any(RE::AttackData::AttackFlag::kPowerAttack);
-    combat.beginSwing(bash, power, !w || w->IsMelee(), twoHanded(w), selected(guard), selected(echo));
+    const bool melee = !w || w->IsMelee();
+    combat.beginSwing(bash, power, melee, twoHanded(w), selected(guard), selected(echo));
+    // Snapshot any old Echoing Steel bonus BEFORE Skald arms the next attack.
+    if (skald.attack(RE::PlayerCharacter::GetSingleton(), bash, power, melee) && selected(echo)) combat.shoutFromAttack();
+    lastData = ad;
+    lastState = actor->AsActorState()->GetAttackState();
 }
 void observeAttack(RE::PlayerCharacter* p) {
     auto state = p->AsActorState()->GetAttackState();
     auto ad = attackData(p);
+    if (state == RE::ATTACK_STATE_ENUM::kFollowThrough || state == RE::ATTACK_STATE_ENUM::kNextAttack) combat.finishPhase();
     const bool active = state == RE::ATTACK_STATE_ENUM::kSwing || state == RE::ATTACK_STATE_ENUM::kHit || state == RE::ATTACK_STATE_ENUM::kBash;
     const bool newPhase = active && (!combat.swing || ad != lastData ||
         (lastState == RE::ATTACK_STATE_ENUM::kFollowThrough || lastState == RE::ATTACK_STATE_ENUM::kNextAttack));
@@ -138,6 +146,7 @@ void update(RE::PlayerCharacter* p, float dt) {
     }
     hadLabTrait = labSelected;
     combat.tick(dt);
+    skald.tick(p, dt);
     if (!selected(guard)) combat.clearGuard();
     if (!selected(echo)) combat.clearEcho();
     if (p->IsDead()) { combat = {}; labVisit.cancel(); return; }
@@ -162,6 +171,8 @@ void processHit(RE::Actor* target, RE::HitData& hit) {
             if (!combat.swing || combat.bash != bash || combat.power != power) {
                 combat.beginSwing(bash, power, melee, twoHanded(hit.weapon), selected(guard), selected(echo));
                 lastData = hit.attackData.get();
+                lastState = p->AsActorState()->GetAttackState();
+                if (skald.attack(p, bash, power, melee) && selected(echo)) combat.shoutFromAttack();
             }
             if ((bash && selected(guard)) || (!bash && selected(echo))) mult *= combat.damage(bash, power, melee);
         }
@@ -184,13 +195,16 @@ public:
     RE::BSEventNotifyControl ProcessEvent(const SKSE::ActionEvent* event, RE::BSTEventSource<SKSE::ActionEvent>*) override {
         if (!event || !ready || !session || event->actor != RE::PlayerCharacter::GetSingleton()) return RE::BSEventNotifyControl::kContinue;
         std::lock_guard lock(stateMutex);
-        if (event->type == SKSE::ActionEvent::Type::kVoiceFire && event->sourceForm && event->sourceForm->As<RE::TESShout>() && selected(echo)) combat.shout();
+        if (event->type == SKSE::ActionEvent::Type::kVoiceFire && !skald.casting() && event->sourceForm && event->sourceForm->As<RE::TESShout>() && selected(echo)) combat.shout();
         if (event->type == SKSE::ActionEvent::Type::kWeaponSwing) {
             auto ad = attackData(event->actor);
+            if (lastState == RE::ATTACK_STATE_ENUM::kFollowThrough || lastState == RE::ATTACK_STATE_ENUM::kNextAttack) combat.finishPhase();
             // The engine action callback precedes damage; a missed swing also
             // spends the token. Update detects bash starts and combo transitions.
-            if (!combat.swing || ad != lastData) beginAttack(event->actor, ad);
+            if (!combat.swing || ad != lastData || lastState == RE::ATTACK_STATE_ENUM::kFollowThrough ||
+                lastState == RE::ATTACK_STATE_ENUM::kNextAttack) beginAttack(event->actor, ad);
             lastData = ad;
+            lastState = event->actor->AsActorState()->GetAttackState();
         }
         return RE::BSEventNotifyControl::kContinue;
     }
@@ -200,6 +214,7 @@ Actions actions;
 void message(SKSE::MessagingInterface::Message* msg) {
     if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
         auto data = RE::TESDataHandler::GetSingleton();
+        skald.init(data, pluginFile);
         burden = data->LookupForm<RE::SpellItem>(0xF00, pluginFile);
         guard = data->LookupForm<RE::SpellItem>(0xF10, pluginFile);
         echo = data->LookupForm<RE::SpellItem>(0xF20, pluginFile);
@@ -225,13 +240,13 @@ void message(SKSE::MessagingInterface::Message* msg) {
         SKSE::GetActionEventSource()->AddEventSink(&actions);
         ready = true;
         SKSE::log::info("Ready: Burden of Devotion, Unbroken Guard, Echoing Steel");
-    } else if (msg->type == SKSE::MessagingInterface::kPreLoadGame) { session = false; reset(); }
-    else if (msg->type == SKSE::MessagingInterface::kNewGame) { reset(); session = true; }
-    else if (msg->type == SKSE::MessagingInterface::kPostLoadGame) { reset(); session = msg->data != nullptr; }
+    } else if (msg->type == SKSE::MessagingInterface::kPreLoadGame) { session = false; reset(); skald.clear(); }
+    else if (msg->type == SKSE::MessagingInterface::kNewGame) { reset(); skald.clear(); session = true; skald.resetTransient(true); }
+    else if (msg->type == SKSE::MessagingInterface::kPostLoadGame) { reset(); session = msg->data != nullptr; skald.resetTransient(session); }
 }
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
-    SKSE::PluginVersionData d{}; d.PluginVersion({1,2,0,0}); d.PluginName("BiggieTraitMechanics");
+    SKSE::PluginVersionData d{}; d.PluginVersion({1,3,0,0}); d.PluginName("BiggieTraitMechanics");
     d.AuthorName("Physics-helper contributors"); d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -241,6 +256,11 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(),true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("BiggieTraitMechanics 1.2.0; Skyrim 1.6.1170");
+    SKSE::log::info("BiggieTraitMechanics 1.3.0; Skyrim 1.6.1170");
+    auto serialization = SKSE::GetSerializationInterface();
+    serialization->SetUniqueID(0x42544D33); // BTM3, separate from Venom Harvester
+    serialization->SetSaveCallback([](SKSE::SerializationInterface* api) { skald.save(api); });
+    serialization->SetLoadCallback([](SKSE::SerializationInterface* api) { skald.load(api); });
+    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { skald.clear(); });
     return SKSE::GetMessagingInterface()->RegisterListener(message);
 }
