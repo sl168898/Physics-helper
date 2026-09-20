@@ -18,8 +18,8 @@ using Remove = RE::ObjectRefHandle (*)(RE::PlayerCharacter*, RE::TESBoundObject*
 REL::Relocation<Remove> originalRemove;
 
 bool phialDestination(RE::TESObjectREFR* destination) {
-    if (!destination || destination == RE::PlayerCharacter::GetSingleton()) return false;
     if (assigning && assigning->value != 0.0f) return true;
+    if (!destination || destination == RE::PlayerCharacter::GetSingleton()) return false;
     // Some assignment scripts set the busy flag only after the gift arrives.
     // Also recognize their own target reference/base or service-quest alias.
     if (phialFile && (destination->GetFile(0) == phialFile ||
@@ -38,7 +38,7 @@ RE::ObjectRefHandle removeItem(RE::PlayerCharacter* player, RE::TESBoundObject* 
     // inventory pointers are never retained or inspected after the engine call.
     phial::Name captured;
     bool haveSelection = false;
-    if (player && item && count > 0 && destination && item->Is(RE::FormType::AlchemyItem)) {
+    if (player && item && count > 0 && item->Is(RE::FormType::AlchemyItem)) {
         if (auto* ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME)) {
             auto menu = ui->GetMenu<RE::GiftMenu>();
             auto* list = menu ? menu->GetRuntimeData().itemList : nullptr;
