@@ -1,8 +1,12 @@
 # Biggie Trait Mechanics
 
-SKSE helper 1.1.0 for Skyrim 1.6.1170 and Biggie Traits Combined v2.4.1.
+SKSE helper 1.2.0 for Skyrim 1.6.1170 and Biggie Traits Combined v2.5.0.
 Handles rolling block counts, single-attack tokens after blocks/shouts, and
-player-only shrine blessing modifiers checked when the blessing is received.
+Lab Skeever activation. Burden of Devotion now uses an ESP incoming-spell
+magnitude perk (1.5x, MagicBlessing only) and a -100 carry-capacity effect.
+All previous blessing vtable hooks and weight/duration rules are removed.
+After updating an existing save, remove/reselect Burden of Devotion once
+through the trait menu, then obtain a fresh shrine blessing.
 MinHook is linked statically; no additional DLL installation is needed.
 
 Attack history and unused combat tokens reset on loading a save or dying.
@@ -23,9 +27,6 @@ visits and the result of applying the bonus, for in-game diagnosis.
 
 Technical sources:
 - CommonLibSSE-NG b93280e832f263dbef44e44cbe2936622a02f91a (headers).
-- InventoryChanges::GetInventoryWeight is carried load; Actor::GetTotalCarryWeight
-  is capacity. This distinction is corroborated by OAR's inventory-weight condition:
-  https://github.com/ersh1/OpenAnimationReplacer/blob/f4e7688b065175aff70aa523073857911e15aca3/src/Conditions.cpp
 - Actor::ProcessHitData ID 37633/38586 and Actor*, HitData& signature:
   https://github.com/KrisV-777/Acheron/blob/ab9d303af7636ad6b25d04d9a61d82e497890249/src/Acheron/Hooks/Hooks.cpp
   https://github.com/D7ry/valhallaCombat/blob/48fb4c3b9bb6bbaa691ce41dbd33f096b74c07e3/src/include/Hooks.h

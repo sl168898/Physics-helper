@@ -4,9 +4,6 @@
 #include <deque>
 
 namespace traits {
-inline bool lightLoad(float weight, float capacity) {
-    return std::isfinite(weight) && std::isfinite(capacity) && weight >= 0 && capacity >= 0 && weight <= capacity * .5f;
-}
 struct Combat {
     double now = 0, echoUntil = -1;
     std::deque<double> blocks;

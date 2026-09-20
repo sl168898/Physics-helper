@@ -2,8 +2,6 @@
 #include <cassert>
 int main() {
  using traits::Combat;
- assert(traits::lightLoad(75,150)); assert(!traits::lightLoad(75.01f,150));
- assert(traits::lightLoad(0,0)); assert(!traits::lightLoad(0,-1));
  Combat g;g.block();g.tick(2);g.block();g.tick(3);g.block();assert(g.guardReady);
  g.beginSwing(true,false,true,false,true,false);assert(g.damage(true,false,true)==5);assert(!g.guardReady);
  // All contacts from the same bash share its bonus; the next bash does not.
