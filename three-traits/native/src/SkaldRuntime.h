@@ -24,6 +24,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
         std::function<void(unsigned)> finish;
         explicit ChoiceCallback(std::function<void(unsigned)> f) : finish(std::move(f)) { unk0C = 0; }
         void Run(Message value) override {
+            SKSE::log::info("Skald: menu button callback {}", static_cast<unsigned>(value));
             auto f = finish;
             SKSE::GetTaskInterface()->AddTask([f = std::move(f), value] { f(static_cast<unsigned>(value)); });
         }
@@ -34,7 +35,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
     Skald state;
     RE::SpellItem *trait = nullptr, *power = nullptr;
     bool running = false, syncPending = true, hadTrait = false, valid = false;
-    bool menuBusy = false, inCast = false;
+    bool menuBusy = false, inCast = false, warnedNoChoice = false;
     std::uint64_t epoch = 0, menuTicket = 0;
     static constexpr std::uint32_t recordID = 0x534B4C44; // SKLD
 
@@ -56,7 +57,10 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
         auto word = shout->variations[0].word;
         std::unique_ptr<RE::BSScript::IFunctionArguments> args(RE::MakeFunctionArguments(std::move(word)));
         RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback = RE::make_smart<BoolCallback>(finish);
-        if (!args || !vm->DispatchStaticCall("Game", "IsWordUnlocked", args.get(), callback)) finish(false);
+        if (!args || !vm->DispatchStaticCall("Game", "IsWordUnlocked", args.get(), callback)) {
+            SKSE::log::warn("Skald: could not dispatch unlocked-word check for shout {:08X}", id);
+            finish(false);
+        }
     }
     void validateStored() {
         valid = false;
@@ -78,11 +82,17 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
         if (!factory) return false;
         auto box = factory->Create();
         if (!box) return false;
-        box->unk4C = 4;
-        box->unk38 = 10;
+        // In the pinned CommonLib these fields are still unnamed. Offset 0x4C
+        // is buttonPressOffset, NOT flags. Setting it to 4 shifted each choice
+        // four places, often onto Clear/Cancel or outside the action array.
+        // Offset 0x38 is warningType, NOT menu depth; keep the native default.
+        // Corroborated by adya/CommonLibSSE MessageBoxData.h at 3adc3270.
+        static_assert(offsetof(RE::MessageBoxData, unk4C) == 0x4C);
+        box->unk4C = 0;
         box->bodyText = body.c_str();
         for (const auto& label : buttons) box->buttonText.push_back(label.c_str());
         box->callback = RE::make_smart<ChoiceCallback>(std::move(finish));
+        SKSE::log::info("Skald: opening choice menu, {} buttons, button offset {}", buttons.size(), box->unk4C);
         box->QueueMessage();
         return true;
     }
@@ -106,13 +116,21 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
             (batch->choices.empty() ? "\nNo unlocked shouts are available." : "");
         if (!show(body, labels, [this, batch, offset, generation, ticket, actions](unsigned button) {
             std::lock_guard lock(mutex);
-            if (epoch != generation || menuTicket != ticket || !active()) return;
-            if (button >= actions.size()) { menuBusy = false; return; }
+            if (epoch != generation || menuTicket != ticket || !active()) {
+                SKSE::log::info("Skald: discarded a choice from an inactive or previous menu");
+                return;
+            }
+            if (button >= actions.size()) {
+                menuBusy = false;
+                SKSE::log::warn("Skald: menu returned out-of-range button {} for {} actions", button, actions.size());
+                return;
+            }
             const int action = actions[button];
+            SKSE::log::info("Skald: menu button {} mapped to action {} on page offset {}", button, action, offset);
             if (action == -1) { page(batch, offset - pageSize, generation, ticket); return; }
             if (action == -2) { page(batch, offset + pageSize, generation, ticket); return; }
             if (action == -3) {
-                state.choose(0); valid = false; menuBusy = false;
+                state.choose(0); valid = false; menuBusy = false; warnedNoChoice = false;
                 RE::DebugNotification("Skald: stored shout cleared.");
             } else if (action >= 0) {
                 auto choice = batch->choices[static_cast<std::size_t>(action)];
@@ -120,8 +138,11 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
                     std::lock_guard choiceLock(mutex);
                     if (epoch != generation || menuTicket != ticket || !active()) return;
                     menuBusy = false;
-                    if (!answer || !known(choice.id)) { RE::DebugNotification("Skald: that shout is not unlocked."); return; }
-                    state.choose(choice.id); valid = true;
+                    if (!answer || !known(choice.id)) {
+                        SKSE::log::warn("Skald: selected shout {:08X} failed the unlocked-word check", choice.id);
+                        RE::DebugNotification("Skald: that shout is not unlocked."); return;
+                    }
+                    state.choose(choice.id); valid = true; warnedNoChoice = false;
                     RE::DebugNotification(("Skald stored: " + choice.name).c_str());
                     SKSE::log::info("Skald stored {} ({:08X})", choice.name, choice.id);
                 });
@@ -133,6 +154,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
         if (!active() || menuBusy) return;
         menuBusy = true;
         const auto ticket = ++menuTicket, generation = epoch;
+        SKSE::log::info("Skald: Store Shout power opened chooser; current {:08X}", state.shout);
         auto batch = std::make_shared<Batch>();
         std::vector<Choice> candidates;
         auto data = RE::TESDataHandler::GetSingleton();
@@ -147,6 +169,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
             if (epoch != generation || menuTicket != ticket || !active()) return;
             if (answer) batch->choices.push_back(choice);
             if (--batch->pending == 0) {
+                SKSE::log::info("Skald: found {} unlocked shout choices", batch->choices.size());
                 std::sort(batch->choices.begin(), batch->choices.end(), [](const Choice& a, const Choice& b) {
                     return a.name == b.name ? a.id < b.id : a.name < b.name;
                 });
@@ -166,7 +189,7 @@ public:
     void resetTransient(bool enable) {
         std::lock_guard lock(mutex);
         ++epoch; ++menuTicket; running = enable;
-        syncPending = true; hadTrait = false; valid = false; menuBusy = false; inCast = false;
+        syncPending = true; hadTrait = false; valid = false; menuBusy = false; inCast = false; warnedNoChoice = false;
     }
     void clear() { std::lock_guard lock(mutex); state = {}; resetTransient(false); }
     bool casting() const { return inCast; }
@@ -194,12 +217,21 @@ public:
     bool attack(RE::PlayerCharacter* p, bool bash, bool isPower, bool melee) {
         std::lock_guard lock(mutex);
         auto ui = RE::UI::GetSingleton();
-        if (inCast || !active() || !valid || p->IsDead() || p->IsInKillMove() || (ui && ui->GameIsPaused())) return false;
+        if (inCast || !active() || p->IsDead() || p->IsInKillMove() || (ui && ui->GameIsPaused())) return false;
+        if (!state.shout && !bash && isPower && melee && !warnedNoChoice) {
+            warnedNoChoice = true;
+            SKSE::log::warn("Skald: power attack detected but no shout is stored; select one with Store Shout");
+        }
+        if (!valid) return false;
         auto shout = known(state.shout);
-        if (!shout) { valid = false; return false; }
+        if (!shout) { valid = false; SKSE::log::warn("Skald: stored shout {:08X} is no longer known", state.shout); return false; }
         auto spell = shout->variations[0].spell;
         auto caster = p->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-        if (!caster || spell->GetCastingType() != RE::MagicSystem::CastingType::kFireAndForget) return false;
+        if (!caster || spell->GetCastingType() != RE::MagicSystem::CastingType::kFireAndForget) {
+            SKSE::log::warn("Skald: first-word spell {:08X} cannot use instant cast (caster={}, casting={})",
+                spell->GetFormID(), caster != nullptr, static_cast<int>(spell->GetCastingType()));
+            return false;
+        }
         RE::NiPointer<RE::TESObjectREFR> target;
         using Delivery = RE::MagicSystem::Delivery;
         if (spell->GetDelivery() == Delivery::kSelf) target.reset(p);
@@ -214,7 +246,8 @@ public:
         // No synthetic VoiceFire event and no edits to normal shout recovery.
         caster->CastSpellImmediate(spell, true, target.get(), 1.f, false, 0.f, p);
         inCast = false;
-        SKSE::log::info("Skald released {} first word; recovery {} seconds", shout->GetName(), state.remaining);
+        SKSE::log::info("Skald cast requested: {} first word, spell {:08X}, delivery {}, recovery {} seconds",
+            shout->GetName(), spell->GetFormID(), static_cast<int>(spell->GetDelivery()), state.remaining);
         return true;
     }
     RE::BSEventNotifyControl ProcessEvent(const RE::TESSpellCastEvent* event, RE::BSTEventSource<RE::TESSpellCastEvent>*) override {

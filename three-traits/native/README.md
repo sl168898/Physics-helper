@@ -1,6 +1,6 @@
 # Biggie Trait Mechanics
 
-SKSE helper 1.3.0 for Skyrim 1.6.1170 and Biggie Traits Combined v2.6.0.
+SKSE helper 1.3.1 for Skyrim 1.6.1170 and Biggie Traits Combined v2.6.1.
 Handles rolling block counts, single-attack tokens after blocks/shouts, and
 Lab Skeever activation. Burden of Devotion now uses an ESP incoming-spell
 magnitude perk (1.5x, MagicBlessing only) and a -100 carry-capacity effect.
@@ -8,6 +8,23 @@ All previous blessing vtable hooks and weight/duration rules are removed.
 After updating an existing save, remove/reselect Burden of Devotion once
 through the trait menu, then obtain a fresh shrine blessing.
 MinHook is linked statically; no additional DLL installation is needed.
+
+1.3.1 corrects Skald's menu button mapping. The old code set MessageBoxData
+offset 0x4C to 4; this is buttonPressOffset, so the game added 4 to every
+selected button index. The result could select another shout, navigate,
+clear/cancel, or be discarded instead of storing the clicked shout. The
+offset is now explicitly zero, with an offset assertion for the pinned ABI.
+The native warningType default is also retained (0x38 is not menu depth).
+Menu opening, raw button indices, resolved actions and failed validation now
+appear in BiggieTraitMechanics.log. A power attack without a stored shout
+logs once per selection/load, so this failure is visible without log spam.
+The attack/casting behavior, recovery, save format and all ESP records remain
+unchanged. Cast logs say "requested" because the engine API has no result.
+After replacing the package, use Store Shout again and check for the
+"Skald stored: <name>" notification; a previous choice may have mapped wrongly.
+
+MessageBoxData layout reference:
+https://github.com/adya/CommonLibSSE/blob/3adc3270274f954caebc165ddcc7a3969596eb1e/include/RE/M/MessageBoxData.h
 
 Attack history and unused combat tokens reset on loading a save or dying.
 No effect is enabled without its corresponding trait ability.
