@@ -29,3 +29,20 @@ jobs:
           name: Enchantment-Swapper-Descriptions-Native-v1
           path: enchantment-swapper-descriptions/_build/Enchantment_Swapper_Descriptions_Native_v1.zip
           if-no-files-found: error
+  wheeler:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: wheeler-windows2022-staticmd-vcpkg-382c5b8a-v1
+      - name: Build Wheeler Refined with description and potion compatibility
+        shell: pwsh
+        run: '& .\enchantment-swapper-descriptions\wheeler\tools\build_windows.ps1'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Wheeler-Refined-Enchantment-Descriptions-v1-1
+          path: enchantment-swapper-descriptions/wheeler/_build/Wheeler_Refined_Enchantment_Descriptions_v1_1.zip
+          if-no-files-found: error

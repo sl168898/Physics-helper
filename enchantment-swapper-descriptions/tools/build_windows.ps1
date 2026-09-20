@@ -44,14 +44,14 @@ Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Bindings.h','tests/bindings_tests.cpp','CMakeLists.txt','vcpkg.json','papyrus/ESD_Native.psc')) {
+foreach ($Name in @('src/main.cpp','src/Bindings.h','src/DescriptionText.h','src/PublicAPI.h','tests/bindings_tests.cpp','tests/description_tests.cpp','CMakeLists.txt','vcpkg.json','papyrus/ESD_Native.psc')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'EnchantmentSwapperDescriptions'; version = '1.0.0'; runtime = '1.6.1170'
+    plugin = 'EnchantmentSwapperDescriptions'; version = '1.1.0'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; rules_tests = 'passed'; in_game_tested = $false
