@@ -1,0 +1,33 @@
+name: Build Batch Crafting
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/phial-stable-bottles']
+    paths:
+      - 'batch-crafting/**'
+      - '.github/workflows/windows-batch-crafting.yml'
+permissions:
+  contents: read
+concurrency:
+  group: batch-crafting-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: phial-bank-windows2022-staticmd-vcpkg-60b06921-v1
+          restore-keys: |
+            waterskin-windows2022-staticmd-vcpkg-60b06921-v1
+      - name: Build batch crafting and run safety tests
+        shell: pwsh
+        run: '& .\batch-crafting\tools\build_windows.ps1'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Batch-Crafting-v0-1-0-beta
+          path: batch-crafting/_build/Batch_Crafting_v0_1_0_beta.zip
+          if-no-files-found: error

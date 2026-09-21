@@ -1,0 +1,6 @@
+{
+  "name": "batch-crafting",
+  "version-string": "0.1.0",
+  "builtin-baseline": "60b06921c7c7ac787b23a222dfab5cdd3911712e",
+  "dependencies": ["spdlog", "rapidcsv"]
+}
