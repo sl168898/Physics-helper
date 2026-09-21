@@ -213,7 +213,7 @@ Bool Function SameLiquid(MS12PostQuestScript original, Potion full, Potion bottl
 EndFunction
 
 
-Bool Function ProtectCurrentLiquid()
+Bool Function ProtectCurrentLiquid(Bool restoreEffects = False)
     If SKSE.GetPluginVersion("WhitePhialNames") < 33554432
         Return False
     EndIf
@@ -231,5 +231,21 @@ Bool Function ProtectCurrentLiquid()
     If !selector
         Return False
     EndIf
-    Return selector.ProtectStoredLiquid()
+    If !selector.ProtectStoredLiquid()
+        Return False
+    EndIf
+    ; The original OnPlayerLoadGame event may precede the native post-load
+    ; validation. Finish restoring the phial once gameplay has resumed.
+    If restoreEffects
+        Potion full = original.Replicated
+        Potion liquid = original.TWPTE_SavedPotionList.GetAt(0) as Potion
+        If !SameLiquid(original, full, liquid)
+            If full == original.CustomPotionPoison
+                selector.CopyPasteEffects(full, original.MS12WhitePhialEffectPoison, liquid)
+            Else
+                selector.CopyPasteEffects(full, original.MS12WhitePhialEffect, liquid)
+            EndIf
+        EndIf
+    EndIf
+    Return True
 EndFunction

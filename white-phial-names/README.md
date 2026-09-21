@@ -9,7 +9,8 @@ save/load, drinking, poison and Wheeler checks below still need an in-game test.
 ## Install in MO2
 
 1. Back up a working save **and its matching .skse file**. Use a separate test
-   profile/save branch. Do not overwrite your pre-update saves.
+   profile/save branch. Close the assignment menu and let the phial finish
+   changing before making that backup. Do not overwrite your pre-update saves.
 2. Replace the old White Phial - Decanting addon with this complete archive.
    Keep only one version of the addon enabled. Keep the original **The White
    Phial - Tweaks and Enhancements** and its requirements enabled.
@@ -21,7 +22,8 @@ save/load, drinking, poison and Wheeler checks below still need an in-game test.
    position after the original phial mod. Do not rename or compact it. All ten
    existing record IDs and the master list are preserved; it remains ESL flagged.
 5. Start through SKSE. Let gameplay run briefly outside menus. A valid current
-   custom selection is protected once on loading. Reassign a renamed sample
+   custom selection is protected once on loading, and its phial effects are
+   restored after the native bank has finished validation. Reassign a renamed sample
    once if you are upgrading from 1.1 and want its custom name captured.
 6. Let the phial refill, decant, and add the **new bottle** to Wheeler. Old
    wheel entries for the original crafted item do not automatically become

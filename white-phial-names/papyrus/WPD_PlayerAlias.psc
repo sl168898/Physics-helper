@@ -35,7 +35,7 @@ Event OnUpdate()
         EndIf
         If !storageChecked
             storageChecked = True
-            controller.ProtectCurrentLiquid()
+            controller.ProtectCurrentLiquid(True)
         EndIf
         UpdatePower(player, controller)
         UpdateDailyDecant(player, controller, Utility.GetCurrentGameTime())

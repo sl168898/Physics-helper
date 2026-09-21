@@ -43,7 +43,7 @@ Copy-Item $Dll $PluginDirectory
 Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
-Run 'python' @((Join-Path $Root 'tools/stage_data.py'), $Stage)
+Run 'python' @('-B', (Join-Path $Root 'tools/stage_data.py'), $Stage)
 $SourceStage = Join-Path $Stage 'Source/WhitePhialNames'
 New-Item -ItemType Directory -Force -Path $SourceStage | Out-Null
 foreach ($Name in @('src','tests','tools','data','papyrus','CMakeLists.txt','vcpkg.json','README.md','LICENSE')) {

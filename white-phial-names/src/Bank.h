@@ -147,7 +147,8 @@ inline Bank decode(std::span<const std::uint8_t> bytes) {
 }
 inline std::uint32_t fingerprint(const Bank& b) {
     if (b.liquids.empty()) return 0;
-    const auto data = encode(b); Reader r{std::span(data).last(4)}; return r.u32();
+    const auto data = encode(b); Reader r{std::span(data).last(4)};
+    const auto hash = r.u32(); return hash == 0 ? 1 : hash; // Zero means no protected bank.
 }
 // Read only our record. The SKSE framing is documented in ianpatt/skse64
 // Serialization.cpp v2.2.6. Reject duplicates and truncation; never merge saves.
