@@ -26,12 +26,45 @@ void error(std::string message) {
     fault = std::move(message); ready = false;
     SKSE::log::error("Protected bottles: {}", fault);
 }
-Ref reference(RE::TESForm* form) {
-    if (!form) return {};
-    if ((form->GetFormID() >> 24) == 0xFF) throw Error("Liquid uses another temporary form");
+std::string str(const char* p) { return p ? p : ""; }
+std::string describe(RE::TESForm* form) {
+    if (!form) return "<none>";
     auto* file = form->GetFile(0);
-    if (!file) throw Error("Liquid dependency has no plugin");
+    return fmt::format("{:08X} type={} editorID=\"{}\" name=\"{}\" source=\"{}\"",
+        form->GetFormID(), RE::FormTypeToString(form->GetFormType()),
+        str(form->GetFormEditorID()), str(form->GetName()),
+        file ? std::string(file->GetFilename()) : "<no plugin>");
+}
+Ref reference(RE::TESForm* form, std::string_view field) {
+    if (!form) return {};
+    if ((form->GetFormID() >> 24) == 0xFF)
+        throw Error(fmt::format("Temporary dependency at {}: {}", field, describe(form)));
+    auto* file = form->GetFile(0);
+    if (!file) throw Error(fmt::format("Dependency has no plugin at {}: {}", field, describe(form)));
     return {std::string(file->GetFilename()), form->GetFormID() & (file->IsLight() ? 0xFFFu : 0xFFFFFFu)};
+}
+void logDependencies(RE::AlchemyItem* potion) {
+    // One snapshot on failure, not a recurring scan. Names and IDs are copied
+    // to the log; no borrowed form/inventory pointers are retained.
+    SKSE::log::info("Rejected liquid: {}", describe(potion));
+    const auto log = [](std::string_view field, RE::TESForm* form) {
+        SKSE::log::info("Liquid dependency {}: {}", field, describe(form));
+    };
+    log("equipSlot", potion->equipSlot);
+    log("addictionItem", potion->data.addictionItem);
+    log("consumptionSound", potion->data.consumptionSound);
+    log("pickupSound", potion->pickupSound);
+    log("putdownSound", potion->putdownSound);
+    std::size_t index = 0;
+    for (auto* keyword : potion->GetKeywords()) {
+        if (index >= 256) break;
+        log(fmt::format("keywords[{}]", index++), keyword);
+    }
+    index = 0;
+    for (auto* effect : potion->effects) {
+        if (index >= 128) break;
+        log(fmt::format("effects[{}].base", index++), effect ? effect->baseEffect : nullptr);
+    }
 }
 template<class T> T* resolve(const Ref& r) {
     if (r.file.empty()) return nullptr;
@@ -44,7 +77,6 @@ std::optional<std::size_t> slotIndex(RE::AlchemyItem* p) {
     if (!p || it == slots.end()) return {};
     return static_cast<std::size_t>(it - slots.begin());
 }
-std::string str(const char* p) { return p ? p : ""; }
 Liquid snapshot(RE::AlchemyItem* p, const std::string& name) {
     // Crafted potions have unconditioned effect lists. Do not silently strip
     // unsupported model/destruction data or conditional effects from a mod.
@@ -62,13 +94,17 @@ Liquid snapshot(RE::AlchemyItem* p, const std::string& name) {
     l.medicineRecord = (p->formFlags & (1u << 29)) != 0;
     l.bounds = {p->boundData.boundMin.x, p->boundData.boundMin.y, p->boundData.boundMin.z,
         p->boundData.boundMax.x, p->boundData.boundMax.y, p->boundData.boundMax.z};
-    l.equip = reference(p->equipSlot); l.addiction = reference(p->data.addictionItem);
-    l.consumeSound = reference(p->data.consumptionSound);
-    l.pickupSound = reference(p->pickupSound); l.putdownSound = reference(p->putdownSound);
-    for (auto* k : p->GetKeywords()) { if (!k) throw Error("Null liquid keyword"); l.keywords.push_back(reference(k)); }
+    l.equip = reference(p->equipSlot, "equipSlot"); l.addiction = reference(p->data.addictionItem, "addictionItem");
+    l.consumeSound = reference(p->data.consumptionSound, "consumptionSound");
+    l.pickupSound = reference(p->pickupSound, "pickupSound"); l.putdownSound = reference(p->putdownSound, "putdownSound");
+    for (auto* k : p->GetKeywords()) {
+        if (!k) throw Error("Null liquid keyword");
+        l.keywords.push_back(reference(k, fmt::format("keywords[{}]", l.keywords.size())));
+    }
     for (auto* e : p->effects) {
         if (!e || !e->baseEffect || e->conditions.head) throw Error("This liquid has missing or conditional effects");
-        l.effects.push_back({reference(e->baseEffect), e->effectItem.magnitude, e->cost, e->effectItem.area, e->effectItem.duration});
+        l.effects.push_back({reference(e->baseEffect, fmt::format("effects[{}].base", l.effects.size())),
+            e->effectItem.magnitude, e->cost, e->effectItem.area, e->effectItem.duration});
     }
     Writer check; check.liquid(l); return l;
 }
@@ -169,12 +205,13 @@ bool isReady(RE::StaticFunctionTag*) {
 RE::AlchemyItem* protect(RE::StaticFunctionTag*, RE::AlchemyItem* potion, RE::BSFixedString chosenName) {
     std::lock_guard lock(gate);
     if (!isReady(nullptr) || !potion) return nullptr;
+    SKSE::log::info("Protection request: potion={:08X}, chosenName=\"{}\"", potion->GetFormID(), chosenName.c_str());
     try {
         auto i = slotIndex(potion);
         if (i && *i >= bank.liquids.size()) throw Error("This protected liquid has no saved definition");
         if (i && (chosenName.empty() || bank.liquids[*i].name == chosenName.c_str())) return potion;
         if (!i && (potion->GetFormID() >> 24) != 0xFF) {
-            const auto ref = reference(potion);
+            const auto ref = reference(potion, "liquid");
             if (resolve<RE::AlchemyItem>(ref) != potion) throw Error("Liquid is not backed by a loaded plugin record");
             return potion;
         }
@@ -192,8 +229,13 @@ RE::AlchemyItem* protect(RE::StaticFunctionTag*, RE::AlchemyItem* potion, RE::BS
         return slots[index];
     } catch (const std::exception& e) {
         SKSE::log::error("Cannot protect liquid: {}", e.what());
-        RE::DebugNotification(e.what()); return nullptr;
+        logDependencies(potion);
+        RE::DebugNotification("White Phial: liquid protection failed. Details in WhitePhialNames.log.");
+        return nullptr;
     }
+}
+void traceNative(RE::StaticFunctionTag*, RE::BSFixedString text) {
+    SKSE::log::info("Decant script: {}", text.c_str());
 }
 Bytes readCosave(std::string name) {
     auto logDir = SKSE::log::log_directory();
@@ -245,6 +287,7 @@ void postLoad(bool success) {
 bool registerPapyrus(RE::BSScript::IVirtualMachine* vm) {
     vm->RegisterFunction("IsReady", "WPD_Storage", isReady);
     vm->RegisterFunction("ProtectNative", "WPD_Storage", protect);
+    vm->RegisterFunction("TraceNative", "WPD_Storage", traceNative);
     return true;
 }
 void revert() {

@@ -1,4 +1,23 @@
-# White Phial - Decanting 2.0 beta: protected custom liquids
+# White Phial - Decanting 2.0.1 diagnostics
+
+This is a diagnostic update to the 2.0 beta, not a fix for rejected liquids.
+The earlier generic "Liquid uses another temporary form" error did not say
+which dependency was temporary. This build identifies the exact field,
+FormID, record type, editor ID, name and source plugin when available. It also
+records decant attempts, failure messages and the phial counts/alias before
+and after the original refill function. All of this goes to
+`Documents/My Games/Skyrim Special Edition/SKSE/WhitePhialNames.log`;
+Papyrus logging is not required.
+
+Install the complete archive over the 2.0 beta, with its files winning MO2
+conflicts. Load the same test save, try decanting once, and copy the log before
+the next launch. If assigning the sample also fails, perform that attempt
+once in the same session. No quest reset or new game is required for logging.
+Keep your pre-test save. The co-save format, ESP, persistence rules and refill
+behavior are unchanged. Dependencies on temporary forms are still rejected;
+this update does not drop effects or keywords to force an unsafe bottle.
+
+## Protected custom liquids (2.0 beta behavior)
 
 This overhaul gives newly decanted player-created potions and poisons stable,
 plugin-backed definitions. It is a preventive beta, not a repair for missing

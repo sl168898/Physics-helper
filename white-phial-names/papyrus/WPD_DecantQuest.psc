@@ -37,12 +37,14 @@ Bool Function AutoDecant(Actor player)
 EndFunction
 
 Function Notice(String message, Bool quiet)
+    WPD_Storage.Trace(message)
     If !quiet
         Debug.Notification(message)
     EndIf
 EndFunction
 
 Bool Function TryDecant(Actor player, Bool quiet = False)
+    WPD_Storage.Trace("TryDecant start (2.0.1 diagnostics); quiet=" + quiet)
     If SKSE.GetPluginVersion("WhitePhialNames") < 33554432
         Notice("White Phial safeguards are unavailable. Check the installed DLL.", quiet)
         Return False
@@ -89,6 +91,7 @@ Bool Function TryDecant(Actor player, Bool quiet = False)
     EndIf
 
     If full == original.CustomPotion || full == original.CustomPotionPoison
+        WPD_Storage.Trace("Checking stored custom liquid before decanting")
         If !ProtectCurrentLiquid()
             Notice("The chosen liquid could not be safeguarded. The phial was not emptied.", quiet)
             Return False
@@ -125,17 +128,28 @@ Bool Function TryDecant(Actor player, Bool quiet = False)
     EndIf
     ; Use the original alias swap and game-hour timer. No EquipItem, potion
     ; consumption, spell cast, poison application or custom refill timer.
+    TraceRefill("Before SetForRefill", player, full, empty, tracked)
     phial.SetForRefill(player)
     ObjectReference nowTracked = original.PhialAlias.GetReference()
+    TraceRefill("After SetForRefill", player, full, empty, nowTracked)
     If player.GetItemCount(full) == 0 && player.GetItemCount(empty) == 1 && nowTracked && nowTracked.GetBaseObject() == empty
         phial.CurrentContainer = player
         GiveBottle(player, bottled, quiet)
+        WPD_Storage.Trace("Decant completed; bottle=" + bottled)
         Return True
     Else
         Debug.Trace("[White Phial Decanting] Original SetForRefill did not produce the expected empty phial; no bottle was granted.")
         Notice("The White Phial could not finish decanting.", quiet)
     EndIf
     Return False
+EndFunction
+
+Function TraceRefill(String phase, Actor player, Potion full, MiscObject empty, ObjectReference tracked)
+    Form trackedBase = None
+    If tracked
+        trackedBase = tracked.GetBaseObject()
+    EndIf
+    WPD_Storage.Trace(phase + ": full=" + full + "; full count=" + player.GetItemCount(full) + "; empty=" + empty + "; empty count=" + player.GetItemCount(empty) + "; tracked=" + tracked + "; tracked base=" + trackedBase)
 EndFunction
 
 Function GiveBottle(Actor player, Potion bottled, Bool quiet)

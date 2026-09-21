@@ -28,6 +28,6 @@ jobs:
         run: '& .\white-phial-names\tools\build_windows.ps1'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: White-Phial-Decanting-v2-0-beta
-          path: white-phial-names/_build/White_Phial_Decanting_v2_0_beta.zip
+          name: White-Phial-Decanting-v2-0-1-diagnostics
+          path: white-phial-names/_build/White_Phial_Decanting_v2_0_1_diagnostics.zip
           if-no-files-found: error
