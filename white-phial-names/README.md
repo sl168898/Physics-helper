@@ -1,23 +1,37 @@
-# White Phial - Decanting 2.0.2 beta
+# White Phial - Decanting 2.0.3 beta
 
-This update addresses two faults exposed by the 2.0.1 diagnostic log:
+Fixes the early co-save filename lookup on reload. SKSE's PreLoadGame event
+can supply a name ending in `.ess`; 2.0.2 appended `.skse` without removing
+that suffix and could therefore look for `Save30.ess.skse`. The new reader
+uses SKSE 2.2.6's extension handling and its Steam save-folder construction,
+including `sLocalSavePath:General`. It no longer infers the game save folder
+from CommonLib's log-folder detection.
 
-- Custom samples with runtime keywords such as `OCF_VesselBottlePotion` and
-  `OCF_VesselBottle` were rejected. They are now saved by unique EditorID and
-  resolved from the current keyword array on loading. Neither the keywords
-  nor potion effects are discarded; temporary numeric IDs are not saved.
-- The addon was compiled against an incorrect `SetForRefill(ObjectReference)`
-  declaration, while the original script requires `SetForRefill(Actor)`.
-  The caller is recompiled with the verified Actor signature. The similarly
-  incorrect `RemoveDuplicateWhitePhial` interface is corrected to its original
-  ObjectReference signature. The original refill scripts are not replaced.
+The supplied Save30 pair was checked read-only: it contains one protected
+bottle and one intact recipe, whose fingerprint matches the ESS exactly.
+The before-restart log confirms successful protection and decanting; the
+after-restart log shows the early loader missed a record SKSE later read.
+The old log did not record its filename, so it cannot prove which incorrect
+path was opened in that session. This update logs the incoming name, selected
+path, byte count, fingerprint and normal-callback verification explicitly.
 
-Install the complete archive over 2.0/2.0.1, with its files winning MO2
-conflicts. Load the same working test save and assign the intended custom
-sample again: a previously rejected assignment left the old liquid selected.
-Let the phial refill, then decant. Confirm one empty phial and one named
-bottle, save, restart Skyrim, and check the bottle again. No quest reset or
-new game is required for this update. Keep your pre-test save.
+Install this complete archive over 2.0.2 in MO2, let its files win conflicts,
+and restart Skyrim. Load the original Save30 **with its matching .skse**.
+Do not clean the save, reset quests, reassign the phial or recreate that
+bottle. Check the existing named bottle in inventory and Wheeler. Save to a
+new slot, quit and reload that new save, then check again. Keep Save30's
+original pair until this in-game check succeeds.
+
+The ESP, Papyrus scripts, slot IDs and bank format are byte-identical to
+2.0.2. The native plugin reports 2.0.3; the unchanged decant-script trace
+still says 2.0.2. Effects are still restored before engine save loading, and
+the normal callback verifies the same bytes. No late reconstruction or
+fallback to another save is used. Missing and unreadable files are now
+reported distinctly, and the first specific loader error is retained.
+
+The 2.0.2 fixes are included: runtime keywords are preserved by unique
+EditorID, and the compiled caller uses the original refill script's verified
+`SetForRefill(Actor)` signature. The original refill scripts are not replaced.
 
 Existing v1 banks keep their exact bytes and saved fingerprints. Banks that
 contain named runtime keywords use payload v2, while retaining all old slot
@@ -88,8 +102,8 @@ are not included. White Phial Menu and Widget can remain enabled.
   their generated numeric IDs do not lose the tags on reload.
 - Cross-check a checksum stored as two exact 16-bit global values in the ESS
   against the co-save's bank. Missing/mismatched/corrupt bank data disables
-  assignment and decanting and displays an error. Restore the matching files;
-  this does not reconstruct deleted co-save data.
+  assignment and decanting and displays an error. Keep the original pair and
+  inspect the logged path/error; this does not reconstruct deleted co-save data.
 - Refuse unsupported dynamic liquid definitions or an exhausted pool before
   consuming the sample/full phial. There is no fallback to a temporary bottle.
 - Keep the existing decant power, refill timing, poison-use counter handling,

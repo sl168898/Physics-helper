@@ -1,7 +1,9 @@
 #include "Storage.h"
 #include "Bank.h"
 #include "NamedKeywords.h"
-#include <fstream>
+#include "CosaveFile.h"
+#include "REX/W32/OLE32.h"
+#include "REX/W32/SHELL32.h"
 #include <map>
 #include <mutex>
 
@@ -254,20 +256,21 @@ RE::AlchemyItem* protect(RE::StaticFunctionTag*, RE::AlchemyItem* potion, RE::BS
 void traceNative(RE::StaticFunctionTag*, RE::BSFixedString text) {
     SKSE::log::info("Decant script: {}", text.c_str());
 }
-Bytes readCosave(std::string name) {
-    auto logDir = SKSE::log::log_directory();
-    if (!logDir) throw Error("Cannot locate Skyrim save folder");
-    auto path = logDir->parent_path();
+std::optional<Bytes> readCosave(std::string_view name) {
+    wchar_t* buffer{};
+    if (REX::W32::SHGetKnownFolderPath(REX::W32::FOLDERID_Documents,
+        REX::W32::KF_FLAG_DEFAULT, nullptr, &buffer) != 0 || !buffer)
+        throw Error("Cannot locate Windows Documents folder for Skyrim saves");
+    const std::unique_ptr<wchar_t, decltype(&REX::W32::CoTaskMemFree)> documents(buffer, REX::W32::CoTaskMemFree);
     auto* setting = RE::GetINISetting("sLocalSavePath:General");
-    path /= setting && setting->GetType() == RE::Setting::Type::kString ? setting->GetString() : "Saves";
-    path /= name + ".skse";
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
-    if (!in) return {}; // Legacy saves may not have this plugin's co-save record.
-    auto size = in.tellg();
-    if (size < 0 || size > 256 * 1024 * 1024) throw Error("Unsupported SKSE co-save size");
-    Bytes bytes(static_cast<std::size_t>(size)); in.seekg(0);
-    if (!bytes.empty() && !in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())))
-        throw Error("Cannot read SKSE co-save");
+    const char* local = setting && setting->GetType() == RE::Setting::Type::kString ? setting->GetString() : "Saves";
+    if (!local) throw Error("Skyrim sLocalSavePath is null");
+    const auto path = cosavePath(documents.get(), local, name);
+    SKSE::log::info("Preload save name=\"{}\"; normalized=\"{}\"; co-save=\"{}\"",
+        name, cosaveFilename(name), path.string());
+    auto bytes = readCosaveFile(path);
+    if (bytes) SKSE::log::info("Read {} co-save bytes before engine save loading", bytes->size());
+    else SKSE::log::warn("Selected co-save does not exist; continuing only if this save has no protected bank");
     return bytes;
 }
 void preLoad(const std::string& name) {
@@ -275,9 +278,13 @@ void preLoad(const std::string& name) {
     preloadOK = false; warned = false; fault.clear(); preloaded.clear(); bank = {};
     try {
         const auto bytes = readCosave(name);
-        if (!bytes.empty()) if (auto record = bankFromCosave(bytes)) { preloaded = *record; bank = decode(preloaded); }
+        if (bytes) {
+            if (auto record = bankFromCosave(*bytes)) { preloaded = *record; bank = decode(preloaded); }
+            else SKSE::log::info("Selected co-save has no protected liquid record (legacy save)");
+        }
         apply(bank); preloadOK = true;
-        SKSE::log::info("Preloaded {} protected liquid definitions before engine save loading", bank.liquids.size());
+        SKSE::log::info("Preloaded {} protected liquid definitions before engine save loading; fingerprint={:08X}",
+            bank.liquids.size(), fingerprint(bank));
     } catch (const std::exception& e) { clearSlots(); bank = {}; error(e.what()); }
 }
 void postLoad(bool success) {
@@ -289,15 +296,15 @@ void postLoad(bool success) {
     }
     previousBank = {};
     try {
+        if (!fault.empty()) throw Error(fault);
         if (!preloadOK || (!preloaded.empty() && !callbackSeen)) throw Error("Protected liquid co-save could not be validated");
         if (savedFingerprint() != fingerprint(bank)) throw Error("The save and protected-liquid co-save do not match");
-        if (!fault.empty()) throw Error(fault);
         ready = true;
         SKSE::log::info("Protected liquid bank ready; {} immutable definitions", bank.liquids.size());
     } catch (const std::exception& e) { error(e.what()); }
     if (!ready && !warned) {
         warned = true;
-        RE::DebugMessageBox("White Phial safeguards could not load the matching liquid definitions. Decanting and reassignment are disabled. Exit without overwriting this save and restore its matching .skse file. See WhitePhialNames.log.");
+        RE::DebugMessageBox("White Phial could not restore its protected liquid definitions. Decanting and reassignment are disabled. Exit without overwriting this save. Keep its .ess and .skse files together. WhitePhialNames.log records the selected path and error.");
     }
 }
 }
@@ -329,8 +336,14 @@ void loadRecord(SKSE::SerializationInterface* api, std::uint32_t version, std::u
     if (callbackSeen || version != 1 || length > maxBankBytes || length < 12) { error("Invalid protected liquid record"); return; }
     callbackSeen = true;
     Bytes bytes(length);
-    if (api->ReadRecordData(bytes.data(), length) != length || bytes != preloaded)
-        error("Preloaded and SKSE-loaded liquid records differ");
+    if (api->ReadRecordData(bytes.data(), length) != length) error("Cannot read protected liquid record from SKSE");
+    else if (bytes != preloaded) {
+        SKSE::log::error("Liquid record comparison: preload={} bytes, SKSE={} bytes", preloaded.size(), bytes.size());
+        if (fault.empty()) error(preloaded.empty() ?
+            "SKSE found a protected liquid record that the early loader did not find; see the selected preload path" :
+            "Preloaded and SKSE-loaded liquid records differ");
+    }
+    else SKSE::log::info("SKSE verified the preloaded protected liquid record ({} bytes)", bytes.size());
     // Do not replace Effect* during this callback: the engine may already have
     // restored active effects from the preloaded definitions.
 }

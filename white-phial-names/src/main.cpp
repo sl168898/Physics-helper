@@ -129,7 +129,7 @@ void message(SKSE::MessagingInterface::Message* event) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData d{};
-    d.PluginVersion({2,0,2,0}); d.PluginName("WhitePhialNames"); d.AuthorName("Physics-helper contributors");
+    d.PluginVersion({2,0,3,0}); d.PluginName("WhitePhialNames"); d.AuthorName("Physics-helper contributors");
     d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -141,7 +141,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialNames 2.0.2; Decanting 2.0.2 beta; Skyrim 1.6.1170");
+    SKSE::log::info("WhitePhialNames 2.0.3; Decanting 2.0.3 beta; Skyrim 1.6.1170");
     const auto* api = SKSE::GetSerializationInterface();
     api->SetUniqueID(saveID); api->SetSaveCallback(save); api->SetLoadCallback(load); api->SetRevertCallback(revert);
     return SKSE::GetPapyrusInterface()->Register(registerPapyrus) && SKSE::GetMessagingInterface()->RegisterListener(message);
