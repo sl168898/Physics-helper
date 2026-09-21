@@ -1,62 +1,127 @@
-# White Phial - Decanting 1.2
+# White Phial - Decanting 2.0 beta: protected custom liquids
 
-Preserves the name of a renamed potion or poison when it is assigned to the White Phial and subsequently decanted. The new bottle receives its own display name, which is available to inventory and the existing Wheeler potion-name compatibility patch.
+This overhaul gives newly decanted player-created potions and poisons stable,
+plugin-backed definitions. It is a preventive beta, not a repair for missing
+forms in Save29 and not a confirmed fix for the still-unidentified first deleter.
+The Windows build and automated checks can run here; Skyrim cannot, so the
+save/load, drinking, poison and Wheeler checks below still need an in-game test.
 
-## Requirements
+## Install in MO2
 
-- Skyrim Special Edition / Anniversary Edition **Steam 1.6.1170** and SKSE64 2.2.6.
-- Address Library for SKSE Plugins, Anniversary Edition version.
-- [The White Phial - Tweaks and Enhancements](https://www.nexusmods.com/skyrimspecialedition/mods/73532) and its requirements.
-- Keep Rename Potions SKSE and your existing Wheeler / Wheeler Refined compatibility patch enabled if you use them. This update does not include or replace their DLLs.
+1. Back up a working save **and its matching .skse file**. Use a separate test
+   profile/save branch. Do not overwrite your pre-update saves.
+2. Replace the old White Phial - Decanting addon with this complete archive.
+   Keep only one version of the addon enabled. Keep the original **The White
+   Phial - Tweaks and Enhancements** and its requirements enabled.
+3. Let this version win file conflicts for `WhitePhialNames.dll`, the WPD
+   scripts, and `TWPTE_WhitePhialActorScript.pex`. That last script is an
+   intentional override of the supplied original mod's selection script.
+   Do not install only the DLL: the updated ESP and scripts are required.
+4. Keep `White Phial - Decanting.esp` enabled in its existing load-order
+   position after the original phial mod. Do not rename or compact it. All ten
+   existing record IDs and the master list are preserved; it remains ESL flagged.
+5. Start through SKSE. Let gameplay run briefly outside menus. A valid current
+   custom selection is protected once on loading. Reassign a renamed sample
+   once if you are upgrading from 1.1 and want its custom name captured.
+6. Let the phial refill, decant, and add the **new bottle** to Wheeler. Old
+   wheel entries for the original crafted item do not automatically become
+   entries for the protected item; remove those entries and add the new bottle.
 
-The native helper is deliberately restricted to runtime 1.6.1170. Other runtimes require a separate verified build.
+Requires **Skyrim Steam 1.6.1170**, SKSE64 2.2.6 and the AE Address Library.
+The DLL deliberately refuses other runtimes. Keep the existing Rename Potions /
+Wheeler / Wheeler Refined compatibility patch if you use those mods. Their DLLs
+are not included. White Phial Menu and Widget can remain enabled.
 
-## Installation and the first named dose
+## Protection provided
 
-1. Close Skyrim. Replace the previous **White Phial - Decanting** addon in MO2 with the complete `White_Phial_Decanting_v1_2.zip`. Keep only one version of this addon enabled.
-2. Keep `White Phial - Decanting.esp` enabled after `The White Phial - Tweaks and Enhancements.esp`. Keep the original phial mod, Rename Potions, your Wheeler compatibility patch, and any White Phial Menu / Widget addons enabled.
-3. **Assign a renamed bottle to the White Phial again, once after installing this update.** Select the intended named batch in the original mod's assignment menu. The helper records its name before that bottle is consumed.
-4. Let the phial refill and use **Decant White Phial**. Check the newly produced bottle in inventory, then add that bottle to Wheeler. If a wheel slot still represents an older unnamed batch, remove that slot and add the new named bottle.
+- Snapshot the selected custom liquid while its sample still exists, before
+  consumption. Protect the saved recipe, not just the next bottled dose.
+- Preserve each effect's base magic effect, magnitude, duration, area and cost;
+  potion/poison flags, value settings, weight, captured name, bottle model,
+  icon paths, keywords, equip slot, bounds, addiction and sound references.
+- Copy effects into owned storage, without sharing the original potion's
+  Effect pointers or depending on its native Created Objects reference count.
+- Use one stable slot per distinct definition, including its captured name.
+  Never recycle a used slot within that save. Changing contents cannot change
+  older bottles, including bottles left in unloaded containers.
+- Save the bank in the matching SKSE co-save. Read and resolve it at SKSE's
+  **PreLoadGame** event, before Skyrim restores inventory and active effects.
+  The normal SKSE load callback verifies the same bytes without replacing
+  pointers that restored active effects may already be using.
+- Address effect/keyword/sound dependencies by plugin filename and local ID,
+  so an ordinary load-order change does not point at a different effect.
+- Cross-check a checksum stored as two exact 16-bit global values in the ESS
+  against the co-save's bank. Missing/mismatched/corrupt bank data disables
+  assignment and decanting and displays an error. Restore the matching files;
+  this does not reconstruct deleted co-save data.
+- Refuse unsupported dynamic liquid definitions or an exhausted pool before
+  consuming the sample/full phial. There is no fallback to a temporary bottle.
+- Keep the existing decant power, refill timing, poison-use counter handling,
+  six preset bottled essences and optional 8 AM schedule. Ordinary game/mod
+  potions with stable base forms continue to use their original records.
 
-No new game or quest reset is required. A phial filled before this update has no captured name; assigning a named bottle again supplies it. Existing unnamed bottles are not retroactively renamed.
+There are **1,792 distinct protected custom-liquid definitions per save**.
+Repeated doses of a definition use its existing slot and do not consume new
+slots. This limit avoids growing or reusing native FF created-object forms.
+The new safeguards run on assignment, decanting and save/load events. They
+add no inventory polling or permanent sample actor/container. The existing
+1.1/1.2 power/daily-schedule timer remains unchanged.
 
-## Preserved behavior
+## Existing bottles and damaged saves
 
-Manual decanting still produces one dose and starts the original refill cycle. The lesser power still requires a full, fully re-enchanted phial. The optional daily 8 AM setting in White Phial Menu v5 uses the same named-dose path. The original duplicate-phial, effect-matching and poison-counter checks remain in place.
+Only bottles produced through the protected path use stable records. This
+update does **not** rewrite previously decanted bottles in inventory,
+containers, followers or Wheeler. Those retain their old FF form IDs and can
+still be vulnerable. Do not treat installing this as protection for an old
+stockpile. Rebuild that stock using newly decanted protected doses from a
+working save and update its wheel entries.
 
-The selected bottle's effects, magnitudes, durations, model, weight and value still come from the original saved potion. Only the new bottle's display name is applied. Separate named batches can retain separate names even when their underlying potion form is identical. Selecting an ordinary batch clears the stored custom name for future doses.
+Save28 already contains the suspected lifetime problem; Save29 contains
+missing definitions. This beta does not clean either save or make dangling
+inventory/Wheeler references safe. Use an earlier working save for the beta
+or a separately repaired copy once a repair has been validated. The diagnostic
+remains useful for identifying and correcting the original deletion mechanism.
 
-Names are saved in the SKSE co-save and restored with form-ID resolution. Keep the matching `.skse` file with its game save. Names are cleared when reverting to another save or character. This update addresses lost names; it does not rebuild or provide independent persistence for dynamically created potion forms.
+Keep this ESP, its DLL and scripts installed in saves using protected bottles.
+Removing the mod, losing the matching co-save, or removing mods that define
+its magic effects is not supported. A placeholder with "definition unavailable"
+in its name indicates missing storage, not a usable substitute potion.
 
-## Implementation
+## First in-game verification
 
-`WhitePhialNames.dll` hooks the player's item-removal function and captures the selected potion's inventory display name during the original phial's GiftMenu transfer. It recognizes the original assignment flag, mod-owned destinations, and the phial service quest's reference aliases. Outside this context it calls through without examining inventory lists. It does not run a polling timer.
+1. Select a newly brewed potion with recognisable numbers and a custom name.
+   Decant two doses; confirm name, effects, strength, duration, weight and value.
+2. Put one in a safe container and one on Wheeler. Assign a different liquid
+   to the phial and confirm both older doses stay unchanged.
+3. Save, fully quit Skyrim, restart and load. Check both bottles and Wheeler.
+4. Drink a protected duration potion, save while its effects are active, then
+   fully restart and load. Confirm the effects and remaining bottles behave.
+5. Repeat with a custom poison: apply it to a weapon and confirm the effect and
+   ordinary phial refill behaviour. Check daily decanting if you use it.
+6. Only after these checks, play on this separate save branch. If a failure
+   occurs, preserve the paired ESS/SKSE files and `WhitePhialNames.log` before
+   another launch truncates the log. The log is in the usual Skyrim SKSE log
+   folder under Documents/My Games/Skyrim Special Edition/SKSE.
 
-`WPD_Names.GetBottleName` returns the captured name only for the currently recorded potion form. `WPD_DecantQuest.GiveBottle` creates one disabled reference, applies its display name, and moves that reference into the player's inventory. It does not rename the shared potion form or recreate potion effects. If no name is captured, the helper is absent, or applying the name fails, decanting uses the original ordinary-bottle grant.
+## Implementation and build
 
-The original addon ESP, startup SEQ, player-alias script and power-effect script are retained byte for byte from v1.1. The original mod's scripts are not overridden. Compile-only declarations for those scripts are not shipped as game scripts.
+Source is included. Dependencies are pinned in `tools/build_windows.ps1`.
+`tools/build_plugin.py` preserves original records and appends the slot bank.
+Compiled Papyrus payloads are packaged with their source hashes and build
+manifest. Compile-only API stubs are not installed.
 
-## Verification and in-game check
+Dynamic liquids with conditional effect entries, alternate texture swaps,
+model add-ons, destructible data, or dependencies on other temporary forms
+are refused rather than silently simplified. Standard player-brewed potions
+and poisons use the supported effect structure. This is not a generic cloning
+framework for arbitrary scripted alchemy items.
 
-The release includes build and payload validation reports. Automated tests cover potion identity, switching between differently named batches, clearing an ordinary name, Unicode text, form-ID remapping, invalid saved data and save isolation. The updated Papyrus bytecode is inspected for the single-dose named grant and unchanged refill path. A Windows x64 build is required before packaging.
+The native code retains published effect allocations through the process
+lifetime because engine active effects borrow their pointers during save
+switches. Identical definitions share this session cache, so repeatedly
+loading the same save does not allocate another copy each time. There is no
+per-frame scan or reference-count interception in this helper.
 
-**This update has not been tested inside Skyrim.** The native GiftMenu capture and the game's transfer of the named reference require an in-game check:
-
-- Assign a renamed potion, decant it, and check inventory and Wheeler.
-- Repeat with a renamed poison, including a name such as `Kindling Oil`.
-- Use the last remaining named bottle for assignment; save/reload before decanting and confirm its name survives.
-- Select a second named batch with the same effects, then an ordinary batch; confirm new doses follow the latest selection while previous bottles keep their names.
-- If using the daily option, check the next 8 AM dose too.
-
-For diagnosis, `Documents/My Games/Skyrim Special Edition/SKSE/WhitePhialNames.log` records helper startup, `Selected phial liquid` on capture, and `Naming decanted dose` on delivery. A startup line alone does not prove that a bottle's name was captured.
-
-## Building and credits
-
-Run `tools/build_windows.ps1` with Visual Studio 2022 C++ tools, CMake, PowerShell 7, Git and network access. It pins CommonLibSSE-NG and vcpkg, builds the native DLL, runs the name-state tests, and records source and DLL hashes. The complete addon also requires the compiled Papyrus scripts and unchanged v1.1 ESP/SEQ.
-
-Papyrus compilation uses [russo-2025/papyrus-compiler](https://github.com/russo-2025/papyrus-compiler), release 2026.03.15, with Skyrim/SKSE declarations and compile-only interfaces for the original phial scripts.
-
-- Original phial mod: AndrealletiusVIII, [The White Phial - Tweaks and Enhancements](https://www.nexusmods.com/skyrimspecialedition/mods/73532).
-- Naming integration checked against [Rename Potions SKSE source](https://github.com/alexjiang200407/rename-potions-skse), revision `cb7760745945bf103ed5bb761538253cc5bdd60b`.
-- [CommonLibSSE-NG](https://github.com/CharmedBaryon/CommonLibSSE-NG), revision `b93280e832f263dbef44e44cbe2936622a02f91a`; its license is included.
-- This helper and its sources are provided under the included MIT license. No original phial-mod, Rename Potions, or Wheeler binaries are redistributed by this update.
+The co-save framing and load-event sequence follow SKSE 2.2.6 source:
+https://github.com/ianpatt/skse64/tree/9398d04592a7eb9d754f2997701116df1022f1b4
+Original mod: https://www.nexusmods.com/skyrimspecialedition/mods/73532

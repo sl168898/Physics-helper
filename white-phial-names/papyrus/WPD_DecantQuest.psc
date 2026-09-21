@@ -43,6 +43,14 @@ Function Notice(String message, Bool quiet)
 EndFunction
 
 Bool Function TryDecant(Actor player, Bool quiet = False)
+    If SKSE.GetPluginVersion("WhitePhialNames") < 33554432
+        Notice("White Phial safeguards are unavailable. Check the installed DLL.", quiet)
+        Return False
+    EndIf
+    If !WPD_Storage.IsReady()
+        Notice("White Phial safeguards are not ready. Check WhitePhialNames.log.", quiet)
+        Return False
+    EndIf
     If !player || player != Game.GetPlayer() || player.IsDead()
         Return False
     EndIf
@@ -80,6 +88,12 @@ Bool Function TryDecant(Actor player, Bool quiet = False)
         Return False
     EndIf
 
+    If full == original.CustomPotion || full == original.CustomPotionPoison
+        If !ProtectCurrentLiquid()
+            Notice("The chosen liquid could not be safeguarded. The phial was not emptied.", quiet)
+            Return False
+        EndIf
+    EndIf
     Potion bottled = ResolveBottle(original, full)
     If !bottled || phials.HasForm(bottled)
         Notice("The White Phial's chosen liquid could not be read.", quiet)
@@ -196,4 +210,26 @@ Bool Function SameLiquid(MS12PostQuestScript original, Potion full, Potion bottl
         i += 1
     EndWhile
     Return markerCount == 1 && j == bottleEffects
+EndFunction
+
+
+Bool Function ProtectCurrentLiquid()
+    If SKSE.GetPluginVersion("WhitePhialNames") < 33554432
+        Return False
+    EndIf
+    If !WPD_Storage.IsReady() || !ReassignBusy || ReassignBusy.GetValue() != 0.0
+        Return False
+    EndIf
+    MS12PostQuestScript original = PhialQuest as MS12PostQuestScript
+    If !original || !PhialQuest.IsRunning()
+        Return False
+    EndIf
+    If original.Replicated != original.CustomPotion && original.Replicated != original.CustomPotionPoison
+        Return True
+    EndIf
+    TWPTE_WhitePhialActorScript selector = original.TWPTE_WhitePhialActorRef as TWPTE_WhitePhialActorScript
+    If !selector
+        Return False
+    EndIf
+    Return selector.ProtectStoredLiquid()
 EndFunction

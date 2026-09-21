@@ -9,12 +9,14 @@ Bool autoWasEnabled = False
 Float nextMorning = -1.0
 Float previousTime = -1.0
 Int pendingAttempts = 0
+Bool storageChecked = False
 
 Event OnInit()
     RegisterForSingleUpdate(1.0)
 EndEvent
 
 Event OnPlayerLoadGame()
+    storageChecked = False
     ; Do not resume retries across a load; the reserved morning stays saved.
     pendingAttempts = 0
     RegisterForSingleUpdate(1.0)
@@ -30,6 +32,10 @@ Event OnUpdate()
         EndIf
         If !FullyEnchanted
             FullyEnchanted = Game.GetFormFromFile(0x80D, "The White Phial - Tweaks and Enhancements.esp") as GlobalVariable
+        EndIf
+        If !storageChecked
+            storageChecked = True
+            controller.ProtectCurrentLiquid()
         EndIf
         UpdatePower(player, controller)
         UpdateDailyDecant(player, controller, Utility.GetCurrentGameTime())

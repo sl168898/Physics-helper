@@ -1,0 +1,29 @@
+{
+  "compiler": "russo-2025/papyrus-compiler 2026.03.15 (Linux)",
+  "scripts": {
+    "TWPTE_WhitePhialActorScript": {
+      "source_sha256_lf": "447b5710dabdb5b380ec5c2a52539279f3e73fa4e6959e24d119614e07f89887",
+      "pex_sha256": "ae864ed33df92ebf6b909f3148ffe12cc554c825fa31a6abdbd36bbe51b2fe3f"
+    },
+    "WPD_DecantEffect": {
+      "source_sha256_lf": "8ced227bc931a5682d640b0c3d18aefba0471500f962e071316e6e9f1ba1f8ab",
+      "pex_sha256": "adff48f3ccea0a2ad949cc94d56ff06fdbc8625787c68182e3b4d6209d3f7d9f"
+    },
+    "WPD_DecantQuest": {
+      "source_sha256_lf": "7714925e447e9686126639a200e12ddb0a652eb94038943a62066d1f8a49b7d3",
+      "pex_sha256": "582aab3c10cd23909d5539b2da04eb078fcdd87de4d9daac64a83ace0a8b77a8"
+    },
+    "WPD_Names": {
+      "source_sha256_lf": "f1d6269813b33a411d2825e26f42e644106ed2c02a6b129822542b333c35c24b",
+      "pex_sha256": "e79ad23a769085f77a5f09eb6d9a63e78fe5098d6b94598ae6cfb7d7d17af346"
+    },
+    "WPD_PlayerAlias": {
+      "source_sha256_lf": "8db1b5302e34a7d9cd0b2dae4dfbea2c86ef80e4d0690741719d5d55cdd47481",
+      "pex_sha256": "3eb5b2f3973466284d22a456094bac6e053de3841d495225bdfc55d34309ea43"
+    },
+    "WPD_Storage": {
+      "source_sha256_lf": "e3ab1e36dd5605e0d82d655bb51a58b5764a22985c4c3b6ed150d570f357562f",
+      "pex_sha256": "ade1a4e43cb8c299a870cb2f1ecb413be2c00ce68380d50ccdc286cabe0906d9"
+    }
+  }
+}

@@ -43,18 +43,29 @@ Copy-Item $Dll $PluginDirectory
 Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
+Run 'python' @((Join-Path $Root 'tools/stage_data.py'), $Stage)
+$SourceStage = Join-Path $Stage 'Source/WhitePhialNames'
+New-Item -ItemType Directory -Force -Path $SourceStage | Out-Null
+foreach ($Name in @('src','tests','tools','data','papyrus','CMakeLists.txt','vcpkg.json','README.md','LICENSE')) {
+    Copy-Item (Join-Path $Root $Name) $SourceStage -Recurse
+}
+$Licenses = Join-Path $Stage 'Licenses'
+New-Item -ItemType Directory -Force -Path $Licenses | Out-Null
+foreach ($Dependency in @('spdlog','fmt','rapidcsv')) {
+    Copy-Item (Join-Path $Build "vcpkg_installed/x64-windows-static-md/share/$Dependency/copyright") (Join-Path $Licenses "$Dependency.txt")
+}
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Names.h','tests/names_tests.cpp','CMakeLists.txt','vcpkg.json','papyrus/WPD_Names.psc','papyrus/WPD_DecantQuest.psc')) {
+foreach ($Name in @('src/main.cpp','src/Names.h','src/Bank.h','src/Storage.cpp','src/Storage.h','tests/names_tests.cpp','tests/bank_tests.cpp','CMakeLists.txt','vcpkg.json','tools/build_windows.ps1','tools/build_plugin.py','tools/stage_data.py','tools/esp.py','README.md','data/PapyrusBuild.json','papyrus/WPD_Names.psc','papyrus/WPD_Storage.psc','papyrus/WPD_DecantQuest.psc','papyrus/WPD_PlayerAlias.psc','papyrus/TWPTE_WhitePhialActorScript.psc')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'WhitePhialNames'; version = '1.0.0'; addon_version = '1.2'; runtime = '1.6.1170'
+    plugin = 'WhitePhialNames'; version = '2.0.0'; addon_version = '2.0 beta'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; name_tests = 'passed'; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; name_tests = 'passed'; bank_tests = 'passed'; in_game_tested = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Names_Native_v1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Decanting_v2_0_beta.zip')

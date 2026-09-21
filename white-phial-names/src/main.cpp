@@ -3,6 +3,8 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <mutex>
 #include "Names.h"
+#include "Storage.h"
+#include "Bank.h"
 
 namespace {
 constexpr auto originalPlugin = "The White Phial - Tweaks and Enhancements.esp";
@@ -72,13 +74,15 @@ RE::BSFixedString getBottleName(RE::StaticFunctionTag*, RE::AlchemyItem* potion)
 }
 bool registerPapyrus(RE::BSScript::IVirtualMachine* vm) {
     vm->RegisterFunction("GetBottleName", "WPD_Names", getBottleName);
-    return true;
+    return phial::storage::registerPapyrus(vm);
 }
 void revert(SKSE::SerializationInterface*) {
+    phial::storage::revert();
     std::lock_guard lock(mutex);
     contentsName = {};
 }
 void save(SKSE::SerializationInterface* api) {
+    phial::storage::save(api);
     std::lock_guard lock(mutex);
     if (!contentsName.potion || !api->OpenRecord(recordID, 1)) return;
     const auto length = static_cast<std::uint32_t>(contentsName.text.size());
@@ -91,6 +95,7 @@ void load(SKSE::SerializationInterface* api) {
     revert(api);
     std::uint32_t type{}, version{}, length{};
     while (api->GetNextRecordInfo(type, version, length)) {
+        if (type == phial::storage::bankRecord) { phial::storage::loadRecord(api, version, length); continue; }
         if (type != recordID || version != 1) continue;
         std::uint32_t potion{}, size{};
         if (length < 8 || api->ReadRecordData(&potion, 4) != 4 || api->ReadRecordData(&size, 4) != 4 ||
@@ -109,6 +114,7 @@ void load(SKSE::SerializationInterface* api) {
     }
 }
 void message(SKSE::MessagingInterface::Message* event) {
+    phial::storage::message(event);
     if (event->type != SKSE::MessagingInterface::kDataLoaded) return;
     auto* data = RE::TESDataHandler::GetSingleton();
     if (!data || !data->LookupForm<RE::TESQuest>(0x802, "White Phial - Decanting.esp")) return;
@@ -123,7 +129,7 @@ void message(SKSE::MessagingInterface::Message* event) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData d{};
-    d.PluginVersion({1,0,0,0}); d.PluginName("WhitePhialNames"); d.AuthorName("Physics-helper contributors");
+    d.PluginVersion({2,0,0,0}); d.PluginName("WhitePhialNames"); d.AuthorName("Physics-helper contributors");
     d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -135,7 +141,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialNames 1.0.0; Decanting 1.2; Skyrim 1.6.1170");
+    SKSE::log::info("WhitePhialNames 2.0.0; Decanting 2.0 beta; Skyrim 1.6.1170");
     const auto* api = SKSE::GetSerializationInterface();
     api->SetUniqueID(saveID); api->SetSaveCallback(save); api->SetLoadCallback(load); api->SetRevertCallback(revert);
     return SKSE::GetPapyrusInterface()->Register(registerPapyrus) && SKSE::GetMessagingInterface()->RegisterListener(message);
