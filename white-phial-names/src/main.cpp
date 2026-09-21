@@ -4,6 +4,7 @@
 #include <mutex>
 #include "Names.h"
 #include "Storage.h"
+#include "Blacklist.h"
 #include "Bank.h"
 
 namespace {
@@ -74,7 +75,7 @@ RE::BSFixedString getBottleName(RE::StaticFunctionTag*, RE::AlchemyItem* potion)
 }
 bool registerPapyrus(RE::BSScript::IVirtualMachine* vm) {
     vm->RegisterFunction("GetBottleName", "WPD_Names", getBottleName);
-    return phial::storage::registerPapyrus(vm);
+    return phial::storage::registerPapyrus(vm) && phial::blacklist::registerPapyrus(vm);
 }
 void revert(SKSE::SerializationInterface*) {
     phial::storage::revert();
@@ -115,6 +116,7 @@ void load(SKSE::SerializationInterface* api) {
 }
 void message(SKSE::MessagingInterface::Message* event) {
     phial::storage::message(event);
+    phial::blacklist::message(event);
     if (event->type != SKSE::MessagingInterface::kDataLoaded) return;
     auto* data = RE::TESDataHandler::GetSingleton();
     if (!data || !data->LookupForm<RE::TESQuest>(0x802, "White Phial - Decanting.esp")) return;
@@ -129,7 +131,7 @@ void message(SKSE::MessagingInterface::Message* event) {
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData d{};
-    d.PluginVersion({2,0,3,0}); d.PluginName("WhitePhialNames"); d.AuthorName("Physics-helper contributors");
+    d.PluginVersion({2,1,0,0}); d.PluginName("WhitePhialNames"); d.AuthorName("Physics-helper contributors");
     d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -141,7 +143,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("WhitePhialNames 2.0.3; Decanting 2.0.3 beta; Skyrim 1.6.1170");
+    SKSE::log::info("WhitePhialNames 2.1.0; Decanting 2.1.0 beta; Skyrim 1.6.1170");
     const auto* api = SKSE::GetSerializationInterface();
     api->SetUniqueID(saveID); api->SetSaveCallback(save); api->SetLoadCallback(load); api->SetRevertCallback(revert);
     return SKSE::GetPapyrusInterface()->Register(registerPapyrus) && SKSE::GetMessagingInterface()->RegisterListener(message);

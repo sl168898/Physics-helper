@@ -314,6 +314,13 @@ bool registerPapyrus(RE::BSScript::IVirtualMachine* vm) {
     vm->RegisterFunction("TraceNative", "WPD_Storage", traceNative);
     return true;
 }
+std::optional<Liquid> protectedDefinition(RE::AlchemyItem* potion) {
+    std::lock_guard lock(gate);
+    auto i = slotIndex(potion);
+    if (!i) return {};
+    if (!isReady(nullptr) || *i >= bank.liquids.size()) throw Error("Protected liquid is not ready");
+    return bank.liquids[*i];
+}
 void revert() {
     std::lock_guard lock(gate);
     // SKSE's revert callback runs inside the load that PreLoad prepared.

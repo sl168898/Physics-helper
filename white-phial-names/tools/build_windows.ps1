@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WorkDirectory = [IO.Path]::GetFullPath($WorkDirectory)
 $CommonCommit = 'b93280e832f263dbef44e44cbe2936622a02f91a'
+$MenuCommit = '1dcb70179076aae4ab626f43c5baab2735ca5877'
+$Menu = Join-Path $WorkDirectory 'menu-api'
 $VcpkgCommit = '60b06921c7c7ac787b23a222dfab5cdd3911712e'
 function Run([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments
@@ -21,12 +23,13 @@ $Common = Join-Path $WorkDirectory 'commonlib'
 $Vcpkg = Join-Path $WorkDirectory 'vcpkg'
 $Build = Join-Path $WorkDirectory 'build'
 $Stage = Join-Path $WorkDirectory 'stage'
+ClonePinned 'https://github.com/QTR-Modding/SKSE-Menu-Framework-3-API.git' $Menu $MenuCommit
 ClonePinned 'https://github.com/CharmedBaryon/CommonLibSSE-NG.git' $Common $CommonCommit
 ClonePinned 'https://github.com/microsoft/vcpkg.git' $Vcpkg $VcpkgCommit
 Run (Join-Path $Vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 Run 'cmake' @('-S', $Root, '-B', $Build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
     "-DCMAKE_TOOLCHAIN_FILE=$Vcpkg/scripts/buildsystems/vcpkg.cmake", '-DVCPKG_TARGET_TRIPLET=x64-windows-static-md',
-    "-DCOMMONLIB_ROOT=$Common")
+    "-DCOMMONLIB_ROOT=$Common", "-DMENU_API_ROOT=$Menu")
 # Compile the adapter first: catch API/template errors before building CommonLib.
 $VSWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $MSBuild = (& $VSWhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1)
@@ -40,6 +43,7 @@ New-Item -ItemType Directory -Force -Path $PluginDirectory | Out-Null
 $Dll = Join-Path $Build 'Release/WhitePhialNames.dll'
 if (!(Test-Path $Dll) -or (Get-Item $Dll).Length -eq 0) { throw 'No DLL produced' }
 Copy-Item $Dll $PluginDirectory
+Copy-Item (Join-Path $Menu 'LICENSE') (Join-Path $Stage 'MenuFramework-API-LICENSE')
 Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
@@ -55,17 +59,17 @@ foreach ($Dependency in @('spdlog','fmt','rapidcsv')) {
     Copy-Item (Join-Path $Build "vcpkg_installed/x64-windows-static-md/share/$Dependency/copyright") (Join-Path $Licenses "$Dependency.txt")
 }
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Names.h','src/Bank.h','src/NamedKeywords.h','src/CosaveFile.h','src/Storage.cpp','src/Storage.h','tests/names_tests.cpp','tests/bank_tests.cpp','tests/cosave_tests.cpp','CMakeLists.txt','vcpkg.json','tools/build_windows.ps1','tools/build_plugin.py','tools/stage_data.py','tools/esp.py','tools/CompileInterfaces/MS12WhitePhialScript.psc','tools/CompileInterfaces/MS12PostQuestScript.psc','README.md','data/PapyrusBuild.json','papyrus/WPD_Names.psc','papyrus/WPD_Storage.psc','papyrus/WPD_DecantQuest.psc','papyrus/WPD_PlayerAlias.psc','papyrus/TWPTE_WhitePhialActorScript.psc')) {
+foreach ($Name in @('src/Blacklist.cpp','src/Blacklist.h','src/BlacklistCore.h','tests/blacklist_tests.cpp','papyrus/WPD_Blacklist.psc','papyrus/MS12PostQuestScript.psc','papyrus/MS12WhitePhialScript.psc','src/main.cpp','src/Names.h','src/Bank.h','src/NamedKeywords.h','src/CosaveFile.h','src/Storage.cpp','src/Storage.h','tests/names_tests.cpp','tests/bank_tests.cpp','tests/cosave_tests.cpp','CMakeLists.txt','vcpkg.json','tools/build_windows.ps1','tools/build_plugin.py','tools/stage_data.py','tools/esp.py','tools/CompileInterfaces/MS12WhitePhialScript.psc','tools/CompileInterfaces/MS12PostQuestScript.psc','README.md','data/PapyrusBuild.json','papyrus/WPD_Names.psc','papyrus/WPD_Storage.psc','papyrus/WPD_DecantQuest.psc','papyrus/WPD_PlayerAlias.psc','papyrus/TWPTE_WhitePhialActorScript.psc')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'WhitePhialNames'; version = '2.0.3'; addon_version = '2.0.3 beta'; runtime = '1.6.1170'
-    source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
+    plugin = 'WhitePhialNames'; version = '2.1.0'; addon_version = '2.1.0 beta'; runtime = '1.6.1170'
+    menu_api_commit = $MenuCommit; source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; name_tests = 'passed'; bank_tests = 'passed'; cosave_tests = 'passed'; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; name_tests = 'passed'; bank_tests = 'passed'; cosave_tests = 'passed'; blacklist_tests = 'passed'; in_game_tested = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Decanting_v2_0_3_beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'White_Phial_Decanting_v2_1_0_beta.zip')

@@ -1,33 +1,41 @@
 {
   "compiler": "russo-2025/papyrus-compiler 2026.03.15 (Linux)",
   "scripts": {
+    "MS12PostQuestScript": {
+      "source_sha256_lf": "b0dc31b805f4dfef6c62f5b951ca3b16646381b62062e3e4eba00782d35cc335",
+      "pex_sha256": "ac6e94945ae2f2cec17c32b6b78c811e723a50b54c53b0711cf6870e7cc398d9"
+    },
+    "MS12WhitePhialScript": {
+      "source_sha256_lf": "e3cfd7d3c112a81bbff8c32fa59240b07c1382375c08db21e8e22ad6a32189fa",
+      "pex_sha256": "898b8ddafebbcf0182a0869bbc38453dfca89b68b87a653b44ee14c1e013d99d"
+    },
     "TWPTE_WhitePhialActorScript": {
-      "source_sha256_lf": "447b5710dabdb5b380ec5c2a52539279f3e73fa4e6959e24d119614e07f89887",
-      "pex_sha256": "1f4267c22e7dd7b9288f4812e0bfd9e9166d7d04d0e6636d2b4520334b2c8329"
+      "source_sha256_lf": "f7167124ee13aa58f4ca67dd9804be3d62c22e4aa8ce389159e7ee145e4251e2",
+      "pex_sha256": "b6e05d72760020bdc4514a905fcf3443e30db5786621e189a8b9a13ac13e9002"
+    },
+    "WPD_Blacklist": {
+      "source_sha256_lf": "af9c4e88e43c030e097c3b5791df7db3a2328c0141c27e5e2f8d9116d37bd162",
+      "pex_sha256": "e22a0f4f50ffff672fb59af113a4e6bd691f5f3bf084a8cb08c7c8434a3b87fa"
     },
     "WPD_DecantEffect": {
       "source_sha256_lf": "8ced227bc931a5682d640b0c3d18aefba0471500f962e071316e6e9f1ba1f8ab",
-      "pex_sha256": "0cc225b56f76cf22f92c76902095071a03b5aac8ff3c400b8e6e19ec6cc9cef2"
+      "pex_sha256": "62b9060e3a3af6373ff41dbebb884e2f2846c0caf6f6fa5cd92befdf26dfc67c"
     },
     "WPD_DecantQuest": {
-      "source_sha256_lf": "84b122318006b080d3e28cfee9b3d4ea917958472104f15c463588cfc8d45edc",
-      "pex_sha256": "f4e3b6c212d0c923892095a58b9aacb75730be7bc7677ca370747414a80052f5"
+      "source_sha256_lf": "44b51c13bbd14a3791f9dfaa3f1957c81901511b0e9fcd259a008c44e1d1e6c7",
+      "pex_sha256": "2e52c1dd041894e9ce4c243ebb3e15ce5765be4b8f5dd38a737d1dc9212b618b"
     },
     "WPD_Names": {
       "source_sha256_lf": "f1d6269813b33a411d2825e26f42e644106ed2c02a6b129822542b333c35c24b",
-      "pex_sha256": "56c61d874b6fe3dda911e91fc2360d9b9a6e4b3e6a7d9a80e124a0d0e0da1204"
+      "pex_sha256": "edeb8dab62845a067da63c6a05357aea191eb2f9ccf7196dae25956f61b41db8"
     },
     "WPD_PlayerAlias": {
       "source_sha256_lf": "785eeee76bbb6aaa80236f040d15109783705514c82b379454a4deb275390f8d",
-      "pex_sha256": "0670dcb968d8d8119ddee5496639f879544397ab1f5398d70f6ecde3b7aa95e2"
+      "pex_sha256": "cf04e4f164a951fb51bf17bcfe1cb0ebd98e0c68453fbc3dc11eb2bc8ad5751f"
     },
     "WPD_Storage": {
       "source_sha256_lf": "8aec45c0865e79d7da8f8a1505f09c281c4189199b9c5b8c4eaacbdcc1a95835",
-      "pex_sha256": "66963bc4853358b0c3880f9c5e926a5633466e96f545df064c4ec6def26d0d73"
+      "pex_sha256": "7a2af6c33376157b85ae02da18a869666f05c1812d764f1ab7281da2abd3aa97"
     }
-  },
-  "compile_interfaces": {
-    "MS12PostQuestScript.psc": "d5ffd4b1613a18980b772a107830fceaabc28bd74572c147034b9089bb2931aa",
-    "MS12WhitePhialScript.psc": "fcace21fe041f3da0cc52ed8767d99061dcc300b08562acf88cbd5813823d9c7"
   }
 }

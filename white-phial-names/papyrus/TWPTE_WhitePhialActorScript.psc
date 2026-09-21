@@ -58,6 +58,13 @@ Event OnItemAdded(Form akBaseItem, int aiItemCount, ObjectReference akItemRefere
 			RemoveItem(PotionToTrack, ReturnAmountPotions, true, PlayerRef)
 		EndIf
 		
+        If WPD_Blacklist.IsBlocked(PotionToTrack)
+            RemoveItem(PotionToTrack, 1, True, PlayerRef)
+            PotionToTrack = LastPotion
+            TWPTE_Failsafe.SetValue(0)
+            Debug.Notification("This liquid is blacklisted. Your sample was returned.")
+            Return
+        EndIf
 		If !PotionToTrack.IsPoison()
 			AssignEffects(TheWhitePhialFull, MS12WhitePhialEffect, PotionToTrack, "custom")
 		Else
@@ -71,6 +78,11 @@ Event OnItemAdded(Form akBaseItem, int aiItemCount, ObjectReference akItemRefere
 EndEvent
 
 Function AssignEffects(Potion WhitePhial, MagicEffect EffectToIgnore, Potion PotionToUse, string AssignString)
+    If WPD_Blacklist.IsBlocked(PotionToUse)
+        RemoveItem(PotionToUse, 1, True, PlayerRef)
+        Debug.Notification("This liquid is blacklisted. Your sample was returned.")
+        Return
+    EndIf
     ; Snapshot while the selected sample still exists in this actor's inventory.
     Potion originalSample = PotionToUse
     Potion protectedLiquid = WPD_Storage.Protect(originalSample)

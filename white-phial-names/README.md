@@ -1,49 +1,54 @@
-# White Phial - Decanting 2.0.3 beta
+# White Phial - Decanting 2.1.0 beta
 
-Fixes the early co-save filename lookup on reload. SKSE's PreLoadGame event
-can supply a name ending in `.ess`; 2.0.2 appended `.skse` without removing
-that suffix and could therefore look for `Save30.ess.skse`. The new reader
-uses SKSE 2.2.6's extension handling and its Steam save-folder construction,
-including `sLocalSavePath:General`. It no longer infers the game save folder
-from CommonLib's log-folder detection.
+Adds a searchable **White Phial / Blacklist** page to SKSE Menu Framework 3.x.
+Open that page, search a potion name or source plugin, and click Add. The top
+list lets you remove entries. Use Refresh after crafting, renaming, changing
+inventory or selecting a different phial liquid. A shortcut blocks/unblocks
+current contents, including when the phial is empty.
 
-The supplied Save30 pair was checked read-only: it contains one protected
-bottle and one intact recipe, whose fingerprint matches the ESS exactly.
-The before-restart log confirms successful protection and decanting; the
-after-restart log shows the early loader missed a record SKSE later read.
-The old log did not record its filename, so it cannot prove which incorrect
-path was opened in that session. This update logs the incoming name, selected
-path, byte count, fingerprint and normal-callback verification explicitly.
+Blocked liquids cannot be assigned, refilled or decanted, including the daily
+automatic decant option. A rejected assignment returns the sample. An already
+full phial stays full and can still be used once; it then remains empty.
+Removing the current liquid from the blacklist restarts the normal refill
+countdown if the tracked phial is empty. No instant free refill is granted.
 
-Install this complete archive over 2.0.2 in MO2, let its files win conflicts,
-and restart Skyrim. Load the original Save30 **with its matching .skse**.
-Do not clean the save, reset quests, reassign the phial or recreate that
-bottle. Check the existing named bottle in inventory and Wheeler. Save to a
-new slot, quit and reload that new save, then check again. Keep Save30's
-original pair until this in-game check succeeds.
+Search includes loaded non-food potions/poisons and custom liquids in your
+inventory or protected bank. Static entries use source plugin + local record
+ID. Custom entries match effect identities, magnitudes, areas, durations and
+potion/poison type. Names, load-order indices and protected slot numbers are
+not part of the custom identity. Renaming or decanting the same recipe cannot
+bypass its rule; a different strength is a different recipe. This restriction
+does not remove existing bottles or affect ordinary alchemy or drinking.
 
-The ESP, Papyrus scripts, slot IDs and bank format are byte-identical to
-2.0.2. The native plugin reports 2.0.3; the unchanged decant-script trace
-still says 2.0.2. Effects are still restored before engine save loading, and
-the normal callback verifies the same bytes. No late reconstruction or
-fallback to another save is used. Missing and unreadable files are now
-reported distinctly, and the first specific loader error is retained.
+Rules save automatically to `Data/SKSE/Plugins/WhitePhialBlacklist.cfg`, shared
+by saves seeing that file. In MO2 the generated file will normally appear in
+Overwrite unless a configured output mod receives it. Keep it when updating;
+no default configuration ships in the archive. A separate MO2 profile needs
+its own file visibility if you want a different blacklist. This setting is
+independent of the menu's Remember option. Unavailable mod entries remain
+removable. Invalid configuration stops duplication and reports an error;
+failed writes retain the old rules. Up to 4096 rules, 16 MiB total.
 
-The 2.0.2 fixes are included: runtime keywords are preserved by unique
-EditorID, and the compiled caller uses the original refill script's verified
-`SetForRefill(Actor)` signature. The original refill scripts are not replaced.
+Install the complete archive over the previous decant addon and restart
+Skyrim. Let its DLL and all nine scripts win conflicts, including
+`MS12PostQuestScript.pex`, `MS12WhitePhialScript.pex` and the assignment actor
+script. The two original refill-script overrides are new in 2.1.0. Keep the
+original phial mod, SKSE Menu Framework 3.x, and the existing White Phial Menu /
+Widget enabled. This DLL supplies the additional page; it does not replace
+their controls. Other mods replacing the same refill scripts need merging.
 
-Existing v1 banks keep their exact bytes and saved fingerprints. Banks that
-contain named runtime keywords use payload v2, while retaining all old slot
-assignments. Once such a bank has been saved, keep 2.0.2 or later installed;
-2.0/2.0.1 cannot read the new payload. A missing or ambiguous named keyword
-still stops loading/protection, rather than silently removing a dependency.
-The ESP and existing record IDs are unchanged.
+This retains the 2.0.3 early co-save lookup fix and existing potion protection.
+The ESP, stable slot IDs and bank payload format are unchanged. Existing
+protected definitions remain in their assigned slots. No new background
+inventory monitoring is added; search snapshots run on opening/refresh.
 
-Detailed decant/refill logging remains in
-`Documents/My Games/Skyrim Special Edition/SKSE/WhitePhialNames.log`.
-Papyrus logging is not required. Windows compilation and automated tests do
-not replace the in-game assignment, decant and save/reload test above.
+Built for **Skyrim Steam 1.6.1170**, SKSE64 2.2.6 and AE Address Library.
+Build/tests verify native identity/persistence and compiled script guard paths;
+Skyrim is not available in the build environment. Test using a separate save:
+block an ordinary and a renamed custom potion, attempt assignment, refill and
+both decant modes, then remove the rule, save, quit and reload. Check the list
+persists and existing protected bottles still appear in inventory and Wheeler.
+Keep the original save and matching .skse pair until this succeeds.
 
 ## Protected custom liquids (2.0 beta behavior)
 
@@ -62,7 +67,8 @@ save/load, drinking, poison and Wheeler checks below still need an in-game test.
    Keep only one version of the addon enabled. Keep the original **The White
    Phial - Tweaks and Enhancements** and its requirements enabled.
 3. Let this version win file conflicts for `WhitePhialNames.dll`, the WPD
-   scripts, and `TWPTE_WhitePhialActorScript.pex`. That last script is an
+   scripts, `TWPTE_WhitePhialActorScript.pex`, `MS12PostQuestScript.pex` and
+   `MS12WhitePhialScript.pex`. These are intentional overrides; the actor is an
    intentional override of the supplied original mod's selection script.
    Do not install only the DLL: the updated ESP and scripts are required.
 4. Keep `White Phial - Decanting.esp` enabled in its existing load-order

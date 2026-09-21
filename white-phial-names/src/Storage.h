@@ -1,7 +1,9 @@
 #pragma once
 #include <RE/Skyrim.h>
+#include "Bank.h"
 #include <SKSE/SKSE.h>
 namespace phial::storage {
+std::optional<Liquid> protectedDefinition(RE::AlchemyItem* potion);
 bool registerPapyrus(RE::BSScript::IVirtualMachine* vm);
 void message(SKSE::MessagingInterface::Message* event);
 void revert();

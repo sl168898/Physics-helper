@@ -44,7 +44,7 @@ Function Notice(String message, Bool quiet)
 EndFunction
 
 Bool Function TryDecant(Actor player, Bool quiet = False)
-    WPD_Storage.Trace("TryDecant start (2.0.2); quiet=" + quiet)
+    WPD_Storage.Trace("TryDecant start (2.1.0); quiet=" + quiet)
     If SKSE.GetPluginVersion("WhitePhialNames") < 33554432
         Notice("White Phial safeguards are unavailable. Check the installed DLL.", quiet)
         Return False
@@ -75,6 +75,10 @@ Bool Function TryDecant(Actor player, Bool quiet = False)
     FormList phials = original.TWPTE_WhitePhialList
     If !full || !empty || !phials || !phials.HasForm(full) || player.GetItemCount(full) < 1
         Notice("You need a full White Phial in your inventory.", quiet)
+        Return False
+    EndIf
+    If WPD_Blacklist.IsBlocked(full)
+        Notice("This liquid is blacklisted. The phial was not emptied.", quiet)
         Return False
     EndIf
     ; The original refill function removes duplicate phials. Do not let it
