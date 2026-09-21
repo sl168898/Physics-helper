@@ -318,7 +318,9 @@ std::optional<Liquid> protectedDefinition(RE::AlchemyItem* potion) {
     std::lock_guard lock(gate);
     auto i = slotIndex(potion);
     if (!i) return {};
-    if (!isReady(nullptr) || *i >= bank.liquids.size()) throw Error("Protected liquid is not ready");
+    // Snapshot already validated bank state; do not re-encode/hash the entire
+    // bank once per catalog row. Actual duplication still calls IsReady.
+    if (!initialized || !ready || loading || *i >= bank.liquids.size()) throw Error("Protected liquid is not ready");
     return bank.liquids[*i];
 }
 void revert() {
