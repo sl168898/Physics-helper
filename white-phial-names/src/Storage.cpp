@@ -48,7 +48,7 @@ std::string str(const char* p) { return p ? p : ""; }
 Liquid snapshot(RE::AlchemyItem* p, const std::string& name) {
     // Crafted potions have unconditioned effect lists. Do not silently strip
     // unsupported model/destruction data or conditional effects from a mod.
-    if (!p || p->numAlternateTextures || p->numAddons || p->destructible ||
+    if (!p || p->numAlternateTextures || p->numAddons || p->RE::BGSDestructibleObjectForm::data ||
         p->effects.empty() || p->effects.size() > 128 || p->numKeywords > 256)
         throw Error("This custom liquid has unsupported data; sample was not consumed");
     Liquid l;
@@ -173,7 +173,11 @@ RE::AlchemyItem* protect(RE::StaticFunctionTag*, RE::AlchemyItem* potion, RE::BS
         auto i = slotIndex(potion);
         if (i && *i >= bank.liquids.size()) throw Error("This protected liquid has no saved definition");
         if (i && (chosenName.empty() || bank.liquids[*i].name == chosenName.c_str())) return potion;
-        if (!i && (potion->GetFormID() >> 24) != 0xFF) return potion;
+        if (!i && (potion->GetFormID() >> 24) != 0xFF) {
+            const auto ref = reference(potion);
+            if (resolve<RE::AlchemyItem>(ref) != potion) throw Error("Liquid is not backed by a loaded plugin record");
+            return potion;
+        }
         Liquid liquid = i ? bank.liquids[*i] : snapshot(potion, chosenName.c_str());
         if (i) liquid.name = chosenName.c_str();
         if (auto existing = bank.find(liquid)) return slots[*existing];
