@@ -1,21 +1,35 @@
-# White Phial - Decanting 2.0.1 diagnostics
+# White Phial - Decanting 2.0.2 beta
 
-This is a diagnostic update to the 2.0 beta, not a fix for rejected liquids.
-The earlier generic "Liquid uses another temporary form" error did not say
-which dependency was temporary. This build identifies the exact field,
-FormID, record type, editor ID, name and source plugin when available. It also
-records decant attempts, failure messages and the phial counts/alias before
-and after the original refill function. All of this goes to
-`Documents/My Games/Skyrim Special Edition/SKSE/WhitePhialNames.log`;
-Papyrus logging is not required.
+This update addresses two faults exposed by the 2.0.1 diagnostic log:
 
-Install the complete archive over the 2.0 beta, with its files winning MO2
-conflicts. Load the same test save, try decanting once, and copy the log before
-the next launch. If assigning the sample also fails, perform that attempt
-once in the same session. No quest reset or new game is required for logging.
-Keep your pre-test save. The co-save format, ESP, persistence rules and refill
-behavior are unchanged. Dependencies on temporary forms are still rejected;
-this update does not drop effects or keywords to force an unsafe bottle.
+- Custom samples with runtime keywords such as `OCF_VesselBottlePotion` and
+  `OCF_VesselBottle` were rejected. They are now saved by unique EditorID and
+  resolved from the current keyword array on loading. Neither the keywords
+  nor potion effects are discarded; temporary numeric IDs are not saved.
+- The addon was compiled against an incorrect `SetForRefill(ObjectReference)`
+  declaration, while the original script requires `SetForRefill(Actor)`.
+  The caller is recompiled with the verified Actor signature. The similarly
+  incorrect `RemoveDuplicateWhitePhial` interface is corrected to its original
+  ObjectReference signature. The original refill scripts are not replaced.
+
+Install the complete archive over 2.0/2.0.1, with its files winning MO2
+conflicts. Load the same working test save and assign the intended custom
+sample again: a previously rejected assignment left the old liquid selected.
+Let the phial refill, then decant. Confirm one empty phial and one named
+bottle, save, restart Skyrim, and check the bottle again. No quest reset or
+new game is required for this update. Keep your pre-test save.
+
+Existing v1 banks keep their exact bytes and saved fingerprints. Banks that
+contain named runtime keywords use payload v2, while retaining all old slot
+assignments. Once such a bank has been saved, keep 2.0.2 or later installed;
+2.0/2.0.1 cannot read the new payload. A missing or ambiguous named keyword
+still stops loading/protection, rather than silently removing a dependency.
+The ESP and existing record IDs are unchanged.
+
+Detailed decant/refill logging remains in
+`Documents/My Games/Skyrim Special Edition/SKSE/WhitePhialNames.log`.
+Papyrus logging is not required. Windows compilation and automated tests do
+not replace the in-game assignment, decant and save/reload test above.
 
 ## Protected custom liquids (2.0 beta behavior)
 
@@ -69,8 +83,9 @@ are not included. White Phial Menu and Widget can remain enabled.
   **PreLoadGame** event, before Skyrim restores inventory and active effects.
   The normal SKSE load callback verifies the same bytes without replacing
   pointers that restored active effects may already be using.
-- Address effect/keyword/sound dependencies by plugin filename and local ID,
-  so an ordinary load-order change does not point at a different effect.
+- Address static effect/keyword/sound dependencies by plugin filename and
+  local ID. Address named runtime keywords by unique EditorID, so changes to
+  their generated numeric IDs do not lose the tags on reload.
 - Cross-check a checksum stored as two exact 16-bit global values in the ESS
   against the co-save's bank. Missing/mismatched/corrupt bank data disables
   assignment and decanting and displays an error. Restore the matching files;
@@ -132,8 +147,9 @@ Compiled Papyrus payloads are packaged with their source hashes and build
 manifest. Compile-only API stubs are not installed.
 
 Dynamic liquids with conditional effect entries, alternate texture swaps,
-model add-ons, destructible data, or dependencies on other temporary forms
-are refused rather than silently simplified. Standard player-brewed potions
+model add-ons, destructible data, or unsupported temporary dependencies
+are refused rather than silently simplified. Uniquely named runtime keywords
+registered in the keyword array are supported. Standard player-brewed potions
 and poisons use the supported effect structure. This is not a generic cloning
 framework for arbitrary scripted alchemy items.
 
@@ -146,3 +162,9 @@ per-frame scan or reference-count interception in this helper.
 The co-save framing and load-event sequence follow SKSE 2.2.6 source:
 https://github.com/ianpatt/skse64/tree/9398d04592a7eb9d754f2997701116df1022f1b4
 Original mod: https://www.nexusmods.com/skyrimspecialedition/mods/73532
+
+KID creates named keywords during DataLoaded and inserts them into the keyword
+array, so the runtime lookup uses that array rather than only the general
+EditorID map. Source inspected for this behavior:
+https://github.com/powerof3/Keyword-Item-Distributor/blob/99adaaa1d8cefe320524802b57e91723f66b1c7c/src/Data/FormData.cpp
+https://github.com/powerof3/Keyword-Item-Distributor/blob/99adaaa1d8cefe320524802b57e91723f66b1c7c/src/Cache.cpp

@@ -38,6 +38,9 @@ struct Liquid {
     Ref equip, addiction, consumeSound, pickupSound, putdownSound;
     std::vector<Ref> keywords;
     std::vector<Effect> effects;
+    // Generated keywords are recreated by their provider each launch. Retain
+    // their unique EditorIDs, never their FF FormIDs. Other refs stay static.
+    std::vector<std::string> namedKeywords;
     bool operator==(const Liquid&) const = default;
 };
 struct Bank {
@@ -77,8 +80,10 @@ struct Writer {
             r.file.find_first_of("/\\:") != r.file.npos) throw Error("Invalid persistent form reference");
         str(r.file); u32(r.local);
     }
-    void liquid(const Liquid& l) {
-        if (l.effects.empty() || l.effects.size() > 128 || l.keywords.size() > 256 || l.weight < 0)
+    void liquid(const Liquid& l, std::uint32_t version = 2) {
+        if ((version != 1 && version != 2) || (version == 1 && !l.namedKeywords.empty()))
+            throw Error("Unsupported liquid version");
+        if (l.effects.empty() || l.effects.size() > 128 || l.keywords.size() + l.namedKeywords.size() > 256 || l.weight < 0)
             throw Error("Unsupported liquid definition");
         str(l.name); str(l.model); str(l.icon); str(l.messageIcon); str(l.secondaryIcon);
         f32(l.weight); f32(l.addictionChance); u32(std::bit_cast<std::uint32_t>(l.value)); u32(l.flags); u32(l.medicineRecord ? 1 : 0);
@@ -89,6 +94,13 @@ struct Writer {
         for (auto& e : l.effects) {
             if (e.base.file.empty()) throw Error("Missing magic effect");
             ref(e.base); f32(e.magnitude); f32(e.cost); u32(e.area); u32(e.duration);
+        }
+        if (version >= 2) {
+            u32(static_cast<std::uint32_t>(l.namedKeywords.size()));
+            for (const auto& name : l.namedKeywords) {
+                if (name.empty() || name.size() > 512) throw Error("Invalid runtime keyword EditorID");
+                str(name);
+            }
         }
     }
 };
@@ -110,7 +122,7 @@ struct Reader {
         return s;
     }
     Ref ref() { Ref r{str(), u32()}; Writer check; check.ref(r); return r; }
-    Liquid liquid() {
+    Liquid liquid(std::uint32_t version = 2) {
         Liquid l;
         l.name = str(); l.model = str(); l.icon = str(); l.messageIcon = str(); l.secondaryIcon = str();
         l.weight = f32(); l.addictionChance = f32(); l.value = std::bit_cast<std::int32_t>(u32()); l.flags = u32();
@@ -125,22 +137,31 @@ struct Reader {
         for (std::uint32_t i = 0; i < n; ++i) l.keywords.push_back(ref());
         n = u32(); if (n == 0 || n > 128) throw Error("Invalid effect count");
         for (std::uint32_t i = 0; i < n; ++i) l.effects.push_back({ref(), f32(), f32(), u32(), u32()});
-        Writer check; check.liquid(l); return l;
+        if (version >= 2) {
+            n = u32(); if (n + l.keywords.size() > 256) throw Error("Too many keywords");
+            for (std::uint32_t i = 0; i < n; ++i) l.namedKeywords.push_back(str());
+        }
+        Writer check; check.liquid(l, version); return l;
     }
 };
 inline Bytes encode(const Bank& bank) {
     if (bank.liquids.size() > slotCount) throw Error("Oversized bank");
-    Writer w; w.u32(1); w.u32(static_cast<std::uint32_t>(bank.liquids.size()));
-    for (auto& l : bank.liquids) w.liquid(l);
+    // Keep the exact v1 bytes/checksum for existing banks. Only banks that
+    // contain named keywords need v2, so older ESS fingerprints still match.
+    const std::uint32_t version = std::any_of(bank.liquids.begin(), bank.liquids.end(),
+        [](const auto& l) { return !l.namedKeywords.empty(); }) ? 2 : 1;
+    Writer w; w.u32(version); w.u32(static_cast<std::uint32_t>(bank.liquids.size()));
+    for (auto& l : bank.liquids) w.liquid(l, version);
     w.u32(crc32(w.data));
     if (w.data.size() > maxBankBytes) throw Error("Liquid bank exceeds size limit");
     return w.data;
 }
 inline Bank decode(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < 12 || bytes.size() > maxBankBytes) throw Error("Invalid bank length");
-    Reader r{bytes}; if (r.u32() != 1) throw Error("Unsupported bank version");
+    Reader r{bytes}; const auto version = r.u32();
+    if (version != 1 && version != 2) throw Error("Unsupported bank version");
     auto n = r.u32(); if (n > slotCount) throw Error("Oversized bank");
-    Bank b; for (std::uint32_t i = 0; i < n; ++i) b.liquids.push_back(r.liquid());
+    Bank b; for (std::uint32_t i = 0; i < n; ++i) b.liquids.push_back(r.liquid(version));
     auto crc = r.u32();
     if (r.at != bytes.size() || crc32(bytes.first(bytes.size() - 4)) != crc) throw Error("Bank checksum or length mismatch");
     return b;

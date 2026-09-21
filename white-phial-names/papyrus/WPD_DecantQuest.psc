@@ -44,7 +44,7 @@ Function Notice(String message, Bool quiet)
 EndFunction
 
 Bool Function TryDecant(Actor player, Bool quiet = False)
-    WPD_Storage.Trace("TryDecant start (2.0.1 diagnostics); quiet=" + quiet)
+    WPD_Storage.Trace("TryDecant start (2.0.2); quiet=" + quiet)
     If SKSE.GetPluginVersion("WhitePhialNames") < 33554432
         Notice("White Phial safeguards are unavailable. Check the installed DLL.", quiet)
         Return False

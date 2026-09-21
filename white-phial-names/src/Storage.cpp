@@ -1,5 +1,6 @@
 #include "Storage.h"
 #include "Bank.h"
+#include "NamedKeywords.h"
 #include <fstream>
 #include <map>
 #include <mutex>
@@ -77,7 +78,15 @@ std::optional<std::size_t> slotIndex(RE::AlchemyItem* p) {
     if (!p || it == slots.end()) return {};
     return static_cast<std::size_t>(it - slots.begin());
 }
-Liquid snapshot(RE::AlchemyItem* p, const std::string& name) {
+NamedKeywords<RE::BGSKeyword> keywordIndex() {
+    NamedKeywords<RE::BGSKeyword> index;
+    auto* data = RE::TESDataHandler::GetSingleton();
+    if (!data) throw Error("Keyword data is not available");
+    for (auto* keyword : data->GetFormArray<RE::BGSKeyword>())
+        if (keyword) index.add(str(keyword->GetFormEditorID()), keyword);
+    return index;
+}
+Liquid snapshot(RE::AlchemyItem* p, const std::string& name, const NamedKeywords<RE::BGSKeyword>& keywords) {
     // Crafted potions have unconditioned effect lists. Do not silently strip
     // unsupported model/destruction data or conditional effects from a mod.
     if (!p || p->numAlternateTextures || p->numAddons || p->RE::BGSDestructibleObjectForm::data ||
@@ -99,7 +108,12 @@ Liquid snapshot(RE::AlchemyItem* p, const std::string& name) {
     l.pickupSound = reference(p->pickupSound, "pickupSound"); l.putdownSound = reference(p->putdownSound, "putdownSound");
     for (auto* k : p->GetKeywords()) {
         if (!k) throw Error("Null liquid keyword");
-        l.keywords.push_back(reference(k, fmt::format("keywords[{}]", l.keywords.size())));
+        if ((k->GetFormID() >> 24) == 0xFF) {
+            const auto editorID = str(k->GetFormEditorID());
+            if (keywords.resolve(editorID) != k) throw Error("Runtime keyword identity mismatch: " + editorID);
+            l.namedKeywords.push_back(editorID);
+            SKSE::log::info("Preserving runtime keyword by EditorID: {} (current ID {:08X})", editorID, k->GetFormID());
+        } else l.keywords.push_back(reference(k, fmt::format("keywords[{}]", l.keywords.size())));
     }
     for (auto* e : p->effects) {
         if (!e || !e->baseEffect || e->conditions.head) throw Error("This liquid has missing or conditional effects");
@@ -116,7 +130,7 @@ struct Prepared {
     RE::SpellItem* addiction{};
     RE::BGSSoundDescriptorForm *consume{}, *pickup{}, *putdown{};
 };
-Prepared prepare(const Liquid& l) {
+Prepared prepare(const Liquid& l, const NamedKeywords<RE::BGSKeyword>& keywords) {
     Prepared p; p.source = &l;
     p.equip = resolve<RE::BGSEquipSlot>(l.equip);
     p.addiction = resolve<RE::SpellItem>(l.addiction);
@@ -124,6 +138,7 @@ Prepared prepare(const Liquid& l) {
     p.pickup = resolve<RE::BGSSoundDescriptorForm>(l.pickupSound);
     p.putdown = resolve<RE::BGSSoundDescriptorForm>(l.putdownSound);
     for (auto& k : l.keywords) p.keywords.push_back(resolve<RE::BGSKeyword>(k));
+    for (auto& name : l.namedKeywords) p.keywords.push_back(keywords.resolve(name));
     std::vector<RE::EffectSetting*> bases;
     for (auto& e : l.effects) {
         auto* base = resolve<RE::EffectSetting>(e.base);
@@ -178,7 +193,8 @@ void clearSlots() {
 void apply(const Bank& b) {
     // Resolve every dependency before changing a single published record.
     std::vector<Prepared> prepared; prepared.reserve(b.liquids.size());
-    for (auto& l : b.liquids) prepared.push_back(prepare(l));
+    const auto keywords = keywordIndex();
+    for (auto& l : b.liquids) prepared.push_back(prepare(l, keywords));
     clearSlots();
     for (std::size_t i = 0; i < prepared.size(); ++i) publish(slots[i], prepared[i]);
 }
@@ -215,12 +231,13 @@ RE::AlchemyItem* protect(RE::StaticFunctionTag*, RE::AlchemyItem* potion, RE::BS
             if (resolve<RE::AlchemyItem>(ref) != potion) throw Error("Liquid is not backed by a loaded plugin record");
             return potion;
         }
-        Liquid liquid = i ? bank.liquids[*i] : snapshot(potion, chosenName.c_str());
+        const auto keywords = keywordIndex();
+        Liquid liquid = i ? bank.liquids[*i] : snapshot(potion, chosenName.c_str(), keywords);
         if (i) liquid.name = chosenName.c_str();
         if (auto existing = bank.find(liquid)) return slots[*existing];
         if (bank.liquids.size() >= slotCount) throw Error("All 1792 protected liquid slots are occupied");
         // Preparation/validation occurs before committing the recipe or touching inventory.
-        auto prepared = prepare(liquid);
+        auto prepared = prepare(liquid, keywords);
         Bank next = bank; const auto index = next.append(liquid); (void)encode(next);
         publish(slots[index], prepared);
         bank = std::move(next); stamp();

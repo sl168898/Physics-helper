@@ -3,6 +3,8 @@ import argparse,base64,hashlib,json,shutil,subprocess,sys
 p=argparse.ArgumentParser();p.add_argument('stage',type=Path);a=p.parse_args()
 root=Path(__file__).resolve().parent.parent
 manifest=json.loads((root/'data/PapyrusBuild.json').read_text())
+for name,digest in manifest.get('compile_interfaces',{}).items():
+ assert hashlib.sha256((root/'tools/CompileInterfaces'/name).read_bytes().replace(b'\r\n',b'\n')).hexdigest()==digest,name
 (a.stage/'Scripts').mkdir(parents=True,exist_ok=True)
 (a.stage/'Source/Scripts').mkdir(parents=True,exist_ok=True)
 for name,hashes in manifest['scripts'].items():
