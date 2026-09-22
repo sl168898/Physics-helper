@@ -20,14 +20,15 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/AppData/Local/vcpkg/archives
-          key: phial-bank-windows2022-staticmd-vcpkg-60b06921-v1
+          key: batch-windows2022-staticmd-vcpkg-60b06921-v2
           restore-keys: |
+            phial-bank-windows2022-staticmd-vcpkg-60b06921-v1
             waterskin-windows2022-staticmd-vcpkg-60b06921-v1
       - name: Build batch crafting and run safety tests
         shell: pwsh
         run: '& .\batch-crafting\tools\build_windows.ps1'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Batch-Crafting-v0-1-0-beta
-          path: batch-crafting/_build/Batch_Crafting_v0_1_0_beta.zip
+          name: Batch-Crafting-v0-2-0-beta
+          path: batch-crafting/_build/Batch_Crafting_v0_2_0_beta.zip
           if-no-files-found: error

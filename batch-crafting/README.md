@@ -1,93 +1,135 @@
-# Batch Crafting 0.1.0 beta
+# Batch Crafting 0.2.0 beta — quantity crafting and SCIE support
 
-Batch cooking and item creation using the selected recipe's native crafting routine.
-Built for Steam Skyrim Special Edition / Anniversary Edition **1.6.1170 only**.
-This is a first release: the Windows DLL and portable safety tests are built and
-checked, but it has not been tested inside Skyrim.
+Cooking and forge recipe quantities for Steam Skyrim **1.6.1170**.
 
-## Requirements and installation
+## What changed from 0.1.0
 
-- Skyrim 1.6.1170 (Steam), SKSE 2.2.6 and the matching AE Address Library.
-- SKSE Menu Framework **3.x** and its requirements.
-- SkyUI is the intended crafting interface. Other menu replacements are untested;
-  the plugin refuses a recipe when it cannot read its enabled/selection state.
+The old release ran an individual craft every 250 ms and counted only the player's
+inventory. Both behaviors have been replaced:
 
-Install the ZIP as a new mod in MO2, enable it on the left, and start through SKSE.
-There is no ESP and no load-order position to set. Do not install on 1.5.97, GOG,
-VR or other executable versions. The plugin rejects incompatible runtimes.
+- Each quantity selection calls the game's confirmed-craft routine **once**.
+  Ingredient removal, output addition and native smithing skill-use amounts are
+  scaled for the selected quantity during that call. There is no auto-click loop,
+  per-item timer, repeated crafting animation sequence or batch resume state.
+- With **SCIE 2.6.0** installed, material counts come from the exact crafting count
+  entry point SCIE hooks. Its total already includes the player. Ingredient removal
+  chains through SCIE's existing handler, which chooses the contributing sources.
+  SCIE's active station filters and source selection remain in charge.
+- The preview identifies whether it is using the player or SCIE shared inventory.
+- Batch totals are checked after crafting and logged. An unexpected accounting
+  result disables further batches until restarting Skyrim, without an automatic
+  retry or speculative refund.
+
+The Windows plugin builds and automated accounting tests pass. Native Skyrim
+integration and compatibility with your complete mod list still need in-game
+verification; this remains a beta.
+
+## Install / update
+
+Requirements: Steam Skyrim 1.6.1170, SKSE 2.2.6, matching AE Address Library,
+SKSE Menu Framework 3.x and its dependencies. SkyUI is the intended crafting UI.
+SCIE is optional; the integration was inspected against the supplied 2.6.0 build.
+Other game runtimes, VR/GOG, and other SCIE versions have not been validated.
+
+1. Close Skyrim.
+2. Replace/disable Batch Crafting 0.1.0 and install this ZIP through MO2. Keep only
+   one `SKSE/Plugins/BatchCrafting.dll` active.
+3. Leave your existing SCIE mod enabled. This package contains **no replacement
+   SCIE files**, ESP, Papyrus script or recipe records.
+4. Launch through SKSE.
+
+If MO2 asks for a data directory, choose the archive root containing `SKSE`.
+There is no plugin load-order position to set and no new game requirement.
 
 ## Use
 
-1. Open a cooking pot or forge and highlight the recipe you want.
-2. Press **F8** to open Batch Crafting.
-3. Choose **1**, **5**, **10**, **maximum**, or a custom quantity.
-4. The quantity window closes and crafting runs in the normal crafting menu.
-   Press F8 again to cancel, or change recipe / leave the station.
+Highlight a recipe at a cooking pot or forge, press **F8**, then choose 1, 5, 10,
+maximum, or a custom quantity. The result is crafted together in one operation.
+Close the quantity window to cancel before confirming. A submitted batch runs
+synchronously; there is no between-items cancellation phase.
 
-Quantity means **recipe executions**, not individual output items. If one recipe
-makes 24 arrows, ten executions make 240 arrows and consume ten recipes' materials.
-Each batch is capped at 1000 executions and proceeds at most four times a second.
+Quantity means recipe units. Ten units of a recipe that normally makes 24 arrows
+produce **240 arrows** and use ten recipes' materials. The cap is 1000 units; integer
+limits may lower it for unusual recipes. Free/self-producing recipes are refused.
 
-The SKSE Menu Framework page under **Batch Crafting > Cooking and Smithing** also
-has a Read selected recipe button. You must already be at the crafting station.
-Edit `SKSE/Plugins/BatchCrafting.ini` in MO2 to change the keyboard key; restart
-Skyrim afterward. Codes are DirectInput scan codes, not Windows virtual keys.
-F7=65, F8=66, F9=67. Choose an unused key; this plugin does not suppress other mods'
-key handlers. Controller users can open the Framework page using their existing
-Framework controls; there is no dedicated gamepad shortcut in this release.
+The Framework page is **Batch Crafting > Cooking and Smithing**. Use Read selected
+recipe while already at a crafting station. Edit `SKSE/Plugins/BatchCrafting.ini`
+to change F8 (DirectInput code 66); restart afterward. Choose a key unused by other
+mods. F7=65 and F9=67. There is no dedicated gamepad shortcut.
 
-## Supported scope and safeguards
+Cooking, forging, tanning and smelting use the supported constructible recipe
+menu. Alchemy, enchanting and equipment tempering are outside this release's scope.
+The recipe's output and conditions are kept; no permanent recipe data is edited.
 
-Cooking, forge item creation, tanning and smelting share the constructible recipe
-menu and are the intended scope. Alchemy, enchanting, armor improvement and weapon
-tempering use other crafting systems and are not supported.
+## SCIE integration details
 
-The plugin calls the native confirmed-craft routine once per execution. It does
-not grant items or XP directly, replace recipes or alter material costs. Before
-each execution it checks the same menu/session/recipe, the game-populated enabled
-flag, native recipe conditions and currently held ingredient counts. Afterward,
-it verifies that the expected output appeared before attempting another craft.
-Free recipes and recipes producing their own required ingredient are refused.
-Modded recipes, including Requiem recipes, should retain their native behavior,
-but compatibility with custom crafting scripts and UI replacements needs testing.
+SCIE's public inventory message (`SCRI` / `SCPI`) is used to verify an active
+crafting session. It supplies only a summary, not per-item stock. Actual material
+counts use AE Address Library function **16109**, the entry patched by SCIE's
+`Hook_GetInventoryItemCount`. We never add pocket counts to its combined total,
+read SCIE's private memory, guess eligible containers, or move items into pockets.
 
-Changing the selection, closing/loading a menu, loading a save or starting a new
-game invalidates the batch. Unfinished work is never saved or resumed. Materials
-already spent on successful crafts are not refunded when cancelling. Keep the
-selected recipe unchanged while the batch runs. A change or inventory-altering
-script can cause a safe early stop; the mod does not attempt to undo other mods.
-There is no Papyrus timer, saved quest or background inventory scan. Inventory
-checks occur when requesting a recipe preview and during an explicitly started
-batch in the crafting menu.
+The player RemoveItem vtable hook chains through the prior hook, including SCIE's
+container-first removal. No change to SCIE's INI, filters, registered containers,
+cosave or DLL is needed. If SCIE is present but its session cannot be confirmed,
+batching refuses to start instead of silently falling back to pockets.
 
-## First in-game check
+## Behavior and compatibility limits
 
-Make a separate save before the first test. At a forge, select a cheap recipe for
-which you have at least five crafts' ingredients. Craft five and check both the
-outputs and consumed materials. Repeat at a cooking pot. Then test cancellation
-and insufficient materials. Also check a multi-output recipe such as arrows.
-The notification reports completed recipe executions, not output item count.
+The quantity multiplier is thread-local and active only inside the single native
+craft call. It is suspended while forwarding inventory/skill hooks, so nested
+callbacks and normal gameplay operations cannot inherit it. Native UseSkill and
+AddSkillExperience paths are covered without multiplying twice. Only smithing
+skill amounts are scaled; custom skill systems may need their own integration.
 
-If the quantity window reports an unsupported interface or mismatched recipe,
-do not disable the safety check. Supply the selected recipe, crafting-menu mods,
-runtime, and `Documents/My Games/Skyrim Special Edition/SKSE/BatchCrafting.log`.
-If a crash occurs, include the crash logger report. A successful build does not
-prove native game integration or compatibility with your full mod list.
+Inventory events carry total quantities. The vanilla ItemCrafted event has no
+quantity field: when one matching native event is observed and accounting succeeds,
+additional craft **notifications** are emitted for the remaining recipe units.
+This supports listeners expecting one notification per recipe. It does not run
+additional crafts, sounds or material consumption. Mods with asynchronous or
+private crafting hooks still require testing; universal compatibility is not claimed.
 
-To remove, finish/cancel the batch, close Skyrim, then disable this mod in MO2.
+Conditions and quantities are rechecked at submission. No queued operation survives
+closing the crafting menu, changing its selection or loading a save. The plugin
+has no inventory polling timer, Papyrus quest, serialization, or saved recipe changes.
 
-## Build and implementation references
+## Focused in-game test
 
-Source and a pinned Windows build script are included under `Source/BatchCrafting`.
-Run `tools/build_windows.ps1` on Windows with Visual Studio 2022 C++ tools, CMake,
-Git and internet access. The script builds the DLL and runs release-enabled tests.
-The native routine ID (AE 51369) is documented by Yes Im Sure NG's public source;
-no binary patch or source from that project is included here.
+Use a separate save for the first trial. Start with a cheap five-unit recipe:
 
+1. Put **all** its required materials in a SCIE-enabled container. Carry none.
+   Open the station: the Batch Crafting window should say it uses SCIE sources,
+   show the correct maximum, and craft five together.
+2. Verify output and container ingredient totals. Repeat with materials split
+   between two sources and your inventory; the displayed maximum must not count
+   the player twice.
+3. Test one cooking recipe and one forge recipe; check smithing XP as well.
+4. Test a multi-output recipe (e.g. arrows). Five units of a 24-arrow recipe must
+   produce 120 arrows.
+5. Disable a SCIE source or change its station filters, reopen the station and
+   confirm it is no longer counted. Close the quantity window to test cancellation.
+
+If something is wrong, stop testing that save and send
+`Documents/My Games/Skyrim Special Edition/SKSE/BatchCrafting.log` plus SCIE's log.
+The batch log includes source mode, expected/observed ingredient debit, output
+change and the number of intercepted native calls. Include the recipe and amounts
+before/after. If there is a crash, include the crash logger report.
+
+To uninstall, close Skyrim and disable the mod in MO2.
+
+## Source / build
+
+Source and pinned `tools/build_windows.ps1` are included under `Source/BatchCrafting`.
+The script needs VS 2022 C++ tools, CMake, Git and internet access. It compiles the
+adapter first, builds the DLL, runs release-enabled accounting tests and packages
+only this plugin. BuildInfo.json records revisions, hashes and verification scope.
+
+References (upstream source reviewed, not redistributed SCIE assets):
+
+- SCIE by OhFor: https://www.nexusmods.com/skyrimspecialedition/mods/170497
+- SCIE source: https://github.com/ohfor/scie/tree/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2
 - CommonLibSSE-NG: https://github.com/CharmedBaryon/CommonLibSSE-NG
 - Menu API: https://github.com/QTR-Modding/SKSE-Menu-Framework-3-API
-- Native craft reference: https://github.com/VersuchDrei/YesImSure/blob/master/src/Hooks.cpp
-- SkyUI crafting interface: https://github.com/schlangster/skyui/tree/master/src/CraftingMenu
+- Native craft routine reference: https://github.com/VersuchDrei/YesImSure/blob/master/src/Hooks.cpp
 
-BuildInfo.json records the source/dependency revisions, source and DLL hashes,
-and the distinction between build/test verification and in-game testing.
+CommonLib, Menu Framework API and MinHook license notices are bundled.
