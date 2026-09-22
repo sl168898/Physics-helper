@@ -1,8 +1,8 @@
-name: Build Biggie Trait Mechanics
+name: Build Iron Lungs Trait
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/three-combat-traits']
+    branches: ['codex/iron-lungs']
 permissions:
   contents: read
 concurrency:

@@ -1,3 +1,58 @@
+# BiggieTraitMechanics 1.4.0 — Iron Lungs beta
+
+Adds Iron Lungs to the combined package for Skyrim Steam 1.6.1170.
+The existing ten traits and Skald/Echoing Steel attack sequence are preserved.
+
+Manual Unrelenting Force costs maximum Stamina times max(0.10, 0.25 times
+ShoutRecoveryMult), adds non-elemental magic damage equal to 25% of current
+Stamina immediately before payment, and produces no new shout recovery.
+The current maximum includes Fortify Stamina. Voice of Authority's +20%
+recovery penalty increases the cost; percentage recovery reductions lower it.
+All three word levels use the same cost and bonus formula. Their existing
+base damage, stagger, knockback, and other winning-override effects remain.
+
+ActorMagicCaster::CheckCast rejects unaffordable manual casts. A second
+check wraps VoiceSpellFireHandler::ExecuteHandler before the release occurs.
+One payment is reserved per release, and refunded if no UF projectile launches.
+Projectile handles retain separate cast snapshots; targets receive one bonus
+per cast even if several original effects or projectiles touch them.
+MagicCaster::FindTargets supplies projectile context to MagicTarget::AddTarget.
+Only accepted original hits qualify. A target-actor helper spell applies the
+bonus through the engine's Health-damage magic-effect path, with ResistMagic
+and no elemental resistance or armor check. The engine's outgoing and incoming
+spell-magnitude perk entry points are evaluated against the original UF spell.
+The helper effect has Power Affects Magnitude disabled to avoid applying those
+modifiers a second time. No Destruction skill experience is generated.
+
+Skald's instant casts do not pass through the manual voice release handler,
+so they incur neither this cost nor bonus. Its existing recovery and Echoing
+Steel interaction remain. Normal manual VoiceFire events are retained.
+No global shout cooldown multiplier, original shout, or original spell is edited.
+No added regeneration penalty. Per-cast state is transient and reset on load;
+a projectile already in flight when a save is reloaded has no retained bonus.
+
+## Validation limits
+
+This beta must pass Windows compilation, the four rule suites, and package
+record/asset regression checks. These do not substitute for testing inside
+Skyrim. The native cast and hit routes, absorption/resistance and interactions
+with the user's animation/casting mods still require live verification.
+The helper log records up to 200 Iron Lungs events per loaded session.
+
+## Engine references
+
+- CommonLibSSE-NG b93280e832f263dbef44e44cbe2936622a02f91a:
+  ActorMagicCaster, VoiceSpellFireHandler, Projectile::Launch,
+  MagicCaster::FindTargets, MagicTarget::AddTargetData, ActorValueOwner.
+- powerof3/IndividualNPCShoutCooldowns e0dedfa21adad646eb9c8baa9afea536cf725cc9:
+  native VoiceSpellFireHandler callback and voiceRecoveryTime location.
+- tiltedphoques/TiltedEvolution fbf72883015dba9e26bd1539d3af9d33fa794116:
+  MagicTarget::AddTarget AE address 34526 and FindTargets address 34410.
+- Exit-9B/Constellations f136590faf03efca649a98ea3b32dc1080d08e98:
+  outgoing/incoming spell-magnitude entry-point argument signature.
+
+## Earlier source documentation
+
 # Biggie Trait Mechanics
 
 SKSE helper 1.3.2 for Skyrim 1.6.1170 and Biggie Traits Combined v2.6.2.
