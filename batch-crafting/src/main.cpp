@@ -136,14 +136,14 @@ void requestStart(const Snapshot& s,std::uint32_t n) {
   const auto after=playerCount(output);
   auto& transaction=context.transaction;
   const bool sessionStillOpen=unobstructed() && epoch.load()==s.selection.session;
-  bool verified=sessionStillOpen && transaction.accounted() && after-before>=transaction.totalOutput();
+  bool verified=sessionStillOpen && transaction.accounted() && after-before==transaction.totalOutput();
   // Verify the merged inventory debit after SCIE refreshes its own cache.
   // There is no automatic retry or guessed refund on an unexpected hook path.
   for(const auto& [id,cost]:transaction.costs) {
    const auto now=check.mode==scie::Mode::Shared ? (sessionStillOpen ? scie::sharedCount(check.objects.at(id)):-1):playerCount(check.objects.at(id));
    const auto expected=cost.each*n;
    SKSE::log::info("Material {:08X}: before={}, after={}, expected debit={}, scaled base={}/{}",id,cost.available,now,expected,cost.seen,cost.each);
-   if(now<0 || cost.available-now<expected)verified=false;
+   if(now<0 || cost.available-now!=expected)verified=false;
   }
   SKSE::log::info("Bulk result: output delta={}, expected={}, removal calls={}, output calls={}, skill calls={}, native craft events={}, verified={}",after-before,transaction.totalOutput(),transaction.removalCalls,transaction.outputCalls,transaction.skillCalls,context.eventCount,verified);
   if(!verified) {

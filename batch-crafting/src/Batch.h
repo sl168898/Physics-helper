@@ -43,18 +43,21 @@ public:
     Selection selection{};
     std::uint32_t quantity{},outputSeen{},removalCalls{},outputCalls{},skillCalls{};
     std::map<std::uint32_t,Cost> costs;
+    bool unexpected=false;
     static std::optional<Transaction> create(Selection s,std::uint32_t n,const std::vector<Material>& materials) {
         if(!s.recipe || !n || n>maximum(materials,s.output,s.units))return {};
         Transaction t;t.selection=s;t.quantity=n;t.costs=*combine(materials,s.output);return t;
     }
     std::int32_t removal(std::uint32_t id,std::int32_t count) {
         auto it=costs.find(id);
-        if(it==costs.end() || count<=0 || count>it->second.each-it->second.seen)return count;
+        if(it==costs.end())return count;
+        if(count<=0 || count>it->second.each-it->second.seen){unexpected=true;return count;}
         it->second.seen+=count;++removalCalls;
         return static_cast<std::int32_t>(static_cast<std::int64_t>(count)*quantity);
     }
     std::int32_t addition(std::uint32_t id,std::int32_t count) {
-        if(id!=selection.output || count<=0 || static_cast<std::uint32_t>(count)>selection.units-outputSeen)return count;
+        if(id!=selection.output)return count;
+        if(count<=0 || static_cast<std::uint32_t>(count)>selection.units-outputSeen){unexpected=true;return count;}
         outputSeen+=count;++outputCalls;return static_cast<std::int32_t>(static_cast<std::int64_t>(count)*quantity);
     }
     float experience(float amount) {
@@ -63,7 +66,7 @@ public:
     }
     std::int64_t totalOutput() const {return static_cast<std::int64_t>(selection.units)*quantity;}
     bool accounted() const {
-        if(outputSeen!=selection.units)return false;
+        if(unexpected || outputSeen!=selection.units)return false;
         for(const auto& [id,c]:costs)if(c.seen!=c.each)return false;
         return true;
     }

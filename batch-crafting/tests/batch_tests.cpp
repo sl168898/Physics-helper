@@ -66,6 +66,7 @@ int main() {
     // Unrelated calls, exhausted quotas and nested callbacks never scale again.
     assert(duplicate->removal(1,5)==5 && duplicate->removal(777,2)==2);
     assert(duplicate->addition(9,24)==24 && duplicate->addition(777,2)==2);
+    assert(!duplicate->accounted()); // Unexpected extra direct calls fail verification.
     auto missing=Transaction::create(selected,1,{{1,1,1}});assert(missing && !missing->accounted());
     missing->addition(9,24);assert(!missing->accounted());
     // Scope restoration on exceptions prevents the multiplier leaking to later play.
