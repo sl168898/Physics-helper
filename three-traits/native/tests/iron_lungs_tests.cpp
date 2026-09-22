@@ -15,6 +15,9 @@ int main() {
     assert(q.allowed && q.cost == 80 && q.bonus == 75);
     assert(std::abs(quoteIronLungs(300, 400, 0.6f).cost - 60) < 0.0001f);
     assert(std::abs(quoteIronLungs(300, 400, 1.2f).cost - 120) < 0.0001f);
+    q = quoteIronLungs(120, 400, 1.2f);
+    assert(q.allowed && q.cost == 120);
+    assert(!quoteIronLungs(std::nextafter(120.f, 0.f), 400, 1.2f).allowed);
     for (float reduction : {0.4f, 0.1f, 0.f, -1.f}) {
         q = quoteIronLungs(40, 400, reduction);
         assert(q.allowed && q.cost == 40 && q.bonus == 10);

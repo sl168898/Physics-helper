@@ -144,6 +144,8 @@ class IronLungsRuntime {
                 if (it != s->shots.end() && it->second.spell == caster->currentSpell) context = it->second.cast;
             }
             if (!context && launching) context = launching;
+            if (s->logNext()) SKSE::log::info("[IronLungs] FIND: spell={:08X}, reference={:08X}, projectile={}, cast={}",
+                caster->currentSpell->GetFormID(), ref ? ref->GetFormID() : 0, projectile != nullptr, context ? context->serial : 0);
         }
         Scope hitScope(hitting, std::move(context));
         return originalFind(caster, effectiveness, count, source, loadCast, hostileOnly);
@@ -216,6 +218,11 @@ public:
             if (!word.spell || word.spell->GetDelivery() != RE::MagicSystem::Delivery::kAimed ||
                 word.spell->GetCastingType() != RE::MagicSystem::CastingType::kFireAndForget) {
                 SKSE::log::error("Iron Lungs: unsupported UF delivery/casting override; trait disabled"); return false;
+            }
+            const bool hasProjectile = std::any_of(word.spell->effects.begin(), word.spell->effects.end(),
+                [](RE::Effect* effect) { return effect && effect->baseEffect && effect->baseEffect->data.projectileBase; });
+            if (!hasProjectile) {
+                SKSE::log::error("Iron Lungs: UF spell {:08X} has no projectile; trait disabled", word.spell->GetFormID()); return false;
             }
         }
         // All function signatures and IDs come from the pinned CommonLib.
