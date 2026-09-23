@@ -1,4 +1,51 @@
-# BiggieTraitMechanics 1.4.4 — Skald self-buff release timing
+# BiggieTraitMechanics 1.4.5 — Iron Lungs projectile damage association
+
+The submitted 1.4.3 log records 20 paid manual Unrelenting Force casts and
+correct Stamina snapshots (420 gives 105 base magic bonus), but zero HIT lines.
+Every FIND event belongs to the player at release; the later projectile impact
+does not follow that assumed FindTargets path. Thus the bonus never reached
+the damage routine in that session. 1.4.4 retained the same damage path.
+
+The native helper now associates the exact projectile handle and original
+spell at the explicit projectile magic-impact call. A scoped context carries
+that cast's snapshot, spell, player caster and specific target through the
+original function. Accepted AddTarget calls must match all those identities.
+Untracked nested impacts clear the outer context; exiting restores it. Multiple
+effects/projectiles share the cast's existing per-target deduplication. No
+latest-cast timer, nearby-actor search or direct Health subtraction is used.
+
+The obsolete FindTargets hook is removed. The impact call is AE REL44206+0x218;
+the original eight arguments, including the final two bytes, are forwarded.
+An unexpected call opcode disables Iron Lungs rather than patching unknown
+instructions. Source evidence:
+- AE callsite: NoahBoddie/perk-entry-expansion commit 2a75ca5d3d322ff4d60ba68dd691df8efb988fc5,
+  src/MagicApplyCombatSpell/Hooks/Hook_MagicApplyCombatSpell.h.
+- Complete eight-argument signature: Newrite/ReflyemSKSEPlugin commit
+  f627a0ca47a0c4c9497f9c5ede5f01ac98d0ac44, include/Hooks.hpp (OnMagicHit).
+- Independent byte-argument declaration: D7ry/valhallaCombat commit
+  48fb4c3b9bb6bbaa691ce41dbd33f096b74c07e3, src/include/Hooks.h (Hook_MagicHit).
+
+The newly reachable damage routine also corrects the incoming-magnitude perk
+call's argument list: (target, spell, output), without an extra caster argument.
+Outgoing magnitude still uses (caster, spell, target, output). Reflyem's
+src/plugin/ProjectileBlock.cpp at the commit above corroborates both signatures.
+This fixes parameter forwarding; the intended perk scaling is unchanged.
+
+PROJECTILE, IMPACT, APPLY and HIT diagnostics trace the transaction into the
+native bonus magic effect. HIT reports requested pre-resistance magnitude;
+an accepted APPLY is not a direct measurement of final target Health loss.
+Seven rule suites and Windows compilation are required, but only an in-game
+test can establish hook reachability and actual damage in the user's load order.
+Test all three word lengths, several enemies, rapid repeated manual casts,
+blocked/absorbed spells and Skald's automatic UF exemption.
+
+All balance rules remain unchanged: 25% pre-payment current Stamina magic
+damage, original UF perk scaling, native magic resistance/absorption, Stamina
+cost/gate and recovery handling, word grant and three-second physical drawback.
+Skald's 1.4.4 timing fix and Echoing Steel remain intact. The whole ESP, scripts,
+INIs and artwork are copied byte-for-byte from combined 2.7.4-beta1.
+
+## Earlier Skald self-buff release timing (1.4.4)
 
 The supplied 1.4.3 log shows Kyne's Grace's actual Stamina effect at magnitude
 30.25. Resource changes fit capped restoration followed by attack expenditure:

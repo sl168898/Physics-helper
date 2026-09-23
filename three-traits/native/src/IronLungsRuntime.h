@@ -1,6 +1,7 @@
 #pragma once
 #include "IronLungs.h"
 #include "IronLungsGrant.h"
+#include "IronLungsImpact.h"
 #include "Overexertion.h"
 #include <chrono>
 #include <functional>
@@ -22,15 +23,18 @@ class IronLungsRuntime {
         ~Scope() { slot = std::move(previous); }
     };
     inline static IronLungsRuntime* self = nullptr;
-    inline static thread_local Cast releasing, launching, hitting;
+    inline static thread_local Cast releasing, launching;
+    inline static thread_local RE::MagicItem* launchingSpell = nullptr;
+    inline static thread_local IronLungsImpact hitting;
     inline static thread_local bool applyingBonus = false;
     inline static REL::Relocation<bool (*)(RE::ActorMagicCaster*, RE::MagicItem*, bool, float*, RE::MagicSystem::CannotCastReason*, bool)> originalCheck;
     inline static REL::Relocation<bool (*)(RE::VoiceSpellFireHandler*, RE::Actor&, const RE::BSFixedString&)> originalVoice;
     using LaunchFn = RE::ProjectileHandle* (*)(RE::ProjectileHandle*, RE::Projectile::LaunchData&);
-    using FindFn = bool (*)(RE::MagicCaster*, float, std::uint32_t&, RE::TESBoundObject*, bool, bool);
+    using ImpactFn = void (*)(RE::MagicCaster*, RE::NiPoint3*, RE::Projectile*, RE::TESObjectREFR*,
+                             float, float, std::uint8_t, std::uint8_t);
     using AddFn = bool (*)(RE::MagicTarget*, RE::MagicTarget::AddTargetData&);
     inline static LaunchFn originalLaunch = nullptr;
-    inline static FindFn originalFind = nullptr;
+    inline static REL::Relocation<ImpactFn> originalImpact;
     inline static AddFn originalAdd = nullptr;
     std::recursive_mutex mutex;
     IronLungsGrant grant;
@@ -127,33 +131,50 @@ class IronLungsRuntime {
             data.castingSource == RE::MagicSystem::CastingSource::kOther && s->isForce(data.spell);
         // Some projectiles can find targets during their initialization.
         Scope launchScope(launching, tag ? releasing : Cast{});
+        struct SpellScope {
+            RE::MagicItem* previous;
+            explicit SpellScope(RE::MagicItem* spell) : previous(std::exchange(launchingSpell, spell)) {}
+            ~SpellScope() { launchingSpell = previous; }
+        } spellScope(tag ? data.spell : nullptr);
         auto answer = originalLaunch(result, data);
         if (tag && answer && answer->get()) {
             std::lock_guard lock(s->mutex);
             s->shots.insert_or_assign(answer->native_handle(), Shot{*answer, releasing, data.spell});
             ++releasing->projectiles;
+            if (s->logNext()) SKSE::log::info("[IronLungs] PROJECTILE {}: handle={:08X}, spell={:08X}",
+                releasing->serial, answer->native_handle(), data.spell->GetFormID());
         }
         return answer;
     }
-    static bool find(RE::MagicCaster* caster, float effectiveness, std::uint32_t& count,
-                     RE::TESBoundObject* source, bool loadCast, bool hostileOnly) {
+    static void impact(RE::MagicCaster* caster, RE::NiPoint3* position, RE::Projectile* projectile,
+                       RE::TESObjectREFR* target, float power, float magnitude,
+                       std::uint8_t noHitArt, std::uint8_t hostileOnly) {
         auto s = self;
-        Cast context;
-        if (s && caster && !applyingBonus && s->isForce(caster->currentSpell)) {
+        IronLungsImpact context;
+        if (s && projectile && target && !applyingBonus) {
             std::lock_guard lock(s->mutex);
-            RE::Actor* blame = nullptr;
-            auto ref = caster->GetCasterObjectReference(&blame);
-            auto projectile = ref ? ref->AsProjectile() : nullptr;
-            if (projectile) {
+            const auto& data = projectile->GetProjectileRuntimeData();
+            const auto shooter = data.shooter.get();
+            auto player = RE::PlayerCharacter::GetSingleton();
+            // Resolve by the exact handle and spell; overlapping shouts may
+            // arrive out of order. NPC and instant/Skald projectiles stay untagged.
+            if (s->selected() && player && shooter.get() == player &&
+                data.castingSource == RE::MagicSystem::CastingSource::kOther && s->isForce(data.spell)) {
                 const auto it = s->shots.find(projectile->GetHandle().native_handle());
-                if (it != s->shots.end() && it->second.spell == caster->currentSpell) context = it->second.cast;
+                Cast cast;
+                if (it != s->shots.end() && it->second.handle.get().get() == projectile &&
+                    it->second.spell == data.spell) cast = it->second.cast;
+                // Only an explicit impact of the currently launching spell
+                // can use this initialization fallback, not a recent-cast timer.
+                if (!cast && launching && launchingSpell == data.spell) cast = launching;
+                context = {std::move(cast), data.spell->GetFormID(), player->GetFormID(), target->GetFormID()};
+                if (s->logNext()) SKSE::log::info("[IronLungs] IMPACT: projectile={:08X}, spell={:08X}, target={:08X}, cast={}",
+                    projectile->GetHandle().native_handle(), context.spell, context.target, context.cast ? context.cast->serial : 0);
             }
-            if (!context && launching) context = launching;
-            if (s->logNext()) SKSE::log::info("[IronLungs] FIND: spell={:08X}, reference={:08X}, projectile={}, cast={}",
-                caster->currentSpell->GetFormID(), ref ? ref->GetFormID() : 0, projectile != nullptr, context ? context->serial : 0);
         }
-        Scope hitScope(hitting, std::move(context));
-        return originalFind(caster, effectiveness, count, source, loadCast, hostileOnly);
+        // Even an untracked nested impact must clear an outer cast context.
+        IronLungsImpactScope hitScope(hitting, std::move(context));
+        originalImpact(caster, position, projectile, target, power, magnitude, noHitArt, hostileOnly);
     }
     void damage(RE::Actor* target, RE::MagicItem* originalSpell, const Cast& cast) {
         auto player = RE::PlayerCharacter::GetSingleton();
@@ -166,7 +187,10 @@ class IronLungsRuntime {
         // The helper effect has Power Affects Magnitude OFF, so these native
         // outgoing/incoming magnitude modifiers are applied exactly once.
         RE::BGSEntryPoint::HandleEntryPoint(Entry::kModSpellMagnitude, player, originalSpell, target, &magnitude);
-        RE::BGSEntryPoint::HandleEntryPoint(Entry::kModIncomingSpellMagnitude, target, originalSpell, player, &magnitude);
+        // Incoming magnitude takes (target, spell, output), unlike outgoing
+        // magnitude's (caster, spell, target, output). An extra actor argument
+        // here would be interpreted by the engine as the float output pointer.
+        RE::BGSEntryPoint::HandleEntryPoint(Entry::kModIncomingSpellMagnitude, target, originalSpell, &magnitude);
         if (!std::isfinite(magnitude) || magnitude <= 0) return;
         auto caster = player->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
         if (!caster) return;
@@ -180,15 +204,25 @@ class IronLungsRuntime {
     }
     static bool add(RE::MagicTarget* target, RE::MagicTarget::AddTargetData& data) {
         auto s = self;
-        const Cast context = hitting;
-        const bool eligible = s && context && !applyingBonus && s->isForce(data.magicItem);
+        const auto context = hitting;
+        const bool bonus = applyingBonus;
         const bool accepted = originalAdd(target, data);
-        if (accepted && eligible && target) {
+        if (s && target && data.magicItem) {
             // GetTargetAsActor in the pinned library does not adjust the AE
             // secondary-base pointer. Obtain the real reference virtually.
             auto ref = target->GetTargetStatsObject();
             auto actor = ref ? ref->As<RE::Actor>() : nullptr;
-            s->damage(actor, data.magicItem, context);
+            const auto casterID = data.caster ? data.caster->GetFormID() : 0;
+            const auto targetID = actor ? actor->GetFormID() : 0;
+            const bool eligible = context.matches(data.magicItem->GetFormID(), casterID, targetID, accepted, bonus);
+            if ((s->isForce(data.magicItem) || data.magicItem == s->bonusSpell) &&
+                data.caster == RE::PlayerCharacter::GetSingleton()) {
+                std::lock_guard lock(s->mutex);
+                if (s->logNext()) SKSE::log::info("[IronLungs] APPLY: spell={:08X}, target={:08X}, accepted={}, cast={}, matched={}, bonus_effect={}, magnitude={}",
+                    data.magicItem->GetFormID(), targetID, accepted, context.cast ? context.cast->serial : 0,
+                    eligible, data.magicItem == s->bonusSpell, data.magnitude);
+            }
+            if (eligible) s->damage(actor, data.magicItem, context.cast);
         }
         return accepted;
     }
@@ -253,15 +287,21 @@ public:
                 SKSE::log::error("Iron Lungs: UF spell {:08X} has no projectile; trait disabled", word.spell->GetFormID()); return false;
             }
         }
-        // All function signatures and IDs come from the pinned CommonLib.
+        // Explicit projectile hit, rather than release-time FindTargets.
+        // AE callsite: NoahBoddie/perk-entry-expansion 2a75ca5d, MACS hook.
+        // All eight arguments: Newrite/ReflyemSKSEPlugin f627a0ca, OnMagicHit;
+        // also Valhalla Combat. Preserve the final two bytes when forwarding.
+        const auto impactAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(43015, 44206)}.address() + 0x218;
+        if (*reinterpret_cast<const std::uint8_t*>(impactAddress) != 0xE8) {
+            SKSE::log::error("Iron Lungs: projectile impact call is not the expected E8; trait disabled"); return false;
+        }
+        SKSE::AllocTrampoline(14);
         // AddTarget AE 34526 is independently used by TiltedEvolution.
         const auto launchAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(42928, 44108)}.address();
-        const auto findAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(33632, 34410)}.address();
         const auto addAddress = REL::Relocation<std::uintptr_t>{REL::ID(34526)}.address();
         struct Hook { std::uintptr_t address; void* replacement; void** original; };
         const Hook hooks[] = {
             {launchAddress, reinterpret_cast<void*>(launch), reinterpret_cast<void**>(&originalLaunch)},
-            {findAddress, reinterpret_cast<void*>(find), reinterpret_cast<void**>(&originalFind)},
             {addAddress, reinterpret_cast<void*>(add), reinterpret_cast<void**>(&originalAdd)}
         };
         std::vector<void*> created;
@@ -274,6 +314,8 @@ public:
                 SKSE::log::error("Iron Lungs: hook installation failed {}; trait disabled", int(status)); return false;
             }
         }
+        originalImpact = SKSE::GetTrampoline().write_call<5>(impactAddress, impact);
+        SKSE::log::info("Iron Lungs: projectile impact hook installed at 44206+0x218; eight arguments forwarded");
         REL::Relocation<std::uintptr_t> casterTable{RE::VTABLE_ActorMagicCaster[0]};
         originalCheck = casterTable.write_vfunc(0xA, check);
         REL::Relocation<std::uintptr_t> voiceTable{RE::VTABLE_VoiceSpellFireHandler[0]};
