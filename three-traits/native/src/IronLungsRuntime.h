@@ -1,5 +1,6 @@
 #pragma once
 #include "IronLungs.h"
+#include "IronLungsGrant.h"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -31,6 +32,7 @@ class IronLungsRuntime {
     inline static FindFn originalFind = nullptr;
     inline static AddFn originalAdd = nullptr;
     std::recursive_mutex mutex;
+    IronLungsGrant grant;
     std::unordered_map<std::uint32_t, Shot> shots;
     RE::SpellItem *trait = nullptr, *bonusSpell = nullptr;
     RE::TESShout* unrelenting = nullptr;
@@ -190,11 +192,13 @@ class IronLungsRuntime {
 public:
     void reset() {
         std::lock_guard lock(mutex);
+        grant.reset();
         shots.clear(); pruneAfter = 0; logBudget = 200; warnedUnavailable = false;
         lastFailure = {};
     }
     void tick(float dt) {
         std::lock_guard lock(mutex);
+        grant.tick(dt);
         auto p = RE::PlayerCharacter::GetSingleton();
         if (!installed && !warnedUnavailable && inSession && inSession() && p && trait && p->HasSpell(trait)) {
             warnedUnavailable = true;
@@ -215,7 +219,7 @@ public:
             SKSE::log::error("Iron Lungs: required forms missing; trait disabled"); return false;
         }
         for (const auto& word : unrelenting->variations) {
-            if (!word.spell || word.spell->GetDelivery() != RE::MagicSystem::Delivery::kAimed ||
+            if (!word.word || !word.spell || word.spell->GetDelivery() != RE::MagicSystem::Delivery::kAimed ||
                 word.spell->GetCastingType() != RE::MagicSystem::CastingType::kFireAndForget) {
                 SKSE::log::error("Iron Lungs: unsupported UF delivery/casting override; trait disabled"); return false;
             }
@@ -251,6 +255,7 @@ public:
         REL::Relocation<std::uintptr_t> voiceTable{RE::VTABLE_VoiceSpellFireHandler[0]};
         originalVoice = voiceTable.write_vfunc(0x1, voice);
         installed = true;
+        grant.init(unrelenting, [this] { return selected(); });
         SKSE::log::info("Iron Lungs ready: magic bonus; strict Stamina gate; 25% maximum cost, 10% floor; 25% pre-payment current Stamina damage; Skald exempt");
         return true;
     }

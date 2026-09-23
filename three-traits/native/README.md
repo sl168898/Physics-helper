@@ -1,4 +1,20 @@
-# BiggieTraitMechanics 1.4.0 — Iron Lungs beta
+# BiggieTraitMechanics 1.4.1 — Iron Lungs full-shout grant
+
+Choosing Iron Lungs now adds Unrelenting Force and teaches/unlocks its three
+words for free. Existing saves already using the trait synchronize after loading
+and leaving paused menus. The existing per-frame player update detects trait
+selection; the grant uses native Actor::AddShout and sequential vanilla Game
+IsWordUnlocked / TeachWord / UnlockWord calls through the Papyrus VM. Already
+learned and unlocked words are skipped, and each grant is verified. Failed
+dispatches retry after five gameplay seconds. Load/removal epochs discard stale
+continuations. A stalled VM callback can retry after thirty gameplay seconds.
+
+Learned words remain if the trait is removed. Dragon souls, main-quest stages,
+the equipped shout and all combat rules remain unchanged. No new Papyrus script
+or extra plugin is required. The first completed sync logs all three words as
+verified; this build still requires testing in Skyrim.
+
+## Earlier Iron Lungs mechanics (1.4.0)
 
 Adds Iron Lungs to the combined package for Skyrim Steam 1.6.1170.
 The existing ten traits and Skald/Echoing Steel attack sequence are preserved.
