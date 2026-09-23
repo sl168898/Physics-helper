@@ -1,5 +1,6 @@
 #pragma once
 #include "Skald.h"
+#include "SkaldDiagnostics.h"
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -33,6 +34,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
     struct Batch { std::vector<Choice> choices; std::size_t pending = 0; };
     std::recursive_mutex mutex;
     Skald state;
+    SkaldDiagnostics diagnostics;
     RE::SpellItem *trait = nullptr, *power = nullptr;
     bool running = false, syncPending = true, hadTrait = false, valid = false;
     bool menuBusy = false, inCast = false, warnedNoChoice = false;
@@ -189,6 +191,7 @@ public:
     void resetTransient(bool enable) {
         std::lock_guard lock(mutex);
         ++epoch; ++menuTicket; running = enable;
+        diagnostics.reset();
         syncPending = true; hadTrait = false; valid = false; menuBusy = false; inCast = false; warnedNoChoice = false;
     }
     void clear() { std::lock_guard lock(mutex); state = {}; resetTransient(false); }
@@ -197,6 +200,7 @@ public:
         std::lock_guard lock(mutex);
         state.tick(dt);
         const bool enabled = active();
+        diagnostics.tick(p, dt, enabled);
         if (syncPending || enabled != hadTrait) {
             ++epoch; ++menuTicket; menuBusy = false;
             if (enabled) {
@@ -244,7 +248,13 @@ public:
         inCast = true;
         // The exact first-word spell from the loaded shout (including overrides).
         // No synthetic VoiceFire event and no edits to normal shout recovery.
-        caster->CastSpellImmediate(spell, true, target.get(), 1.f, false, 0.f, p);
+        diagnostics.before(p, shout, spell);
+        // Use the normal fresh-cast mode, as Spell.Cast/PayloadInterpreter do.
+        // Do not suppress hit-effect initialization for buff shouts. Upstream
+        // names this bool noHitEffectArt; other engine references call it loadCast.
+        // Zero magnitude override retains each original effect's own magnitude.
+        caster->CastSpellImmediate(spell, false, target.get(), 1.f, false, 0.f, p);
+        diagnostics.after(p, spell);
         inCast = false;
         SKSE::log::info("Skald cast requested: {} first word, spell {:08X}, delivery {}, recovery {} seconds",
             shout->GetName(), spell->GetFormID(), static_cast<int>(spell->GetDelivery()), state.remaining);

@@ -1,4 +1,39 @@
-# BiggieTraitMechanics 1.4.2 — Iron Lungs Overexertion
+# BiggieTraitMechanics 1.4.3 — Skald buff-cast candidate fix
+
+Skald now passes false for CastSpellImmediate's second argument, matching normal
+fresh-cast implementations in PayloadInterpreter and PapyrusExtender. The old
+true flag suppressed hit-effect art; another engine reference names it loadCast.
+This is a targeted correction, not proof that every modded self-buff failure is
+resolved. The exact engine branch responsible for the reported missing Kyne's
+Peace restoration has not been observed here. Keep magnitude override at zero:
+it preserves each effect's own magnitude, rather than forcing all effects to
+one value. Original effects, conditions, scripts, durations and perk scaling
+remain under the game's control. No direct actor-value restoration or fallback
+recast is added, so healing and buffs cannot accidentally be granted twice.
+
+All self-delivery stored shouts use the player target, including Kyne's Peace,
+Predator's Might and Dragon Aspect when its loaded spell uses self delivery.
+The exact first-word spell is used. Targeted/aimed shouts keep their old target
+selection, independent 10/6/3-second recovery and next-attack Echoing Steel rules.
+No manual VoiceFire event is fabricated, so Iron Lungs remains exempt for Skald.
+
+Read-only [SkaldBuff] diagnostics record the actual loaded first-word effects,
+Health/Stamina/Magicka before and immediately after casting, then after 0.25
+unpaused gameplay seconds. Matching active effects include magnitude, duration,
+inactive and dispelled state. The log is capped at 200 lines per loaded session;
+reload to start another capture. Actor values may include regeneration and other
+mods, and instantaneous healing may leave no active-effect instance. A matching
+instance alone does not prove restoration succeeded. The probes do not change
+stats, reapply spells or remove buffs.
+
+Offline audit covers the supplied Requiem spell overrides: Kyne's Peace,
+Predator's Might, Elemental Fury, Become Ethereal, Slow Time, Aura Whisper and
+Clear Skies. Dragon Aspect's Dragonborn.esm records and winning overrides were
+not supplied; the generic runtime capture will identify them in game. Five rule
+suites and Windows compilation are build gates; actual buffs still need testing.
+The entire ESP, all artwork, scripts and INIs remain unchanged from 2.7.2-beta1.
+
+## Earlier Iron Lungs Overexertion (1.4.2)
 
 While Iron Lungs is selected, a manual shout causes 20% extra incoming physical
 damage for three gameplay seconds. Another manual shout refreshes the duration;
