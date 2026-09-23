@@ -1,0 +1,2194 @@
+{
+  "source": "Requiem.esp (supplied plugin; SHA-256 recorded below)",
+  "sha256": "f736c19a3a0ebfbafdaa997d22bc3b1e94e8730bb69d70ede24918b5dd68f97b",
+  "masters": [
+    "Skyrim.esm",
+    "Update.esm",
+    "Dawnguard.esm",
+    "HearthFires.esm",
+    "Dragonborn.esm",
+    "ccbgssse001-fish.esm",
+    "ccqdrsse001-survivalmode.esl",
+    "ccbgssse037-curios.esl",
+    "ccbgssse025-advdsgs.esm",
+    "Unofficial Skyrim Special Edition Patch.esp"
+  ],
+  "self_delivery_player_shout_spells": [
+    {
+      "form_id": "00018609",
+      "editor_id": "REQ_Shout_Thuum_StormCall1",
+      "name": "Storm Call - Strun",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "000A1A58",
+          "record_unavailable": true,
+          "magnitude": 20.0,
+          "area": 100,
+          "duration": 60
+        },
+        {
+          "form_id": "000E3F0A",
+          "editor_id": "VoiceStormCallEffect1Self",
+          "name": "Call Storm",
+          "description": "Calls a storm for <dur> seconds with lightning that strikes friend and foe alike.",
+          "flags": "10200902",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 1
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicProjectileStormScript",
+              "properties": [
+                "SoundFX",
+                "fStartDelayRand",
+                "fRecastRand",
+                "fRecast",
+                "PlacedTargetActivator",
+                "MAGProjectileStormVar",
+                "CastingImod",
+                "PlacedActivator",
+                "SpellRef",
+                "fDelay"
+              ]
+            },
+            {
+              "script": "magicSetWeatherScript",
+              "properties": [
+                "bHoldWeatherUntilEnd",
+                "LocalWeatherA",
+                "LocalWeatherB",
+                "WeatherAfterForm",
+                "WeatherExceptionList",
+                "WeatherForm"
+              ]
+            }
+          ],
+          "magnitude": 1.0,
+          "area": 0,
+          "duration": 60
+        },
+        {
+          "form_id": "000ECEB5",
+          "record_unavailable": true,
+          "magnitude": 1.0,
+          "area": 0,
+          "duration": 60
+        }
+      ]
+    },
+    {
+      "form_id": "0001860A",
+      "editor_id": "REQ_Shout_Thuum_StormCall2",
+      "name": "Storm Call - Bah",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "000A1A5C",
+          "record_unavailable": true,
+          "magnitude": 25.0,
+          "area": 100,
+          "duration": 120
+        },
+        {
+          "form_id": "000E3F09",
+          "editor_id": "VoiceStormCallEffect2Self",
+          "name": "Call Storm",
+          "description": "Calls a storm for <dur> seconds with lightning that strikes friend and foe alike.",
+          "flags": "10200902",
+          "archetype": 40,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 1
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicProjectileStormScript",
+              "properties": [
+                "SoundFX",
+                "fHeight",
+                "fStartDelayRand",
+                "PlacedActivator",
+                "MAGProjectileStormVar",
+                "PlacedTargetActivator",
+                "fRecast",
+                "CastingImod",
+                "SpellRef",
+                "fRecastRand",
+                "fDelay"
+              ]
+            },
+            {
+              "script": "magicSetWeatherScript",
+              "properties": [
+                "bHoldWeatherUntilEnd",
+                "LocalWeatherA",
+                "LocalWeatherB",
+                "WeatherAfterForm",
+                "WeatherExceptionList",
+                "WeatherForm"
+              ]
+            }
+          ],
+          "magnitude": 1.0,
+          "area": 0,
+          "duration": 120
+        },
+        {
+          "form_id": "000ECEB5",
+          "record_unavailable": true,
+          "magnitude": 1.0,
+          "area": 0,
+          "duration": 120
+        }
+      ]
+    },
+    {
+      "form_id": "0001860D",
+      "editor_id": "REQ_Shout_Thuum_StormCall3",
+      "name": "Storm Call - Qo",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "000A1A5B",
+          "record_unavailable": true,
+          "magnitude": 30.0,
+          "area": 150,
+          "duration": 180
+        },
+        {
+          "form_id": "000D5E81",
+          "editor_id": "VoiceStormCallEffect3Self",
+          "name": "Call Storm",
+          "description": "Calls a storm for <dur> seconds with lightning that strikes friend and foe alike.",
+          "flags": "10200902",
+          "archetype": 40,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 1
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicSetWeatherScript",
+              "properties": [
+                "bHoldWeatherUntilEnd",
+                "LocalWeatherA",
+                "LocalWeatherB",
+                "WeatherAfterForm",
+                "WeatherExceptionList",
+                "WeatherForm"
+              ]
+            },
+            {
+              "script": "magicProjectileStormScript",
+              "properties": [
+                "SoundFX",
+                "fHeight",
+                "fStartDelayRand",
+                "PlacedActivator",
+                "MAGProjectileStormVar",
+                "PlacedTargetActivator",
+                "fRecast",
+                "CastingImod",
+                "SpellRef",
+                "fRecastRand",
+                "fDelay"
+              ]
+            }
+          ],
+          "magnitude": 1.0,
+          "area": 0,
+          "duration": 180
+        },
+        {
+          "form_id": "000ECEB5",
+          "record_unavailable": true,
+          "magnitude": 1.0,
+          "area": 0,
+          "duration": 180
+        }
+      ]
+    },
+    {
+      "form_id": "0002C595",
+      "editor_id": "REQ_Shout_Thuum_ElementalFury1",
+      "name": "Elemental Fury",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0002C56F",
+          "editor_id": "VoiceElementalFury",
+          "name": "Elemental Fury",
+          "description": "Your Thu'um imbues your arms with the speed of wind, allowing for meteoric attacks.",
+          "flags": "00200802",
+          "archetype": 5,
+          "primary_av": 85,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 0.30000001192092896,
+          "area": 0,
+          "duration": 15
+        }
+      ]
+    },
+    {
+      "form_id": "0002F7BE",
+      "editor_id": "REQ_Shout_Thuum_WhirlwindSprint1",
+      "name": "Whirlwind Sprint 1",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0002F7B9",
+          "editor_id": "VoiceSprintEffect1",
+          "name": "Sprint Effect 1",
+          "description": "",
+          "flags": "00000000",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "0002F7BF",
+      "editor_id": "REQ_Shout_Thuum_WhirlwindSprint2",
+      "name": "Whirlwind Sprint 2",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0004372F",
+          "editor_id": "VoiceSprintEffect2",
+          "name": "Sprint Effect 2",
+          "description": "",
+          "flags": "00000000",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "0002F7C0",
+      "editor_id": "REQ_Shout_Thuum_WhirlwindSprint3",
+      "name": "Whirlwind Sprint 3",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00043730",
+          "editor_id": "VoiceSprintEffect3",
+          "name": "Sprint Effect 3",
+          "description": "",
+          "flags": "00000000",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "00046B85",
+      "editor_id": "REQ_Shout_Thuum_CallDragon2",
+      "name": "Call Dragon",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00049454",
+          "editor_id": "VoiceCallDragonEffect",
+          "name": "Call Dragon Effect",
+          "description": "Odahviing! Hear my Voice and come forth. I summon you in my time of need.",
+          "flags": "00000000",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "CallDragonEffectScript",
+              "properties": [
+                "MQCallDragonKeyword"
+              ]
+            }
+          ],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "00048AD0",
+      "editor_id": "REQ_Shout_Thuum_SlowTime1",
+      "name": "SlowTime",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00048ACD",
+          "editor_id": "VoiceSlowTimeEffect",
+          "name": "Slow Time Effect",
+          "description": "Slows time for <dur> seconds.",
+          "flags": "00020800",
+          "archetype": 37,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "StaticFX",
+                "OutroFX",
+                "fStaticDelay",
+                "IntroFX"
+              ]
+            },
+            {
+              "script": "shaderparticlegeometryscript",
+              "properties": [
+                "FadeInTime",
+                "PSGD",
+                "FadeOutTime"
+              ]
+            }
+          ],
+          "magnitude": 0.30000001192092896,
+          "area": 0,
+          "duration": 10
+        }
+      ]
+    },
+    {
+      "form_id": "00048AD1",
+      "editor_id": "REQ_Shout_Thuum_SlowTime2",
+      "name": "Slow Time",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00048ACD",
+          "editor_id": "VoiceSlowTimeEffect",
+          "name": "Slow Time Effect",
+          "description": "Slows time for <dur> seconds.",
+          "flags": "00020800",
+          "archetype": 37,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "StaticFX",
+                "OutroFX",
+                "fStaticDelay",
+                "IntroFX"
+              ]
+            },
+            {
+              "script": "shaderparticlegeometryscript",
+              "properties": [
+                "FadeInTime",
+                "PSGD",
+                "FadeOutTime"
+              ]
+            }
+          ],
+          "magnitude": 0.20000000298023224,
+          "area": 0,
+          "duration": 20
+        }
+      ]
+    },
+    {
+      "form_id": "00048AD2",
+      "editor_id": "REQ_Shout_Thuum_SlowTime3",
+      "name": "Slow Time",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00048ACD",
+          "editor_id": "VoiceSlowTimeEffect",
+          "name": "Slow Time Effect",
+          "description": "Slows time for <dur> seconds.",
+          "flags": "00020800",
+          "archetype": 37,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "StaticFX",
+                "OutroFX",
+                "fStaticDelay",
+                "IntroFX"
+              ]
+            },
+            {
+              "script": "shaderparticlegeometryscript",
+              "properties": [
+                "FadeInTime",
+                "PSGD",
+                "FadeOutTime"
+              ]
+            }
+          ],
+          "magnitude": 0.10000000149011612,
+          "area": 0,
+          "duration": 30
+        }
+      ]
+    },
+    {
+      "form_id": "0005F6EB",
+      "editor_id": "REQ_Shout_Thuum_BecomeEthereal1",
+      "name": "Become Ethereal",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00064D68",
+          "editor_id": "VoiceMakeEthereal",
+          "name": "Ethereal",
+          "description": "You become invulnerable, but unable to attack. However you recover magicka and stamina.",
+          "flags": "00001C00",
+          "archetype": 41,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "StaticFX",
+                "OutroFX",
+                "fStaticDelay",
+                "IntroFX"
+              ]
+            },
+            {
+              "script": "magicSetActorAlphaScript",
+              "properties": [
+                "FadeToAlpha",
+                "AlphaValue"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 0,
+          "duration": 5
+        }
+      ]
+    },
+    {
+      "form_id": "0005F6EC",
+      "editor_id": "REQ_Shout_Thuum_BecomeEthereal2",
+      "name": "Become Ethereal",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00064D68",
+          "editor_id": "VoiceMakeEthereal",
+          "name": "Ethereal",
+          "description": "You become invulnerable, but unable to attack. However you recover magicka and stamina.",
+          "flags": "00001C00",
+          "archetype": 41,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "StaticFX",
+                "OutroFX",
+                "fStaticDelay",
+                "IntroFX"
+              ]
+            },
+            {
+              "script": "magicSetActorAlphaScript",
+              "properties": [
+                "FadeToAlpha",
+                "AlphaValue"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 0,
+          "duration": 8
+        }
+      ]
+    },
+    {
+      "form_id": "0005F6ED",
+      "editor_id": "REQ_Shout_Thuum_BecomeEthereal3",
+      "name": "Become Ethereal",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00064D68",
+          "editor_id": "VoiceMakeEthereal",
+          "name": "Ethereal",
+          "description": "You become invulnerable, but unable to attack. However you recover magicka and stamina.",
+          "flags": "00001C00",
+          "archetype": 41,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "StaticFX",
+                "OutroFX",
+                "fStaticDelay",
+                "IntroFX"
+              ]
+            },
+            {
+              "script": "magicSetActorAlphaScript",
+              "properties": [
+                "FadeToAlpha",
+                "AlphaValue"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 0,
+          "duration": 15
+        }
+      ]
+    },
+    {
+      "form_id": "00078BA2",
+      "editor_id": "REQ_Shout_Thuum_ClearSkiesSelf1",
+      "name": "Clear Skies",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00078B9D",
+          "editor_id": "VoiceClearSkies1Self",
+          "name": "Clear Skies",
+          "description": "",
+          "flags": "10208902",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 1
+            }
+          ],
+          "scripts": [
+            {
+              "script": "clearskieseffectscript",
+              "properties": [
+                "MAGProjectileStormVar",
+                "MQClearSkyFogSpell",
+                "WeatherExceptionList"
+              ]
+            },
+            {
+              "script": "magicCastAnotherSpellScript",
+              "properties": [
+                "CastSpellName"
+              ]
+            }
+          ],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 25
+        }
+      ]
+    },
+    {
+      "form_id": "00078BA3",
+      "editor_id": "REQ_Shout_Thuum_ClearSkiesSelf2",
+      "name": "Clear Skies",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00078B9F",
+          "editor_id": "VoiceClearSkies2Self",
+          "name": "Clear Skies",
+          "description": "",
+          "flags": "10208902",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 1
+            }
+          ],
+          "scripts": [
+            {
+              "script": "clearskieseffectscript",
+              "properties": [
+                "MAGProjectileStormVar",
+                "MQClearSkyFogSpell",
+                "WeatherExceptionList"
+              ]
+            },
+            {
+              "script": "magicCastAnotherSpellScript",
+              "properties": [
+                "CastSpellName"
+              ]
+            }
+          ],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 40
+        }
+      ]
+    },
+    {
+      "form_id": "00078BA4",
+      "editor_id": "REQ_Shout_Thuum_ClearSkiesSelf3",
+      "name": "Clear Skies",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00078BA1",
+          "editor_id": "VoiceClearSkies3Self",
+          "name": "Clear Skies",
+          "description": "",
+          "flags": "10208902",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 1
+            }
+          ],
+          "scripts": [
+            {
+              "script": "clearskieseffectscript",
+              "properties": [
+                "MAGProjectileStormVar",
+                "MQClearSkyFogSpell",
+                "WeatherExceptionList"
+              ]
+            },
+            {
+              "script": "magicCastAnotherSpellScript",
+              "properties": [
+                "CastSpellName"
+              ]
+            }
+          ],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 60
+        }
+      ]
+    },
+    {
+      "form_id": "00082A34",
+      "editor_id": "REQ_Shout_Thuum_KynesPeace1",
+      "name": "Kyne's Peace",
+      "flags": "00080001",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00082A37",
+          "editor_id": "VoiceKynesPeaceEffect1",
+          "name": "Kyne's Peace 1",
+          "description": "",
+          "flags": "00408112",
+          "archetype": 6,
+          "primary_av": 0,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsCommandedActor",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 20.0,
+          "area": 75,
+          "duration": 60
+        },
+        {
+          "form_id": "0006E0C1",
+          "editor_id": "VoiceKynesPeaceFactionEffect",
+          "name": "Faction - Kyne's Peace",
+          "description": "",
+          "flags": "00408112",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000F82F4",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "VoiceCharmFactionScript",
+              "properties": [
+                "bMakePlayerTeammate",
+                "CharmFaction"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 75,
+          "duration": 60
+        },
+        {
+          "form_id": "0010E4F6",
+          "editor_id": "VoiceKynesPeaceDetectLife1",
+          "name": "Kyne's Peace",
+          "description": "Nearby animals will not attack, and their life forces are visible for <dur> seconds.",
+          "flags": "04221012",
+          "archetype": 19,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000F82F4",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 20.0,
+          "area": 75,
+          "duration": 60
+        },
+        {
+          "form_id": "0A2665BB",
+          "editor_id": "REQ_Effect_KynesPeace01RestoreHealthFFSelf",
+          "name": "Kyne's Grace",
+          "description": "Besides, your Thu'um will also mend your wounds and empower your mind and body.",
+          "flags": "00201A00",
+          "archetype": 0,
+          "primary_av": 24,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 100.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A2665BC",
+          "editor_id": "REQ_Effect_KynesPeach01PerkRestoreStaminaFFSelf",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 0,
+          "primary_av": 26,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 100.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A2665BD",
+          "editor_id": "REQ_Effect_KynesPeach01PerkRestoreMagickaFFSelf",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 0,
+          "primary_av": 25,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasSpell",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000E5F51",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 100.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "00082A39",
+      "editor_id": "REQ_Shout_Thuum_KynesPeace2",
+      "name": "Kyne's Peace",
+      "flags": "00080001",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00082A36",
+          "editor_id": "VoiceKynesPeaceEffect2",
+          "name": "Kyne's Peace 2",
+          "description": " ",
+          "flags": "00400112",
+          "archetype": 6,
+          "primary_av": 0,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsCommandedActor",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 30.0,
+          "area": 150,
+          "duration": 120
+        },
+        {
+          "form_id": "0006E0C1",
+          "editor_id": "VoiceKynesPeaceFactionEffect",
+          "name": "Faction - Kyne's Peace",
+          "description": "",
+          "flags": "00408112",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000F82F4",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "VoiceCharmFactionScript",
+              "properties": [
+                "bMakePlayerTeammate",
+                "CharmFaction"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 150,
+          "duration": 120
+        },
+        {
+          "form_id": "0010E4F7",
+          "editor_id": "VoiceKynesPeaceDetectLife2",
+          "name": "Kyne's Peace",
+          "description": "Nearby animals will not attack, and their life forces are visible for <dur> seconds.",
+          "flags": "04221012",
+          "archetype": 19,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000F82F4",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 20.0,
+          "area": 150,
+          "duration": 120
+        },
+        {
+          "form_id": "0A2665BB",
+          "editor_id": "REQ_Effect_KynesPeace01RestoreHealthFFSelf",
+          "name": "Kyne's Grace",
+          "description": "Besides, your Thu'um will also mend your wounds and empower your mind and body.",
+          "flags": "00201A00",
+          "archetype": 0,
+          "primary_av": 24,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 250.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A2665BC",
+          "editor_id": "REQ_Effect_KynesPeach01PerkRestoreStaminaFFSelf",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 0,
+          "primary_av": 26,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 250.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A2665BD",
+          "editor_id": "REQ_Effect_KynesPeach01PerkRestoreMagickaFFSelf",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 0,
+          "primary_av": 25,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasSpell",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000E5F51",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 250.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "00082A3A",
+      "editor_id": "REQ_Shout_Thuum_KynesPeace3",
+      "name": "Kyne's Peace",
+      "flags": "00380001",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "00082A38",
+          "editor_id": "VoiceKynesPeaceEffect3",
+          "name": "Kyne's Peace 3",
+          "description": "",
+          "flags": "00400112",
+          "archetype": 6,
+          "primary_av": 0,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsCommandedActor",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 999.0,
+          "area": 250,
+          "duration": 180
+        },
+        {
+          "form_id": "0006E0C1",
+          "editor_id": "VoiceKynesPeaceFactionEffect",
+          "name": "Faction - Kyne's Peace",
+          "description": "",
+          "flags": "00408112",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000F82F4",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "VoiceCharmFactionScript",
+              "properties": [
+                "bMakePlayerTeammate",
+                "CharmFaction"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 250,
+          "duration": 180
+        },
+        {
+          "form_id": "0010E4F8",
+          "editor_id": "VoiceKynesPeaceDetectLife3",
+          "name": "Kyne's Peace",
+          "description": "Nearby animals will not attack, and their life forces are visible for <dur> seconds.",
+          "flags": "04221012",
+          "archetype": 19,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000F82F4",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 20.0,
+          "area": 250,
+          "duration": 180
+        },
+        {
+          "form_id": "0A2665BB",
+          "editor_id": "REQ_Effect_KynesPeace01RestoreHealthFFSelf",
+          "name": "Kyne's Grace",
+          "description": "Besides, your Thu'um will also mend your wounds and empower your mind and body.",
+          "flags": "00201A00",
+          "archetype": 0,
+          "primary_av": 24,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 500.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A2665BC",
+          "editor_id": "REQ_Effect_KynesPeach01PerkRestoreStaminaFFSelf",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 0,
+          "primary_av": 26,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 500.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A2665BD",
+          "editor_id": "REQ_Effect_KynesPeach01PerkRestoreMagickaFFSelf",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 0,
+          "primary_av": 25,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasSpell",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "000E5F51",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 500.0,
+          "area": 0,
+          "duration": 0
+        },
+        {
+          "form_id": "0A68CE21",
+          "editor_id": "REQ_Effect_KynesPeace01RestoreHealthFFSelfCure",
+          "name": "Kyne's Grace",
+          "description": "",
+          "flags": "00209A00",
+          "archetype": 3,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [],
+          "magnitude": 100.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "form_id": "0008AFCC",
+      "editor_id": "REQ_Shout_Thuum_AuraWhisper1",
+      "name": "Aura Whisper",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0010319E",
+          "editor_id": "VoiceAuraWhisperExterior",
+          "name": "Aura Whisper - Exterior",
+          "description": "",
+          "flags": "04221012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "IntroFX"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 500,
+          "duration": 10
+        },
+        {
+          "form_id": "0008AFCB",
+          "editor_id": "VoiceAuraWhisperInterior",
+          "name": "Aura Whisper - Interior",
+          "description": "",
+          "flags": "04421012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "IntroFX"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 300,
+          "duration": 10
+        },
+        {
+          "form_id": "0010E4FD",
+          "editor_id": "VoiceAuraWhisperDescription",
+          "name": "Aura Whisper",
+          "description": "Nearby creatures, including undead, machines, and Daedra, can be seen through walls for <dur> seconds.",
+          "flags": "04421012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 0.0,
+          "area": 0,
+          "duration": 10
+        }
+      ]
+    },
+    {
+      "form_id": "0008AFCD",
+      "editor_id": "REQ_Shout_Thuum_AuraWhisper2",
+      "name": "Aura Whisper",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0010319E",
+          "editor_id": "VoiceAuraWhisperExterior",
+          "name": "Aura Whisper - Exterior",
+          "description": "",
+          "flags": "04221012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "IntroFX"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 500,
+          "duration": 20
+        },
+        {
+          "form_id": "0008AFCB",
+          "editor_id": "VoiceAuraWhisperInterior",
+          "name": "Aura Whisper - Interior",
+          "description": "",
+          "flags": "04421012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "IntroFX"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 300,
+          "duration": 20
+        },
+        {
+          "form_id": "0010E4FD",
+          "editor_id": "VoiceAuraWhisperDescription",
+          "name": "Aura Whisper",
+          "description": "Nearby creatures, including undead, machines, and Daedra, can be seen through walls for <dur> seconds.",
+          "flags": "04421012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 0.0,
+          "area": 0,
+          "duration": 20
+        }
+      ]
+    },
+    {
+      "form_id": "0008AFCE",
+      "editor_id": "REQ_Shout_Thuum_AuraWhisper3",
+      "name": "Aura Whisper",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0010319E",
+          "editor_id": "VoiceAuraWhisperExterior",
+          "name": "Aura Whisper - Exterior",
+          "description": "",
+          "flags": "04221012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "IntroFX"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 500,
+          "duration": 30
+        },
+        {
+          "form_id": "0008AFCB",
+          "editor_id": "VoiceAuraWhisperInterior",
+          "name": "Aura Whisper - Interior",
+          "description": "",
+          "flags": "04421012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsInInterior",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "magicImodScript",
+              "properties": [
+                "IntroFX"
+              ]
+            }
+          ],
+          "magnitude": 0.0,
+          "area": 300,
+          "duration": 30
+        },
+        {
+          "form_id": "0010E4FD",
+          "editor_id": "VoiceAuraWhisperDescription",
+          "name": "Aura Whisper",
+          "description": "Nearby creatures, including undead, machines, and Daedra, can be seen through walls for <dur> seconds.",
+          "flags": "04421012",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 0.0,
+          "area": 0,
+          "duration": 30
+        }
+      ]
+    },
+    {
+      "form_id": "0009CD4E",
+      "editor_id": "REQ_Shout_Thuum_ElementalFury2",
+      "name": "Elemental Fury",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0002C56F",
+          "editor_id": "VoiceElementalFury",
+          "name": "Elemental Fury",
+          "description": "Your Thu'um imbues your arms with the speed of wind, allowing for meteoric attacks.",
+          "flags": "00200802",
+          "archetype": 5,
+          "primary_av": 85,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 0.4000000059604645,
+          "area": 0,
+          "duration": 15
+        }
+      ]
+    },
+    {
+      "form_id": "0009CD4F",
+      "editor_id": "REQ_Shout_Thuum_ElementalFury3",
+      "name": "Elemental Fury",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0002C56F",
+          "editor_id": "VoiceElementalFury",
+          "name": "Elemental Fury",
+          "description": "Your Thu'um imbues your arms with the speed of wind, allowing for meteoric attacks.",
+          "flags": "00200802",
+          "archetype": 5,
+          "primary_av": 85,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 0.6000000238418579,
+          "area": 0,
+          "duration": 15
+        }
+      ]
+    },
+    {
+      "form_id": "0009E0CC",
+      "editor_id": "REQ_Shout_Thuum_PredatorsMight1",
+      "name": "Predator's Might",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0009E0C8",
+          "editor_id": "VoiceAnimalAllegianceEffect1",
+          "name": "Animal Allegiance 1",
+          "description": "",
+          "flags": "00401102",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsCommandedActor",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "GetPlayerTeammate",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "VoiceCharmFactionScript",
+              "properties": [
+                "bMakePlayerTeammate",
+                "CharmFaction"
+              ]
+            }
+          ],
+          "magnitude": 20.0,
+          "area": 75,
+          "duration": 30
+        },
+        {
+          "form_id": "0A268D59",
+          "editor_id": "REQ_Effect_animalAllegiance01FortifyHealthFFSelf",
+          "name": "Predator's Resilience",
+          "description": "The forces of nature grant you the resilience of a bear for as long as your Thu'um lasts. Your health is therefore increased by <mag>.",
+          "flags": "00200802",
+          "archetype": 34,
+          "primary_av": 24,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 75.0,
+          "area": 0,
+          "duration": 30
+        },
+        {
+          "form_id": "0A268D5A",
+          "editor_id": "REQ_Effect_AnimalAllegiance01FortifyStaminaFFSelf",
+          "name": "Predator's Endurance",
+          "description": "The forces of nature grant you the endurance of a sabrecat for as long as your Thu'um lasts. Your stamina is therefore increased by <mag>.",
+          "flags": "00200802",
+          "archetype": 34,
+          "primary_av": 26,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 75.0,
+          "area": 0,
+          "duration": 30
+        }
+      ]
+    },
+    {
+      "form_id": "0009E0CD",
+      "editor_id": "REQ_Shout_Thuum_PredatorsMight2",
+      "name": "Predator's Might",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0009E0CA",
+          "editor_id": "VoiceAnimalAllegianceEffect2",
+          "name": "Animal Allegiance 2",
+          "description": "",
+          "flags": "00401102",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsCommandedActor",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "GetPlayerTeammate",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "VoiceCharmFactionScript",
+              "properties": [
+                "bMakePlayerTeammate",
+                "CharmFaction"
+              ]
+            }
+          ],
+          "magnitude": 30.0,
+          "area": 150,
+          "duration": 45
+        },
+        {
+          "form_id": "0A268D59",
+          "editor_id": "REQ_Effect_animalAllegiance01FortifyHealthFFSelf",
+          "name": "Predator's Resilience",
+          "description": "The forces of nature grant you the resilience of a bear for as long as your Thu'um lasts. Your health is therefore increased by <mag>.",
+          "flags": "00200802",
+          "archetype": 34,
+          "primary_av": 24,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 175.0,
+          "area": 0,
+          "duration": 45
+        },
+        {
+          "form_id": "0A268D5A",
+          "editor_id": "REQ_Effect_AnimalAllegiance01FortifyStaminaFFSelf",
+          "name": "Predator's Endurance",
+          "description": "The forces of nature grant you the endurance of a sabrecat for as long as your Thu'um lasts. Your stamina is therefore increased by <mag>.",
+          "flags": "00200802",
+          "archetype": 34,
+          "primary_av": 26,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 175.0,
+          "area": 0,
+          "duration": 45
+        }
+      ]
+    },
+    {
+      "form_id": "0009E0CE",
+      "editor_id": "REQ_Shout_Thuum_PredatorsMight3",
+      "name": "Predator's Might",
+      "flags": "00080000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "0009E0CB",
+          "editor_id": "VoiceAnimalAllegianceEffect3",
+          "name": "Animal Allegiance 3",
+          "description": "",
+          "flags": "00401102",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [
+            {
+              "function": "IsCommandedActor",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 1.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013798",
+              "run_on": 0
+            },
+            {
+              "function": "HasKeyword",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00013796",
+              "run_on": 0
+            },
+            {
+              "function": "IsUndead",
+              "comparison": 0.0,
+              "opcode": 0,
+              "flags": 0,
+              "param1": "00000000",
+              "run_on": 0
+            }
+          ],
+          "scripts": [
+            {
+              "script": "VoiceCharmFactionScript",
+              "properties": [
+                "bMakePlayerTeammate",
+                "CharmFaction"
+              ]
+            }
+          ],
+          "magnitude": 40.0,
+          "area": 250,
+          "duration": 60
+        },
+        {
+          "form_id": "0A268D59",
+          "editor_id": "REQ_Effect_animalAllegiance01FortifyHealthFFSelf",
+          "name": "Predator's Resilience",
+          "description": "The forces of nature grant you the resilience of a bear for as long as your Thu'um lasts. Your health is therefore increased by <mag>.",
+          "flags": "00200802",
+          "archetype": 34,
+          "primary_av": 24,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 300.0,
+          "area": 0,
+          "duration": 60
+        },
+        {
+          "form_id": "0A68CE20",
+          "editor_id": "REQ_Effect_AnimalAllegiance01FortifyStaminaFFSelfPowerful",
+          "name": "Predator's Endurance",
+          "description": "The forces of nature grant you the endurance of a sabrecat for as long as your Thu'um lasts. Your Stamina is therefore increased by <mag> points. In addition, you also become hard to paralyse.",
+          "flags": "00200802",
+          "archetype": 34,
+          "primary_av": 26,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 300.0,
+          "area": 0,
+          "duration": 60
+        }
+      ]
+    },
+    {
+      "form_id": "000FEAD2",
+      "editor_id": "REQ_Shout_Thuum_CallDragon1",
+      "name": "Call Dragon",
+      "flags": "00000000",
+      "spell_type": 11,
+      "casting": 1,
+      "delivery": 0,
+      "effects": [
+        {
+          "form_id": "000FEAD1",
+          "editor_id": "VoiceCallDragonEffectEmpty",
+          "name": "Call Dragon Effect",
+          "description": "Odahviing! Hear my Voice and come forth. I summon you in my time of need.",
+          "flags": "00000000",
+          "archetype": 1,
+          "primary_av": 4294967295,
+          "casting": 1,
+          "delivery": 0,
+          "conditions": [],
+          "scripts": [],
+          "magnitude": 10.0,
+          "area": 0,
+          "duration": 0
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "No Skyrim.esm or Dragonborn.esm is available locally.",
+    "Requiem.esp contains no Dragon Aspect or Battle Fury spell/effect/shout override.",
+    "No loose local ESP overrides the inspected Kyne's Peace or Predator's Might records.",
+    "Native engine and external mod effects/perks still require runtime validation."
+  ]
+}
