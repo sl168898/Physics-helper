@@ -1,6 +1,7 @@
 #pragma once
 #include "IronLungs.h"
 #include "IronLungsGrant.h"
+#include "Overexertion.h"
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -33,6 +34,7 @@ class IronLungsRuntime {
     inline static AddFn originalAdd = nullptr;
     std::recursive_mutex mutex;
     IronLungsGrant grant;
+    Overexertion overexertion;
     std::unordered_map<std::uint32_t, Shot> shots;
     RE::SpellItem *trait = nullptr, *bonusSpell = nullptr;
     RE::TESShout* unrelenting = nullptr;
@@ -107,6 +109,7 @@ class IronLungsRuntime {
         const bool result = originalVoice(handler, actor, tag);
         auto process = actor.GetActorRuntimeData().currentProcess;
         if (cast->projectiles) {
+            s->overexertion.shout();
             // Only undo the recovery produced by THIS synchronous UF release.
             // Do not reset the timer later, or alter any other shout's records.
             if (process && process->high) process->high->voiceRecoveryTime = priorRecovery;
@@ -193,6 +196,7 @@ public:
     void reset() {
         std::lock_guard lock(mutex);
         grant.reset();
+        overexertion.clear();
         shots.clear(); pruneAfter = 0; logBudget = 200; warnedUnavailable = false;
         lastFailure = {};
     }
@@ -200,6 +204,7 @@ public:
         std::lock_guard lock(mutex);
         grant.tick(dt);
         auto p = RE::PlayerCharacter::GetSingleton();
+        overexertion.tick(dt, selected() && p && !p->IsDead());
         if (!installed && !warnedUnavailable && inSession && inSession() && p && trait && p->HasSpell(trait)) {
             warnedUnavailable = true;
             RE::DebugNotification("Iron Lungs unavailable: check BiggieTraitMechanics.log.");
@@ -209,6 +214,25 @@ public:
         if (pruneAfter > 0) return;
         pruneAfter = 1.f;
         std::erase_if(shots, [](const auto& item) { auto p = item.second.handle.get(); return !p || p->IsDeleted(); });
+    }
+    void manualShout(RE::TESShout* shout) {
+        std::lock_guard lock(mutex);
+        auto p = RE::PlayerCharacter::GetSingleton();
+        // UF arms only when its release actually launches a projectile. Other
+        // manual shouts use the normal VoiceFire event, like Echoing Steel.
+        if (!shout || shout == unrelenting || !selected() || !p || p->IsDead() ||
+            (skaldCasting && skaldCasting())) return;
+        overexertion.shout();
+        if (logNext()) SKSE::log::info("[IronLungs] Overexertion: manual shout {:08X}; 20% physical vulnerability for 3 seconds", shout->GetFormID());
+    }
+    float physicalPenalty(float total, float physical) {
+        std::lock_guard lock(mutex);
+        auto p = RE::PlayerCharacter::GetSingleton();
+        if (!selected() || !p || p->IsDead()) { overexertion.clear(); return 0; }
+        const float extra = overexertion.extraDamage(total, physical);
+        if (extra > 0 && logNext()) SKSE::log::info("[IronLungs] Overexertion HIT: physical={}, total={}, extra={}, remaining={}",
+            physical, total, extra, overexertion.remaining);
+        return extra;
     }
     bool init(RE::TESDataHandler* data, const char* plugin, std::function<bool()> session, std::function<bool()> isSkald) {
         self = this; inSession = std::move(session); skaldCasting = std::move(isSkald);
@@ -256,7 +280,7 @@ public:
         originalVoice = voiceTable.write_vfunc(0x1, voice);
         installed = true;
         grant.init(unrelenting, [this] { return selected(); });
-        SKSE::log::info("Iron Lungs ready: magic bonus; strict Stamina gate; 25% maximum cost, 10% floor; 25% pre-payment current Stamina damage; Skald exempt");
+        SKSE::log::info("Iron Lungs ready: magic bonus; strict Stamina gate; 25% maximum cost, 10% floor; 25% pre-payment current Stamina damage; manual shouts cause 20% physical vulnerability for 3 seconds; Skald exempt");
         return true;
     }
 };

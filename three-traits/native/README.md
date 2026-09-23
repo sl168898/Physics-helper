@@ -1,4 +1,30 @@
-# BiggieTraitMechanics 1.4.1 — Iron Lungs full-shout grant
+# BiggieTraitMechanics 1.4.2 — Iron Lungs Overexertion
+
+While Iron Lungs is selected, a manual shout causes 20% extra incoming physical
+damage for three gameplay seconds. Another manual shout refreshes the duration;
+the amount and duration never stack. Paused menus freeze the timer. Skald's
+automatic casts are exempt. The transient window clears on trait removal,
+death, loading a save or starting a new game, like the existing combat tokens.
+
+Manual Unrelenting Force arms the drawback only after its existing transaction
+confirms a projectile launch; an unaffordable or refunded UF cast does not arm
+it. Other shouts use the player's normal SKSE VoiceFire release event. This
+event precedes native release processing, so a downstream release failure from
+another mod can still arm the window. Spells and lesser powers do not qualify.
+
+The existing game-thread Actor::ProcessHitData hook adds 20% of the positive
+physical component (clamped to total hit damage) to physical and total damage.
+Melee, arrows, unarmed attacks and bashes qualify. Magic/poison effects and any
+nonphysical hit remainder are unchanged; zero-damage blocks stay zero. Existing
+Guard/Echoing Steel multipliers run first and retain their original behavior.
+Bounded [IronLungs] logs record incoming physical adjustments for live diagnosis.
+
+Stamina cost, magic bonus, cooldown handling, the three-word grant and Skald
+mechanics are unchanged. No global recovery penalty or added Stamina cost.
+Five native rule suites, Windows compilation and package regression checks
+are required. Live Skyrim testing is still required.
+
+## Earlier full-shout grant (1.4.1)
 
 Choosing Iron Lungs now adds Unrelenting Force and teaches/unlocks its three
 words for free. Existing saves already using the trait synchronize after loading
