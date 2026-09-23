@@ -34,6 +34,12 @@ This fixes parameter forwarding; the intended perk scaling is unchanged.
 PROJECTILE, IMPACT, APPLY and HIT diagnostics trace the transaction into the
 native bonus magic effect. HIT reports requested pre-resistance magnitude;
 an accepted APPLY is not a direct measurement of final target Health loss.
+The helper receives an explicit magnitude override after modifiers are evaluated
+against the original UF spell. The old source comment attributing guaranteed
+once-only perk scaling to Power Affects Magnitude being off is not established:
+that flag alone does not prove that later perk adjustments are skipped. Final
+scaling still requires a controlled in-game comparison; APPLY records do not
+establish the final active-effect magnitude.
 Seven rule suites and Windows compilation are required, but only an in-game
 test can establish hook reachability and actual damage in the user's load order.
 Test all three word lengths, several enemies, rapid repeated manual casts,

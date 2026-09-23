@@ -89,7 +89,10 @@ VALIDATION / BETA
 Packaging requires the Windows build and seven native rule-test suites to
 pass, with source and DLL hashes matching the supplied build commit. The new
 suite covers impact association rules. Tests do not establish actual Skyrim
-projectile behavior or confirm delivered in-game damage. The full ESP,
+projectile behavior or confirm delivered in-game damage.
+Exact final perk scaling also needs a controlled in-game check; an accepted
+effect and its requested magnitude do not establish final Health loss.
+The full ESP,
 including all 66 gameplay records and the TES4 header, is byte-identical to
 v2.7.4-beta1. There is still exactly one ESP, with no new masters or records.
 The revised delivery has not yet been verified in game.
@@ -137,6 +140,11 @@ projectile path as expected for the user's winning shout records. In-game
 testing must confirm that a tracked manual cast reaches matching targets,
 produces the bonus once per target, and still obeys resistance, absorption,
 Stamina and Skald-exemption rules.
+
+Power Affects Magnitude being off does not by itself establish that subsequent
+perk adjustments are skipped. The explicit magnitude override is preserved,
+but exact final scaling remains unverified. Accepted APPLY records confirm
+delivery/acceptance, not the final active-effect magnitude or target Health loss.
 
 First verify that the log reports **1.4.5**. Retain CAST, impact/association
 and HIT records while checking the target's Health. Compare equivalent targets,
@@ -271,6 +279,7 @@ def main():
         cost_gate_and_recovery_rules_preserved=True,
         native_engine_perk_resistance_absorption_path_preserved=True,
         incoming_magnitude_entrypoint_argument_list_corrected=True,
+        final_native_magnitude_scaling_verified_in_game=False,
         skald_automatic_casts_exempt=True, skald_self_cast_timing_preserved=True,
         skald_sources_byte_identical_to_v2_7_4=True,
         all_iron_lungs_balance_rules_preserved=True,
