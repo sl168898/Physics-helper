@@ -51,7 +51,9 @@ VALIDATION / BETA
 Windows compilation and the four existing combat-rule suites must pass before
 packaging. The ESP comparison checks that only Iron Lungs' two description
 fields changed. Existing scripts/INIs, all other records and thumbnails are
-preserved. This remains a beta requiring in-game verification of the new grant
+preserved. A local queued-VM simulation also checks grant lifecycle scenarios;
+the native Skyrim functions are mocked, so this cannot verify the game engine.
+This remains a beta requiring in-game verification of the new grant
 and of the earlier Iron Lungs combat behavior.
 
 IN-GAME CHECK
@@ -173,6 +175,19 @@ def main():
     files[DOCS + 'Art4-Baseline-Validation.json'] = old['Validation.json']
     for name in ['grant_words.py', 'esp.py']:
         files[DOCS + 'Rebuild/' + name] = (ROOT / name).read_bytes()
+    lifecycle = ROOT / 'grant_lifecycle_test.cpp'
+    if not lifecycle.exists():
+        lifecycle = ROOT.parent / 'Tests/grant_lifecycle_test.cpp'
+    files[DOCS + 'Tests/grant_lifecycle_test.cpp'] = lifecycle.read_bytes()
+    files[DOCS + 'Tests/README.txt'] = (
+        'The real IronLungsGrant.h controller is compiled against a queued VM/game-task test double.\n'
+        'Scenarios passed locally: inactive trait, new selection, partial knowledge, repeat load,\n'
+        'stale callback, trait removal, dispatch failure and timeout retry.\n'
+        'This verifies controller behavior, not Skyrim native functions or savegame integration.\n\n'
+        'From this Tests folder in the extracted package, with a C++23 compiler:\n'
+        'g++ -std=c++23 grant_lifecycle_test.cpp -I ../../../ThreeTraits/NativeSource/src -o grant_test\n'
+        'Then run grant_test.\n'
+    ).encode()
     allowed = {PLUGIN, DLL, 'README.txt', 'Validation.json'}
     for name, data in old.items():
         if name not in allowed and not name.startswith(('Documentation/ThreeTraits/NativeBuild/', 'Documentation/ThreeTraits/NativeSource/')):
@@ -183,7 +198,8 @@ def main():
                   dragon_soul_cost=0, synchronizes_existing_selected_saves=True,
                   learned_words_retained_after_trait_removal=True,
                   papyrus_scripts_unchanged=True, all_thumbnails_preserved_from_Art4=True,
-                  previous_combat_rules_unchanged=True)
+                  previous_combat_rules_unchanged=True,
+                  grant_lifecycle_simulation='passed locally; native Skyrim APIs mocked')
     files[DOCS + 'Validation.json'] = encode(report)
     manifest = {'version': VERSION, 'baseline': baseline.name, 'baseline_sha256': BASE_SHA,
                 'traits': previous['traits'], 'validation': report, 'trait_mechanics_dll': info,
