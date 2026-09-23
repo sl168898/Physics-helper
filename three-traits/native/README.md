@@ -1,4 +1,37 @@
-# BiggieTraitMechanics 1.4.3 — Skald buff-cast candidate fix
+# BiggieTraitMechanics 1.4.4 — Skald self-buff release timing
+
+The supplied 1.4.3 log shows Kyne's Grace's actual Stamina effect at magnitude
+30.25. Resource changes fit capped restoration followed by attack expenditure:
+104.264435 + 30.25 - 69.525597 = 64.988838, versus 64.987730 observed. At a full
+bar, that restoration is wasted before the attack charge. This supports a timing
+problem, rather than a missing effect. Health and Magicka were full in the log.
+Why this load order scales the original magnitude 100 to 30.25 remains unknown;
+this update preserves the engine's magnitude calculations and adds no refund.
+
+SKSE Hooks_Handlers.cpp sends WeaponSwing before calling the original handler.
+Skald now reserves a self-delivery first-word release at that event and casts it
+once from tick, after the containing original PlayerUpdate returns. Aimed and
+other targeted shouts retain immediate release. No arbitrary timer, task-loop
+polling, duplicate cast, manual resource change or synthetic VoiceFire is added.
+
+The reservation stores form IDs, clears before casting and revalidates the
+original known first-word shout. Loading, trait loss, death, killmove or changing
+the stored shout cancels a pending release. Paused menus hold it. Pending casts
+are transient and are not serialized. Cooldown and Echoing Steel are reserved
+once at the original attack, preserving current-swing snapshots and following-
+attack/other-hand behavior. An aborted pending cast does not refund that recovery.
+Skald's casting guard encloses the actual release, preserving Iron Lungs exemption.
+
+[SkaldBuff] QUEUED and RELEASE lines report Stamina at both boundaries; existing
+BEFORE/IMMEDIATE/AFTER_UPDATE probes then show the effect application. These
+observations remain read-only. Test with missing Stamina and compare ordinary
+first-word casts; this change does not guarantee a net gain if attack cost is
+greater than the restoration. Third-party delayed Stamina costs still need live
+verification. Windows compilation and six test suites are required. Tests cover
+release ordering, duplicate rejection, cancellation and Echo preservation, not
+Skyrim's native resource processing. The complete ESP and assets remain unchanged.
+
+## Earlier Skald cast-mode correction (1.4.3)
 
 Skald now passes false for CastSpellImmediate's second argument, matching normal
 fresh-cast implementations in PayloadInterpreter and PapyrusExtender. The old

@@ -1,6 +1,7 @@
 #pragma once
 #include "Skald.h"
 #include "SkaldDiagnostics.h"
+#include "SkaldDeferred.h"
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -8,8 +9,8 @@
 #include <vector>
 
 namespace traits {
-// All game/UI operations run on the game task queue. VM callbacks own their
-// captures and only enqueue results; no VM pumping or stack-local references.
+// Game/UI work stays on the game thread. VM callbacks own their captures and
+// enqueue results. Self shouts release after the original player update.
 class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
     struct BoolCallback final : RE::BSScript::IStackCallbackFunctor {
         std::function<void(bool)> finish;
@@ -35,6 +36,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
     std::recursive_mutex mutex;
     Skald state;
     SkaldDiagnostics diagnostics;
+    SkaldDeferred deferred;
     RE::SpellItem *trait = nullptr, *power = nullptr;
     bool running = false, syncPending = true, hadTrait = false, valid = false;
     bool menuBusy = false, inCast = false, warnedNoChoice = false;
@@ -132,7 +134,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
             if (action == -1) { page(batch, offset - pageSize, generation, ticket); return; }
             if (action == -2) { page(batch, offset + pageSize, generation, ticket); return; }
             if (action == -3) {
-                state.choose(0); valid = false; menuBusy = false; warnedNoChoice = false;
+                deferred.clear(); state.choose(0); valid = false; menuBusy = false; warnedNoChoice = false;
                 RE::DebugNotification("Skald: stored shout cleared.");
             } else if (action >= 0) {
                 auto choice = batch->choices[static_cast<std::size_t>(action)];
@@ -144,7 +146,7 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
                         SKSE::log::warn("Skald: selected shout {:08X} failed the unlocked-word check", choice.id);
                         RE::DebugNotification("Skald: that shout is not unlocked."); return;
                     }
-                    state.choose(choice.id); valid = true; warnedNoChoice = false;
+                    deferred.clear(); state.choose(choice.id); valid = true; warnedNoChoice = false;
                     RE::DebugNotification(("Skald stored: " + choice.name).c_str());
                     SKSE::log::info("Skald stored {} ({:08X})", choice.name, choice.id);
                 });
@@ -179,6 +181,35 @@ class SkaldRuntime final : public RE::BSTEventSink<RE::TESSpellCastEvent> {
             }
         });
     }
+    void castExact(RE::PlayerCharacter* p, RE::TESShout* shout, RE::SpellItem* spell,
+                   RE::MagicCaster* caster, RE::TESObjectREFR* target) {
+        struct Scope { bool& flag; explicit Scope(bool& value) : flag(value) { flag = true; } ~Scope() { flag = false; } } scope(inCast);
+        // One original first-word spell: retain effects, conditions and engine
+        // magnitude scaling. Never add a resource refund or synthetic VoiceFire.
+        diagnostics.before(p, shout, spell);
+        caster->CastSpellImmediate(spell, false, target, 1.f, false, 0.f, p);
+        diagnostics.after(p, spell);
+        SKSE::log::info("Skald cast requested: {} first word, spell {:08X}, delivery {}, recovery {} seconds",
+            shout->GetName(), spell->GetFormID(), static_cast<int>(spell->GetDelivery()), state.remaining);
+    }
+    void releaseDeferred(RE::PlayerCharacter* p, bool enabled) {
+        auto ui = RE::UI::GetSingleton();
+        const auto request = deferred.take(state.shout,
+            enabled && valid && p && !p->IsDead() && !p->IsInKillMove(), ui && ui->GameIsPaused());
+        if (!request) return;
+        auto shout = known(request.shout);
+        auto spell = shout ? shout->variations[0].spell : nullptr;
+        auto caster = p->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+        if (!spell || spell->GetFormID() != request.spell || !caster ||
+            spell->GetDelivery() != RE::MagicSystem::Delivery::kSelf ||
+            spell->GetCastingType() != RE::MagicSystem::CastingType::kFireAndForget) {
+            SKSE::log::warn("Skald: cancelled deferred self shout {:08X}; spell/caster changed or unavailable", request.shout);
+            return;
+        }
+        SKSE::log::info("[SkaldBuff] RELEASE after original player update: shout={:08X}, stamina={}",
+            request.shout, p->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina));
+        castExact(p, shout, spell, caster, p);
+    }
 public:
     void init(RE::TESDataHandler* data, const char* file) {
         trait = data->LookupForm<RE::SpellItem>(0xB00, file);
@@ -192,6 +223,7 @@ public:
         std::lock_guard lock(mutex);
         ++epoch; ++menuTicket; running = enable;
         diagnostics.reset();
+        deferred.clear();
         syncPending = true; hadTrait = false; valid = false; menuBusy = false; inCast = false; warnedNoChoice = false;
     }
     void clear() { std::lock_guard lock(mutex); state = {}; resetTransient(false); }
@@ -202,6 +234,7 @@ public:
         const bool enabled = active();
         diagnostics.tick(p, dt, enabled);
         if (syncPending || enabled != hadTrait) {
+            deferred.clear();
             ++epoch; ++menuTicket; menuBusy = false;
             if (enabled) {
                 // Existing saves can contain the retired cloak instance.
@@ -217,11 +250,14 @@ public:
             }
             hadTrait = enabled; syncPending = false;
         }
+        // main::update calls this only after originalUpdate has returned.
+        // The WeaponSwing ActionEvent itself runs before its original handler.
+        releaseDeferred(p, enabled);
     }
     bool attack(RE::PlayerCharacter* p, bool bash, bool isPower, bool melee) {
         std::lock_guard lock(mutex);
         auto ui = RE::UI::GetSingleton();
-        if (inCast || !active() || p->IsDead() || p->IsInKillMove() || (ui && ui->GameIsPaused())) return false;
+        if (inCast || deferred.waiting() || !active() || p->IsDead() || p->IsInKillMove() || (ui && ui->GameIsPaused())) return false;
         if (!state.shout && !bash && isPower && melee && !warnedNoChoice) {
             warnedNoChoice = true;
             SKSE::log::warn("Skald: power attack detected but no shout is stored; select one with Store Shout");
@@ -245,19 +281,13 @@ public:
             if (!target) return false;
         }
         if (!state.start(p->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kSpeech), true, true, bash, isPower, melee)) return false;
-        inCast = true;
-        // The exact first-word spell from the loaded shout (including overrides).
-        // No synthetic VoiceFire event and no edits to normal shout recovery.
-        diagnostics.before(p, shout, spell);
-        // Use the normal fresh-cast mode, as Spell.Cast/PayloadInterpreter do.
-        // Do not suppress hit-effect initialization for buff shouts. Upstream
-        // names this bool noHitEffectArt; other engine references call it loadCast.
-        // Zero magnitude override retains each original effect's own magnitude.
-        caster->CastSpellImmediate(spell, false, target.get(), 1.f, false, 0.f, p);
-        diagnostics.after(p, spell);
-        inCast = false;
-        SKSE::log::info("Skald cast requested: {} first word, spell {:08X}, delivery {}, recovery {} seconds",
-            shout->GetName(), spell->GetFormID(), static_cast<int>(spell->GetDelivery()), state.remaining);
+        if (spell->GetDelivery() == Delivery::kSelf) {
+            deferred.queue(shout->GetFormID(), spell->GetFormID());
+            SKSE::log::info("[SkaldBuff] QUEUED until after original player update: shout={:08X}, spell={:08X}, stamina={}",
+                shout->GetFormID(), spell->GetFormID(), p->AsActorValueOwner()->GetActorValue(RE::ActorValue::kStamina));
+        } else castExact(p, shout, spell, caster, target.get());
+        // Accepted release (immediate or queued). Keep the original trigger-time
+        // Echo snapshot so this swing/other hand cannot consume its own token.
         return true;
     }
     RE::BSEventNotifyControl ProcessEvent(const RE::TESSpellCastEvent* event, RE::BSTEventSource<RE::TESSpellCastEvent>*) override {
