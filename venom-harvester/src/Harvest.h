@@ -1,6 +1,5 @@
 #pragma once
 #include <algorithm>
-#include <cmath>
 #include <compare>
 #include <cstdint>
 #include <map>
@@ -12,133 +11,119 @@
 namespace harvest
 {
     using ID = std::uint32_t;
-    struct Key {
-        ID actor{}, source{}, effect{}, instance{};
-        auto operator<=>(const Key&) const = default;
+    using Recipe = std::vector<ID>;
+    struct Ingredient {
+        ID form{};
+        std::uint32_t count{};
+        auto operator<=>(const Ingredient&) const = default;
     };
-    struct Application {
-        Key key{};
-        ID bottle{};
-        std::uint64_t order{};
-    };
-    struct Candidate {
-        ID actor{}, bottle{};
-        std::uint64_t order{};
-        bool confirmed{};
-    };
+    using Ingredients = std::vector<Ingredient>;
+    constexpr std::uint32_t nonceLimit = 0x00FFFFFF;
 
-    // Pure rules are shared by the actual DLL and native regression tests.
-    inline bool live(bool dispelled, bool inactive, bool failedCondition,
-        float elapsed, float duration, bool executing)
+    inline bool validRecipe(const Recipe& recipe)
     {
-        if (dispelled || inactive || failedCondition || !std::isfinite(elapsed) ||
-            !std::isfinite(duration) || duration < 0) return false;
-        // A final damage tick can execute exactly at the duration boundary.
-        // That effect is eligible only inside its callback, not afterward.
-        return duration > 0 ? elapsed < duration || (executing && elapsed == duration) : executing;
+        return recipe.size() >= 2 && recipe.size() <= 3 && recipe.front() &&
+            std::is_sorted(recipe.begin(), recipe.end()) &&
+            std::adjacent_find(recipe.begin(), recipe.end()) == recipe.end();
+    }
+    inline bool validCost(const Ingredients& cost, const Recipe& recipe)
+    {
+        if (cost.empty() || cost.size() > recipe.size()) return false;
+        ID previous = 0;
+        for (const auto& part : cost) {
+            if (part.form <= previous || !part.count || part.count > 100000 ||
+                !std::binary_search(recipe.begin(), recipe.end(), part.form)) return false;
+            previous = part.form;
+        }
+        return true;
     }
 
-    inline void weaken(float& magnitude, float& duration, bool noMagnitude)
-    {
-        if (noMagnitude) {
-            if (std::isfinite(duration) && duration > 0) duration *= 0.75f;
-        } else if (std::isfinite(magnitude)) magnitude *= 0.75f;
-    }
+    struct Batch {
+        ID poison{};
+        std::uint32_t nonce{};
+        Recipe recipe;
+        Ingredients cost;
+        bool paid{};
+    };
 
+    // One unique engine-created poison identifies one crafting action. All
+    // bottles and weapon hits from that action share the same refund budget.
     class Ledger
     {
     public:
-        std::uint64_t sequence{};
-        std::map<Key, Application> effects;
-        std::map<ID, Candidate> candidates;
+        std::uint32_t sequence{};
+        bool armed{}, giftGiven{};
+        Recipe stored;
+        std::map<ID, Batch> batches;
+        std::map<ID, ID> candidates;  // victim -> actual lethal poison
         std::set<ID> rewarded;
 
-        void clear() { sequence = 0; effects.clear(); candidates.clear(); rewarded.clear(); }
-        const Application* find(const Key& key) const
+        void clear() { *this = {}; }
+        bool remember(Recipe recipe)
         {
-            const auto it = effects.find(key);
-            return it == effects.end() ? nullptr : &it->second;
+            std::sort(recipe.begin(), recipe.end());
+            if (!validRecipe(recipe)) return false;
+            stored = std::move(recipe);
+            armed = false;
+            return true;
         }
-        void begin(Key key, ID bottle, bool newStart)
+        bool add(Batch batch)
         {
-            if (!key.actor || !key.source || !key.effect || !bottle || rewarded.contains(key.actor)) return;
-            // Update ticks and reload reconstruction preserve the original bottle
-            // and application ordering (important when phial contents change).
-            if (!newStart && effects.contains(key)) return;
-            effects[key] = { key, bottle, ++sequence };
+            if ((batch.poison >> 24) != 0xFF || !batch.nonce || batch.nonce > sequence ||
+                !validRecipe(batch.recipe) || !validCost(batch.cost, batch.recipe) ||
+                batches.contains(batch.poison)) return false;
+            batches.emplace(batch.poison, std::move(batch));
+            return true;
         }
-        void offer(const Application& application, bool confirmed)
+        bool eligible(ID poison) const
         {
-            if (!application.bottle || rewarded.contains(application.key.actor)) return;
-            auto& candidate = candidates[application.key.actor];
-            if (application.order >= candidate.order)
-                candidate = { application.key.actor, application.bottle, application.order,
-                    confirmed || candidate.confirmed };
-            else candidate.confirmed = candidate.confirmed || confirmed;
+            const auto it = batches.find(poison);
+            return it != batches.end() && !it->second.paid && it->second.recipe == stored;
         }
-        void end(const Key& key, bool dyingWhileActive)
+        bool offer(ID actor, ID poison)
         {
-            if (const auto it = effects.find(key); it != effects.end()) {
-                // Death can clear effects before TESDeathEvent is delivered.
-                // Preserve only a dying actor's still-valid effect, not an
-                // ordinary expiration or dispel. Killer still needs confirmation.
-                if (dyingWhileActive) offer(it->second, false);
-                effects.erase(it);
-            }
+            if (!actor || rewarded.contains(actor) || !eligible(poison)) return false;
+            // First proven lethal health change wins; a later poison ticking
+            // on the corpse cannot replace that evidence.
+            return candidates.try_emplace(actor, poison).second;
         }
-        bool death(ID actor, bool playerKiller, std::span<const Key> eligible)
+        std::optional<Ingredients> claim(ID actor)
         {
-            if (!playerKiller || rewarded.contains(actor)) {
-                candidates.erase(actor);
-                return false;
-            }
-            for (const auto& key : eligible)
-                if (key.actor == actor)
-                    if (const auto app = find(key)) offer(*app, true);
-            if (const auto it = candidates.find(actor); it != candidates.end()) {
-                it->second.confirmed = true;
-                return true;
-            }
-            return false;
+            const auto found = candidates.find(actor);
+            if (found == candidates.end()) return std::nullopt;
+            const auto poison = found->second;
+            candidates.erase(found);
+            if (rewarded.contains(actor) || !eligible(poison)) return std::nullopt;
+            auto& batch = batches.at(poison);
+            batch.paid = true;  // Before an inventory callback can re-enter.
+            rewarded.insert(actor);
+            return batch.cost;
         }
-        std::optional<ID> claim(ID actor)
-        {
-            const auto it = candidates.find(actor);
-            if (it == candidates.end() || !it->second.confirmed || !it->second.bottle ||
-                rewarded.contains(actor)) return std::nullopt;
-            const auto bottle = it->second.bottle;
-            rewarded.insert(actor);   // Claim before inventory callbacks can re-enter.
-            candidates.erase(it);
-            std::erase_if(effects, [actor](const auto& pair) { return pair.first.actor == actor; });
-            return bottle;
-        }
-        void forget(ID actor)
-        {
-            std::erase_if(effects, [actor](const auto& pair) { return pair.first.actor == actor; });
-            candidates.erase(actor);
-            rewarded.erase(actor);  // Actual reference deletion, not resurrection.
-        }
+        void forgetActor(ID actor) { candidates.erase(actor); rewarded.erase(actor); }
     };
 
-    // Explicit little-endian wire format: no C++ struct padding or pointers.
+    // Explicit little-endian format: no pointers, padding or cached load order.
     inline std::vector<std::uint8_t> encode(const Ledger& ledger)
     {
         std::vector<std::uint8_t> out;
-        const auto u32 = [&](std::uint32_t value) {
-            for (int i = 0; i < 4; ++i) out.push_back(static_cast<std::uint8_t>(value >> (i * 8)));
+        const auto u32 = [&](ID v) {
+            for (int i = 0; i < 4; ++i) out.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
         };
-        const auto u64 = [&](std::uint64_t value) { u32(static_cast<ID>(value)); u32(static_cast<ID>(value >> 32)); };
-        u32(1); u64(ledger.sequence);
-        u32(static_cast<ID>(ledger.effects.size()));
+        const auto recipe = [&](const Recipe& r) {
+            u32(static_cast<ID>(r.size()));
+            for (auto id : r) u32(id);
+        };
+        u32(2); u32(ledger.sequence); u32(ledger.armed); u32(ledger.giftGiven);
+        recipe(ledger.stored);
+        u32(static_cast<ID>(ledger.batches.size()));
+        for (const auto& [id, batch] : ledger.batches) {
+            u32(id); u32(batch.nonce); u32(batch.paid); recipe(batch.recipe);
+            u32(static_cast<ID>(batch.cost.size()));
+            for (const auto& part : batch.cost) { u32(part.form); u32(part.count); }
+        }
         u32(static_cast<ID>(ledger.candidates.size()));
+        for (const auto& [actor, poison] : ledger.candidates) { u32(actor); u32(poison); }
         u32(static_cast<ID>(ledger.rewarded.size()));
-        for (const auto& [key, app] : ledger.effects) {
-            u32(key.actor); u32(key.source); u32(key.effect); u32(key.instance);
-            u32(app.bottle); u64(app.order);
-        }
-        for (const auto& [actor, candidate] : ledger.candidates) {
-            u32(actor); u32(candidate.bottle); u64(candidate.order); u32(candidate.confirmed ? 1 : 0);
-        }
         for (auto actor : ledger.rewarded) u32(actor);
         return out;
     }
@@ -150,40 +135,57 @@ namespace harvest
         bool good = true;
         const auto u32 = [&]() -> ID {
             if (offset + 4 > bytes.size()) { good = false; return 0; }
-            ID value = 0;
-            for (int i = 0; i < 4; ++i) value |= static_cast<ID>(bytes[offset++]) << (i * 8);
-            return value;
+            ID v = 0;
+            for (int i = 0; i < 4; ++i) v |= static_cast<ID>(bytes[offset++]) << (8 * i);
+            return v;
         };
-        const auto u64 = [&]() -> std::uint64_t { const auto low = u32(); return low | (std::uint64_t{u32()} << 32); };
-        if (u32() != 1) return std::nullopt;
+        const auto recipe = [&]() {
+            Recipe r;
+            const auto count = u32();
+            if (count > 3) { good = false; return r; }
+            for (ID i = 0; i < count; ++i) r.push_back(resolve(u32()));
+            std::sort(r.begin(), r.end());
+            return r;
+        };
+        if (u32() != 2) return std::nullopt;
         Ledger ledger;
-        ledger.sequence = u64();
-        const auto effects = u32(), candidates = u32(), rewarded = u32();
-        constexpr ID limit = 1000000;
-        if (!good || effects > limit || candidates > limit || rewarded > limit ||
-            24ULL + 28ULL * effects + 20ULL * candidates + 4ULL * rewarded != bytes.size()) return std::nullopt;
-        for (ID i = 0; i < effects; ++i) {
-            Key key{ resolve(u32()), resolve(u32()), resolve(u32()), u32() };
-            const auto bottle = resolve(u32());
-            const auto order = u64();
-            if (key.actor && key.source && key.effect && bottle && order && order <= ledger.sequence)
-                ledger.effects[key] = { key, bottle, order };
+        ledger.sequence = u32();
+        const auto armed = u32(), gift = u32();
+        if (ledger.sequence > nonceLimit || armed > 1 || gift > 1) return std::nullopt;
+        ledger.armed = armed != 0; ledger.giftGiven = gift != 0;
+        ledger.stored = recipe();
+        if (!ledger.stored.empty() && !validRecipe(ledger.stored)) ledger.stored.clear();
+        const auto count = u32();
+        if (!good || count > 1000000 || count > bytes.size() / 32) return std::nullopt;
+        std::set<ID> nonces;
+        for (ID i = 0; i < count; ++i) {
+            Batch batch;
+            batch.poison = resolve(u32()); batch.nonce = u32();
+            const auto paid = u32();
+            batch.paid = paid != 0; batch.recipe = recipe();
+            const auto parts = u32();
+            if (!good || paid > 1 || parts > 3 || !batch.nonce || batch.nonce > ledger.sequence ||
+                !nonces.insert(batch.nonce).second) return std::nullopt;
+            for (ID j = 0; j < parts; ++j) {
+                const auto form = resolve(u32()), amount = u32();
+                batch.cost.push_back({form, amount});
+            }
+            std::sort(batch.cost.begin(), batch.cost.end());
+            if (batch.poison && validRecipe(batch.recipe) && validCost(batch.cost, batch.recipe)) {
+                if (!ledger.add(std::move(batch))) return std::nullopt;
+            }
         }
-        for (ID i = 0; i < candidates; ++i) {
-            const auto actor = resolve(u32()), bottle = resolve(u32());
-            const auto order = u64();
-            const auto confirmed = u32();
-            if (confirmed > 1) return std::nullopt;
-            if (actor && bottle && order && order <= ledger.sequence)
-                ledger.candidates[actor] = { actor, bottle, order, confirmed == 1 };
+        const auto pending = u32();
+        if (!good || pending > 1000000 || pending > bytes.size() / 8) return std::nullopt;
+        for (ID i = 0; i < pending; ++i) {
+            const auto actor = resolve(u32()), poison = resolve(u32());
+            if (actor && ledger.eligible(poison)) ledger.candidates.try_emplace(actor, poison);
         }
-        for (ID i = 0; i < rewarded; ++i) if (const auto actor = resolve(u32())) ledger.rewarded.insert(actor);
+        const auto completed = u32();
+        if (!good || completed > 1000000 || completed > bytes.size() / 4) return std::nullopt;
+        for (ID i = 0; i < completed; ++i) if (auto actor = resolve(u32())) ledger.rewarded.insert(actor);
         if (!good || offset != bytes.size()) return std::nullopt;
-        // A completed reward always dominates stale pending entries.
-        for (auto actor : ledger.rewarded) {
-            ledger.candidates.erase(actor);
-            std::erase_if(ledger.effects, [actor](const auto& pair) { return pair.first.actor == actor; });
-        }
+        for (auto actor : ledger.rewarded) ledger.candidates.erase(actor);
         return ledger;
     }
 }

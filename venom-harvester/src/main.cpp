@@ -2,281 +2,393 @@
 #include <SKSE/SKSE.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include "Harvest.h"
+#include <array>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 
 namespace
 {
-    constexpr auto legacyTraitFile = "Biggie Traits - Devoted Alchemist.esp";
-    constexpr auto mergedTraitFile = "Biggie Traits - Combined.esp";
-    constexpr auto phialFile = "The White Phial - Tweaks and Enhancements.esp";
-    constexpr std::uint32_t saveID = 0x56484D31;  // VHM1, dedicated SKSE co-save section
-    constexpr std::uint32_t recordID = 0x48415256;
-    RE::SpellItem* trait = nullptr;
-    RE::BGSListForm* retained = nullptr;
-    RE::AlchemyItem* phialPoison = nullptr;
-    RE::BGSListForm* phials = nullptr;
-    RE::BGSListForm* selectedLiquid = nullptr;
-    RE::EffectSetting* refillPoison = nullptr;
-    RE::EffectSetting* refillPotion = nullptr;
-    std::atomic_bool ready = false, session = false, queued = false;
-    std::atomic<std::uint64_t> epoch = 0;
+    constexpr auto pluginFile = "Biggie Traits - Combined.esp";
+    constexpr std::uint32_t saveID = 0x56484D31; // Preserve the old plugin's SKSE namespace.
+    constexpr std::uint32_t recordID = 0x48534154; // HSAT; old HARV refunds are not imported.
+    RE::SpellItem *trait{}, *power{}, *weakness{};
+    RE::EffectSetting* batchMarker{};
+    RE::BGSListForm* retained{};
+    RE::IngredientItem* jarrin{};
+    std::atomic_bool ready{}, session{}, queued{}, menuBusy{};
+    std::atomic<std::uint64_t> epoch{};
     std::mutex mutex;
     harvest::Ledger ledger;
-    std::set<harvest::ID> pins;
 
     bool selected()
     {
         const auto player = RE::PlayerCharacter::GetSingleton();
-        return ready.load() && session.load() && player && trait && player->HasSpell(trait);
+        return ready.load() && session.load() && player && player->HasSpell(trait);
     }
-
-    bool isPhial(RE::AlchemyItem* item)
-    {
-        return item && (item == phialPoison || (phials && phials->HasForm(item)));
-    }
-
-    bool marker(RE::Effect* effect)
-    {
-        return effect && effect->baseEffect &&
-            (effect->baseEffect == refillPoison || effect->baseEffect == refillPotion);
-    }
-
-    bool sameLiquid(RE::AlchemyItem* a, RE::AlchemyItem* b)
-    {
-        // The original phial copies its selected liquid's EFIT/EFID list, then
-        // adds a refill marker. Never guess the returned poison from its name.
-        std::vector<RE::Effect*> left, right;
-        for (auto e : a->effects) if (e && !marker(e)) left.push_back(e);
-        for (auto e : b->effects) if (e && !marker(e)) right.push_back(e);
-        if (left.empty() || left.size() != right.size()) return false;
-        for (std::size_t i = 0; i < left.size(); ++i) {
-            if (left[i]->baseEffect != right[i]->baseEffect ||
-                left[i]->effectItem.magnitude != right[i]->effectItem.magnitude ||
-                left[i]->effectItem.duration != right[i]->effectItem.duration ||
-                left[i]->effectItem.area != right[i]->effectItem.area) return false;
-        }
-        return true;
-    }
-
-    RE::AlchemyItem* bottleFor(RE::AlchemyItem* source)
-    {
-        if (!source || !source->IsPoison()) return nullptr;
-        if (!isPhial(source)) return source;
-        if (source != phialPoison || !selectedLiquid) return nullptr;
-        RE::AlchemyItem* result = nullptr;
-        selectedLiquid->ForEachForm([&](RE::TESForm* form) {
-            auto item = form ? form->As<RE::AlchemyItem>() : nullptr;
-            if (item && item->IsPoison() && !isPhial(item) && sameLiquid(source, item)) result = item;
-            return RE::BSContainer::ForEachResult::kStop;
-        });
-        return result;
-    }
-
-    bool ownedPoison(RE::ActiveEffect* effect, RE::Actor* caster = nullptr, RE::Actor* target = nullptr)
-    {
-        if (!effect || !effect->spell || !effect->effect || !effect->effect->baseEffect) return false;
-        auto item = effect->spell->As<RE::AlchemyItem>();
-        if (!item || !item->IsPoison()) return false;
-        const auto base = effect->effect->baseEffect;
-        if ((!base->IsHostile() && !base->IsDetrimental()) || marker(effect->effect)) return false;
-        const auto player = RE::PlayerCharacter::GetSingleton();
-        const auto sourceActor = caster ? RE::NiPointer<RE::Actor>(caster) : effect->GetCasterActor();
-        if (!target) target = effect->GetTargetActor();
-        return player && sourceActor.get() == player && target && target != player && selected();
-    }
-
-    harvest::Key keyFor(RE::ActiveEffect* effect)
-    {
-        const auto actor = effect ? effect->GetTargetActor() : nullptr;
-        const auto base = effect ? effect->GetBaseObject() : nullptr;
-        if (!actor || !base || !effect->spell) return {};
-        return { actor->GetFormID(), effect->spell->GetFormID(), base->GetFormID(), effect->usUniqueID };
-    }
-
-    bool live(RE::ActiveEffect* effect, bool executing = false, bool starting = false)
-    {
-        if (!effect || !effect->effect || !effect->effect->baseEffect) return false;
-        const bool noMagnitude = effect->effect->baseEffect->data.flags.any(
-            RE::EffectSetting::EffectSettingData::Flag::kNoMagnitude);
-        if (noMagnitude ? effect->duration <= 0 : !std::isfinite(effect->magnitude) || effect->magnitude == 0) return false;
-        return harvest::live(effect->flags.any(RE::ActiveEffect::Flag::kDispelled),
-            !starting && effect->flags.any(RE::ActiveEffect::Flag::kInactive),
-            effect->conditionStatus == RE::ActiveEffect::ConditionStatus::kFalse,
-            effect->elapsedSeconds, effect->duration, executing);
-    }
-
     void queueWork();
 
-    std::optional<harvest::Application> track(RE::ActiveEffect* effect, bool start)
+    std::uint32_t nonceOf(RE::AlchemyItem* item)
     {
-        if (!ownedPoison(effect)) return std::nullopt;
-        const auto key = keyFor(effect);
-        if (!key.actor) return std::nullopt;
-        if (!start) {
-            std::lock_guard lock(mutex);
-            if (const auto app = ledger.find(key)) return *app;
-            // Some load paths allocate a new active-effect instance ID. Rebind
-            // an existing saved application; do not invent a new phial mapping.
-            for (auto it = ledger.effects.begin(); it != ledger.effects.end(); ++it) {
-                if (it->first.actor == key.actor && it->first.source == key.source && it->first.effect == key.effect) {
-                    auto app = it->second;
-                    app.key = key;
-                    ledger.effects.erase(it);
-                    ledger.effects[key] = app;
-                    return app;
-                }
-            }
-            return std::nullopt;
+        if (!item) return 0;
+        for (const auto e : item->effects) {
+            if (!e || e->baseEffect != batchMarker) continue;
+            const float n = e->effectItem.magnitude;
+            if (std::isfinite(n) && n >= 1 && n <= harvest::nonceLimit && n == std::floor(n))
+                return static_cast<std::uint32_t>(n);
         }
-        auto bottle = bottleFor(effect->spell->As<RE::AlchemyItem>());
-        if (!bottle) return std::nullopt;
-        std::optional<harvest::Application> result;
-        {
-            std::lock_guard lock(mutex);
-            ledger.begin(key, bottle->GetFormID(), true);
-            if (const auto app = ledger.find(key)) result = *app;
-            if ((bottle->GetFormID() >> 24) == 0xFF) pins.insert(bottle->GetFormID());
-        }
-        queueWork();
-        return result;
+        return 0;
     }
 
-    struct Execution;
-    thread_local Execution* executing = nullptr;
-
-    struct Execution
+    // CommonLib powerof3's documented created-object API, adapted to the
+    // pinned CommonLibSSE-NG ABI. No raw TESForm duplication or borrowed effects.
+    template<class T> struct CreatedPolicy
     {
-        Execution* previous = executing;
-        std::optional<harvest::Application> app;
-        RE::NiPointer<RE::Actor> actor;
-        bool eligible = false, aliveBefore = false;
-        std::uint64_t generation = epoch.load();
-
-        Execution(RE::ActiveEffect* effect, bool start) : app(track(effect, start))
+        static void Acquire(T* p)
         {
-            if (app) {
-                actor.reset(effect->GetTargetActor());
-                eligible = live(effect, true, start);
-                aliveBefore = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
-            }
-            executing = this;
+            auto manager = RE::BGSCreatedObjectManager::GetSingleton();
+            if (!manager || !p || (p->GetFormID() >> 24) != 0xFF) return;
+            using Fn = void(RE::BGSCreatedObjectManager*, RE::AlchemyItem*);
+            static REL::Relocation<Fn*> fn{RELOCATION_ID(35268, 36170)};
+            fn(manager, p);
         }
-        ~Execution()
+        static void Release(T* p)
         {
-            executing = previous;
-            // The engine may destroy the ActiveEffect inside Start/Update.
-            // Only retained actor references and copied IDs are used here.
-            if (!app || !actor || !eligible || !aliveBefore || generation != epoch.load() || !selected()) return;
-            const auto state = actor->AsActorState()->GetLifeState();
-            if (state != RE::ACTOR_LIFE_STATE::kDying && state != RE::ACTOR_LIFE_STATE::kDead) return;
+            auto manager = RE::BGSCreatedObjectManager::GetSingleton();
+            if (!manager || !p || (p->GetFormID() >> 24) != 0xFF) return;
+            using Fn = void(RE::BGSCreatedObjectManager*, RE::AlchemyItem*);
+            static REL::Relocation<Fn*> fn{RELOCATION_ID(35269, 36171)};
+            fn(manager, p);
+        }
+    };
+    using CreatedPoison = RE::BSTSmartPointer<RE::AlchemyItem, CreatedPolicy>;
+
+    CreatedPoison makeBatch(RE::AlchemyItem* original, std::uint32_t nonce)
+    {
+        CreatedPoison result;
+        auto manager = RE::BGSCreatedObjectManager::GetSingleton();
+        if (!manager || !original || !original->IsPoison() || nonceOf(original) || original->effects.empty()) return result;
+        RE::BSTArray<RE::Effect> effects;
+        // A freshly brewed vanilla-menu poison has unconditional EFIT entries.
+        // Fail closed for a custom conditional entry rather than discard it.
+        for (auto e : original->effects) {
+            if (!e || !e->baseEffect || e->conditions.head) return {};
+            RE::Effect copy;
+            copy.effectItem = e->effectItem;
+            copy.baseEffect = e->baseEffect;
+            copy.cost = e->cost;
+            effects.push_back(copy);
+        }
+        RE::Effect marker;
+        marker.baseEffect = batchMarker;
+        marker.effectItem.magnitude = static_cast<float>(nonce);
+        effects.push_back(marker); // Hidden, zero cost, empty Script archetype.
+        using Fn = void(RE::BGSCreatedObjectManager*, CreatedPoison&, RE::BSTArray<RE::Effect>&);
+        static REL::Relocation<Fn*> create{RELOCATION_ID(35265, 36167)};
+        create(manager, result, effects);
+        if (!result || result.get() == original || (result->GetFormID() >> 24) != 0xFF ||
+            retained->HasForm(result.get()) || nonceOf(result.get()) != nonce ||
+            result->effects.size() != original->effects.size() + 1) return {};
+        // Verify every real effect survived native creation exactly once.
+        std::vector<RE::Effect*> remaining;
+        for (auto e : result->effects) if (e && e->baseEffect != batchMarker) remaining.push_back(e);
+        for (auto e : original->effects) {
+            const auto it = std::find_if(remaining.begin(), remaining.end(), [e](RE::Effect* other) {
+                return e->baseEffect == other->baseEffect &&
+                    e->effectItem.magnitude == other->effectItem.magnitude &&
+                    e->effectItem.duration == other->effectItem.duration &&
+                    e->effectItem.area == other->effectItem.area;
+            });
+            if (it == remaining.end()) return {};
+            remaining.erase(it);
+        }
+        result->data = original->data;
+        result->fullName = original->fullName;
+        result->weight = original->weight;
+        return result->IsPoison() ? result : CreatedPoison{};
+    }
+
+    using AlchemyMenu = RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu;
+    struct Craft;
+    thread_local Craft* crafting{};
+
+    struct Craft
+    {
+        Craft* previous = crafting;
+        std::uint64_t generation = epoch.load();
+        harvest::Recipe recipe;
+        std::map<RE::FormID, std::int32_t> before;
+        std::vector<RE::AlchemyItem*> outputs;
+        bool active{};
+
+        explicit Craft(AlchemyMenu* menu)
+        {
+            if (previous || !menu || !selected()) return;
             {
                 std::lock_guard lock(mutex);
-                ledger.offer(*app, true);  // Death occurred inside this player's poison callback.
+                if (!ledger.armed && ledger.stored.empty()) return;
             }
-            queueWork();
+            for (auto index : menu->selectedIndexes) {
+                if (index >= menu->ingredientEntries.size()) return;
+                const auto entry = menu->ingredientEntries[index].ingredient;
+                auto object = entry ? entry->object : nullptr;
+                if (!object || !object->As<RE::IngredientItem>()) return;
+                recipe.push_back(object->GetFormID());
+            }
+            std::sort(recipe.begin(), recipe.end());
+            if (!harvest::validRecipe(recipe)) return;
+            {
+                std::lock_guard lock(mutex);
+                if (!ledger.armed && recipe != ledger.stored) return;
+            }
+            const auto player = RE::PlayerCharacter::GetSingleton();
+            for (const auto& [item, count] : player->GetInventoryCounts()) {
+                if (item && (item->As<RE::IngredientItem>() || item->As<RE::AlchemyItem>()))
+                    before[item->GetFormID()] = count;
+            }
+            active = true;
+            crafting = this;
+        }
+        ~Craft()
+        {
+            if (!active) return;
+            // Keep this transaction installed through the inventory exchange;
+            // nested UI/item callbacks cannot start a second crafting budget.
+            finish();
+            crafting = previous;
+        }
+        void finish()
+        {
+            if (generation != epoch.load() || !selected() || outputs.size() != 1) return;
+            auto original = outputs.front();
+            const auto player = RE::PlayerCharacter::GetSingleton();
+            if (!player || !original || !original->IsPoison() || nonceOf(original)) return;
+            std::map<RE::FormID, std::int32_t> after;
+            for (const auto& [item, count] : player->GetInventoryCounts())
+                if (item && (item->As<RE::IngredientItem>() || item->As<RE::AlchemyItem>())) after[item->GetFormID()] = count;
+            const auto bottles = after[original->GetFormID()] - before[original->GetFormID()];
+            if (bottles <= 0 || bottles > 100000) return;
+            harvest::Ingredients cost;
+            for (auto id : recipe) {
+                const auto spent = before[id] - after[id];
+                if (spent < 0 || spent > 100000) return;
+                if (spent) cost.push_back({id, static_cast<std::uint32_t>(spent)});
+            }
+            bool remembered = false;
+            std::uint32_t nonce = 0;
+            {
+                std::lock_guard lock(mutex);
+                if (ledger.armed) remembered = ledger.remember(recipe);
+                if (ledger.stored != recipe) return;
+                if (harvest::validCost(cost, recipe) && ledger.sequence < harvest::nonceLimit) nonce = ++ledger.sequence;
+            }
+            if (remembered) RE::DebugNotification("Huntsman's Satchel remembers this poison's recipe.");
+            if (!nonce) return; // A completely free craft has no ingredients to refund.
+            auto unique = makeBatch(original, nonce);
+            if (!unique) {
+                SKSE::log::warn("Batch {}: native poison identity check failed; inventory left intact", nonce);
+                RE::DebugNotification("The Satchel could not bind this batch.");
+                return;
+            }
+            const auto poisonID = unique->GetFormID();
+            {
+                std::lock_guard lock(mutex);
+                if (!ledger.add({poisonID, nonce, recipe, cost, false})) return;
+            }
+            // Only the verified net output of this exact crafting callback is
+            // exchanged. Pre-existing purchased/brewed bottles remain unbound.
+            retained->AddForm(unique.get());
+            player->RemoveItem(original, bottles, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+            player->AddObjectToContainer(unique.get(), nullptr, bottles, nullptr);
+            SKSE::log::info("Bound batch {}: {:08X} -> {:08X}; {} bottles; {} ingredient types", nonce,
+                original->GetFormID(), poisonID, bottles, cost.size());
         }
     };
 
-    void endEffect(RE::ActiveEffect* effect)
+    // Cover mouse, keyboard/controller and the game's asynchronous confirmation
+    // box. Every wrapper preserves the original callback and ignores non-crafts.
+    struct CraftHooks
     {
-        if (!ready.load() || !session.load()) return;
-        const auto key = keyFor(effect);
-        if (!key.actor) return;
-        const auto actor = effect->GetTargetActor();
-        const auto state = actor->AsActorState()->GetLifeState();
-        const bool dying = state == RE::ACTOR_LIFE_STATE::kDying || state == RE::ACTOR_LIFE_STATE::kDead;
-        std::lock_guard lock(mutex);
-        ledger.end(key, dying && live(effect));
-    }
+        using Callback = RE::FxDelegateHandler::CallbackFn;
+        using Processor = RE::FxDelegateHandler::CallbackProcessor;
+        inline static std::array<Callback*, 64> callbacks{};
+        inline static std::size_t count{};
+        inline static REL::Relocation<void (*)(AlchemyMenu*, Processor*)> accept;
+        inline static REL::Relocation<bool (*)(AlchemyMenu*, RE::BSFixedString*)> userEvent;
+        inline static REL::Relocation<void (*)(RE::IMessageBoxCallback*, RE::IMessageBoxCallback::Message)> confirm;
 
-    template<class T>
-    struct Hook
-    {
-        inline static REL::Relocation<void (*)(RE::ActiveEffect*, RE::Actor*, RE::MagicTarget*)> adjust;
-        inline static REL::Relocation<void (*)(RE::ActiveEffect*)> start, finish, remove;
-        inline static REL::Relocation<void (*)(RE::ActiveEffect*, float)> update;
-
-        static void Adjust(RE::ActiveEffect* effect, RE::Actor* caster, RE::MagicTarget* target)
+        template<std::size_t I> static void call(const RE::FxDelegateArgs& args)
         {
-            adjust(effect, caster, target);
-            if (!ownedPoison(effect, caster, target ? target->GetTargetAsActor() : nullptr)) return;
-            harvest::weaken(effect->magnitude, effect->duration,
-                effect->effect->baseEffect->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoMagnitude));
+            Craft transaction(static_cast<AlchemyMenu*>(args.GetHandler()));
+            callbacks[I](args);
         }
-        static void Start(RE::ActiveEffect* effect)
+        template<std::size_t... I> static constexpr auto wrappers(std::index_sequence<I...>)
         {
-            Execution scope(effect, true);
-            start(effect);
+            return std::array<Callback*, sizeof...(I)>{&call<I>...};
         }
-        static void Update(RE::ActiveEffect* effect, float delta)
+        class Proxy final : public Processor
         {
-            Execution scope(effect, false);
-            update(effect, delta);
+            Processor* real;
+        public:
+            explicit Proxy(Processor* value) : real(value) {}
+            void Process(const RE::GString& name, Callback* callback) override
+            {
+                static constexpr auto functions = wrappers(std::make_index_sequence<64>{});
+                std::size_t index = 0;
+                while (index < count && callbacks[index] != callback) ++index;
+                if (index == count && count < callbacks.size()) callbacks[count++] = callback;
+                real->Process(name, index < callbacks.size() ? functions[index] : callback);
+            }
+        };
+        static void Accept(AlchemyMenu* menu, Processor* processor)
+        {
+            Proxy proxy(processor); accept(menu, &proxy);
         }
-        static void Finish(RE::ActiveEffect* effect) { endEffect(effect); finish(effect); }
-        static void Remove(RE::ActiveEffect* effect) { endEffect(effect); remove(effect); }
+        static bool UserEvent(AlchemyMenu* menu, RE::BSFixedString* control)
+        {
+            Craft transaction(menu); return userEvent(menu, control);
+        }
+        static void Confirm(RE::IMessageBoxCallback* callback, RE::IMessageBoxCallback::Message button)
+        {
+            // CraftItemCallback's AlchemyMenu* is at 0x10 (CommonLib ABI).
+            auto menu = *reinterpret_cast<AlchemyMenu**>(reinterpret_cast<std::uintptr_t>(callback) + 0x10);
+            Craft transaction(menu); confirm(callback, button);
+        }
         static void install()
         {
-            REL::Relocation<std::uintptr_t> table{ T::VTABLE[0] };
-            adjust = table.write_vfunc(0x00, Adjust);
-            remove = table.write_vfunc(0x02, Remove);
-            update = table.write_vfunc(0x04, Update);
-            start = table.write_vfunc(0x14, Start);
-            finish = table.write_vfunc(0x15, Finish);
+            REL::Relocation<std::uintptr_t> table{RE::VTABLE_CraftingSubMenus__AlchemyMenu[0]};
+            accept = table.write_vfunc(0x01, Accept);
+            userEvent = table.write_vfunc(0x05, UserEvent);
+            REL::Relocation<std::uintptr_t> confirmation{RE::VTABLE_CraftingSubMenus__AlchemyMenu__CraftItemCallback[0]};
+            confirm = confirmation.write_vfunc(0x01, Confirm);
         }
     };
 
-    void installHooks()
+    bool ownedPoison(RE::ActiveEffect* effect, RE::Actor* target)
     {
-        // Unique originals per concrete vtable; preserve preceding hooks.
-        // These are documented virtual slots, not guessed instruction offsets.
-        Hook<RE::AbsorbEffect>::install();
-        Hook<RE::AccumulatingValueModifierEffect>::install();
-        Hook<RE::ActiveEffect>::install();
-        Hook<RE::BanishEffect>::install();
-        Hook<RE::BoundItemEffect>::install();
-        Hook<RE::CalmEffect>::install();
-        Hook<RE::CloakEffect>::install();
-        Hook<RE::CommandEffect>::install();
-        Hook<RE::CommandSummonedEffect>::install();
-        Hook<RE::ConcussionEffect>::install();
-        Hook<RE::CureEffect>::install();
-        Hook<RE::DarknessEffect>::install();
-        Hook<RE::DemoralizeEffect>::install();
-        Hook<RE::DetectLifeEffect>::install();
-        Hook<RE::DisarmEffect>::install();
-        Hook<RE::DisguiseEffect>::install();
-        Hook<RE::DispelEffect>::install();
-        Hook<RE::DualValueModifierEffect>::install();
-        Hook<RE::EnhanceWeaponEffect>::install();
-        Hook<RE::EtherealizationEffect>::install();
-        Hook<RE::FrenzyEffect>::install();
-        Hook<RE::GrabActorEffect>::install();
-        Hook<RE::GuideEffect>::install();
-        Hook<RE::InvisibilityEffect>::install();
-        Hook<RE::LightEffect>::install();
-        Hook<RE::LockEffect>::install();
-        Hook<RE::NightEyeEffect>::install();
-        Hook<RE::OpenEffect>::install();
-        Hook<RE::ParalysisEffect>::install();
-        Hook<RE::PeakValueModifierEffect>::install();
-        Hook<RE::RallyEffect>::install();
-        Hook<RE::ReanimateEffect>::install();
-        Hook<RE::ScriptEffect>::install();
-        Hook<RE::ScriptedRefEffect>::install();
-        Hook<RE::SlowTimeEffect>::install();
-        Hook<RE::SoulTrapEffect>::install();
-        Hook<RE::SpawnHazardEffect>::install();
-        Hook<RE::StaggerEffect>::install();
-        Hook<RE::SummonCreatureEffect>::install();
-        Hook<RE::TelekinesisEffect>::install();
-        Hook<RE::TurnUndeadEffect>::install();
-        Hook<RE::ValueAndConditionsEffect>::install();
-        Hook<RE::ValueModifierEffect>::install();
-        Hook<RE::VampireLordEffect>::install();
-        Hook<RE::WerewolfEffect>::install();
-        Hook<RE::WerewolfFeedEffect>::install();
+        if (!effect || !target || !effect->spell || !effect->effect || !effect->effect->baseEffect) return false;
+        const auto poison = effect->spell->As<RE::AlchemyItem>();
+        const auto player = RE::PlayerCharacter::GetSingleton();
+        if (!poison || !poison->IsPoison() || !player || target == player ||
+            effect->GetTargetActor() != target || effect->GetCasterActor().get() != player || !selected()) return false;
+        if (effect->flags.any(RE::ActiveEffect::Flag::kDispelled) ||
+            effect->conditionStatus == RE::ActiveEffect::ConditionStatus::kFalse) return false;
+        const auto nonce = nonceOf(poison);
+        std::lock_guard lock(mutex);
+        const auto found = ledger.batches.find(poison->GetFormID());
+        return nonce && found != ledger.batches.end() && found->second.nonce == nonce && ledger.eligible(poison->GetFormID());
+    }
+
+    // Observe the native value-change operation itself. There is deliberately
+    // no TESDeathEvent scan of active poisons and no outgoing-damage modifier.
+    thread_local std::uint64_t lethalSerial{};
+    template<class T> struct DamageHook
+    {
+        inline static REL::Relocation<void (*)(RE::ValueModifierEffect*, RE::Actor*, float, RE::ActorValue)> original;
+        static void Modify(RE::ValueModifierEffect* effect, RE::Actor* actor, float value, RE::ActorValue av)
+        {
+            const auto generation = epoch.load(), serial = lethalSerial;
+            const bool alive = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
+            const float health = alive ? actor->GetActorValue(RE::ActorValue::kHealth) : 0;
+            const bool eligible = alive && health > 0 && ownedPoison(effect, actor);
+            // The ActiveEffect can be deleted inside the engine's call.
+            const auto source = eligible ? effect->spell->GetFormID() : 0;
+            const RE::NiPointer<RE::Actor> keepAlive(actor);
+            original(effect, actor, value, av);
+            if (!alive || health <= 0 || !actor || serial != lethalSerial ||
+                actor->GetActorValue(RE::ActorValue::kHealth) > 0) return;
+            const auto state = actor->AsActorState()->GetLifeState();
+            if (state != RE::ACTOR_LIFE_STATE::kDying && state != RE::ACTOR_LIFE_STATE::kDead) return;
+            ++lethalSerial; // An unbound poison can also block outer attribution.
+            if (!eligible || generation != epoch.load() || !selected()) return;
+            bool offered;
+            {
+                std::lock_guard lock(mutex);
+                offered = ledger.offer(actor->GetFormID(), source);
+            }
+            if (offered) {
+                SKSE::log::info("Poison lethal: source {:08X}; victim {:08X}", source, actor->GetFormID());
+                queueWork();
+            }
+        }
+        static void install()
+        {
+            REL::Relocation<std::uintptr_t> table{T::VTABLE[0]};
+            original = table.write_vfunc(0x20, Modify);
+        }
+    };
+
+    class Choice final : public RE::IMessageBoxCallback
+    {
+        std::uint64_t generation = epoch.load();
+        bool cancel;
+    public:
+        explicit Choice(bool armed) : cancel(armed) {}
+        void Run(Message button) override
+        {
+            if (generation != epoch.load()) return;
+            menuBusy.store(false);
+            if (static_cast<std::uint32_t>(button) != 0 || !selected()) return;
+            {
+                std::lock_guard lock(mutex);
+                ledger.armed = !cancel;
+            }
+            RE::DebugNotification(cancel ? "The Satchel stops waiting for a new recipe." :
+                "Brew a poison to teach its recipe to the Satchel.");
+        }
+    };
+
+    void showPower()
+    {
+        if (!selected() || menuBusy.exchange(true)) return;
+        harvest::Recipe recipe;
+        bool armed;
+        {
+            std::lock_guard lock(mutex);
+            recipe = ledger.stored; armed = ledger.armed;
+        }
+        std::string body = "Huntsman's Satchel\n\n";
+        if (recipe.empty()) body += "No poison recipe remembered.\n";
+        else {
+            body += "Remembered ingredients:\n";
+            for (auto id : recipe) {
+                const auto ingredient = RE::TESForm::LookupByID<RE::IngredientItem>(id);
+                body += ingredient ? ingredient->GetName() : "Missing ingredient";
+                body += "\n";
+            }
+        }
+        body += armed ? "\nWaiting for the next poison you brew." :
+            "\nA killing blow from this poison returns the ingredients spent on its batch, once. Remember a new recipe by brewing it.";
+        RE::CreateMessage(body.c_str(), new Choice(armed), 0, 4, 10,
+            armed ? "Cancel recording" : "Remember next poison", "Close");
+    }
+
+    void syncTrait()
+    {
+        const auto player = RE::PlayerCharacter::GetSingleton();
+        if (!player) return;
+        const bool enabled = selected();
+        for (auto spell : {power, weakness}) {
+            if (enabled && !player->HasSpell(spell)) player->AddSpell(spell);
+            else if (!enabled && player->HasSpell(spell)) player->RemoveSpell(spell);
+        }
+        if (!enabled) {
+            std::lock_guard lock(mutex); ledger.armed = false; ledger.candidates.clear();
+            return;
+        }
+        bool give = false;
+        {
+            std::lock_guard lock(mutex);
+            // A saved FLST marker protects the once-per-character gift even if
+            // the SKSE co-save is lost. It has no inventory or combat effect.
+            if (retained->HasForm(jarrin)) ledger.giftGiven = true;
+            if (!ledger.giftGiven) { ledger.giftGiven = true; give = true; }
+        }
+        if (give) {
+            retained->AddForm(jarrin); // Claim before AddObject can re-enter.
+            player->AddObjectToContainer(jarrin, nullptr, 1, nullptr);
+            SKSE::log::info("Granted the character's one Jarrin Root");
+        }
     }
 
     void flush(std::uint64_t generation)
@@ -284,200 +396,183 @@ namespace
         if (generation != epoch.load()) return;
         queued.store(false);
         if (!ready.load() || !session.load()) return;
-        std::set<harvest::ID> toPin;
+        syncTrait();
+        if (!selected()) return;
         std::vector<harvest::ID> victims;
         {
             std::lock_guard lock(mutex);
-            toPin.swap(pins);
-            for (const auto& [actor, candidate] : ledger.candidates) victims.push_back(actor);
+            for (const auto& [actor, poison] : ledger.candidates) victims.push_back(actor);
         }
-        for (auto id : toPin) {
-            auto item = RE::TESForm::LookupByID<RE::AlchemyItem>(id);
-            if (item && !isPhial(item) && item->IsPoison() && !retained->HasForm(item)) retained->AddForm(item);
-        }
-        const bool enabled = selected();
         for (auto id : victims) {
             auto actor = RE::TESForm::LookupByID<RE::Actor>(id);
-            if (!actor) continue;  // Unloaded references can resolve on a later poll.
+            if (!actor) continue;
             const auto state = actor->AsActorState()->GetLifeState();
             if (state == RE::ACTOR_LIFE_STATE::kDying) continue;
-            std::optional<harvest::ID> bottle;
+            std::optional<harvest::Ingredients> reward;
             {
                 std::lock_guard lock(mutex);
                 if (generation != epoch.load()) return;
-                if (!enabled || state != RE::ACTOR_LIFE_STATE::kDead) {
-                    ledger.candidates.erase(id);  // Canceled death/essential actor: no reward.
-                    continue;
-                }
-                bottle = ledger.claim(id);
+                if (state != RE::ACTOR_LIFE_STATE::kDead) { ledger.candidates.erase(id); continue; }
+                const auto candidate = ledger.candidates.find(id);
+                if (candidate == ledger.candidates.end()) continue;
+                const auto batch = ledger.batches.find(candidate->second);
+                bool valid = batch != ledger.batches.end();
+                if (valid) for (const auto& part : batch->second.cost)
+                    valid = valid && RE::TESForm::LookupByID<RE::IngredientItem>(part.form);
+                if (valid) reward = ledger.claim(id);
+                else ledger.candidates.erase(id);
             }
-            if (!bottle) continue;
-            auto item = RE::TESForm::LookupByID<RE::AlchemyItem>(*bottle);
-            auto player = RE::PlayerCharacter::GetSingleton();
-            if (player && item && item->IsPoison() && !isPhial(item)) {
-                player->AddObjectToContainer(item, nullptr, 1, nullptr);
-                SKSE::log::info("Recovered poison {:08X} from victim {:08X}", *bottle, id);
-            } else SKSE::log::warn("Skipped unresolved/non-poison reward {:08X} for {:08X}", *bottle, id);
+            if (!reward) continue;
+            const auto player = RE::PlayerCharacter::GetSingleton();
+            for (const auto& part : *reward) player->AddObjectToContainer(
+                RE::TESForm::LookupByID<RE::IngredientItem>(part.form), nullptr, static_cast<std::int32_t>(part.count), nullptr);
+            RE::DebugNotification("Huntsman's Satchel returns your poison's ingredients.");
+            SKSE::log::info("Refunded {} ingredient types for victim {:08X}", reward->size(), id);
         }
     }
-
     void queueWork()
     {
         if (!ready.load() || !session.load() || queued.exchange(true)) return;
         const auto generation = epoch.load();
         SKSE::GetTaskInterface()->AddTask([generation] { flush(generation); });
     }
-
     void poll(RE::StaticFunctionTag*) { queueWork(); }
 
-    class Events final : public RE::BSTEventSink<RE::TESDeathEvent>, public RE::BSTEventSink<RE::TESFormDeleteEvent>
+    class Events final : public RE::BSTEventSink<RE::ItemCrafted::Event>,
+                         public RE::BSTEventSink<RE::TESSpellCastEvent>,
+                         public RE::BSTEventSink<RE::TESFormDeleteEvent>
     {
     public:
         using Result = RE::BSEventNotifyControl;
-        static Events& get() { static Events events; return events; }
-        Result ProcessEvent(const RE::TESDeathEvent* event, RE::BSTEventSource<RE::TESDeathEvent>*) override
+        static Events& get() { static Events value; return value; }
+        Result ProcessEvent(const RE::ItemCrafted::Event* event, RE::BSTEventSource<RE::ItemCrafted::Event>*) override
         {
-            if (!event || !event->actorDying || !selected()) return Result::kContinue;
-            auto actor = event->actorDying->As<RE::Actor>();
-            const auto player = RE::PlayerCharacter::GetSingleton();
-            if (!actor || actor == player) return Result::kContinue;
-            const auto id = actor->GetFormID();
-            bool playerKiller = event->actorKiller.get() == player;
-            std::vector<harvest::Key> eligible;
-            if (auto effects = actor->AsMagicTarget()->GetActiveEffectList()) {
-                for (auto effect : *effects) if (ownedPoison(effect) && live(effect)) eligible.push_back(keyFor(effect));
+            if (!event || !event->item || !selected()) return Result::kContinue;
+            auto item = event->item->As<RE::AlchemyItem>();
+            if (item && item->IsPoison()) {
+                if (crafting) {
+                    if (std::find(crafting->outputs.begin(), crafting->outputs.end(), item) == crafting->outputs.end())
+                        crafting->outputs.push_back(item);
+                }
+                else SKSE::log::info("Poison craft outside a captured alchemy transaction: {:08X}; no refund budget", item->GetFormID());
             }
-            std::vector<harvest::Application> immediate;
-            for (auto scope = executing; scope; scope = scope->previous) {
-                if (!scope->app || !scope->eligible || scope->app->key.actor != id) continue;
-                immediate.push_back(*scope->app);
-                // Null killer may be reported for an instant poison. Require a
-                // death inside that exact player-owned callback, never mere proximity.
-                if (!event->actorKiller && scope->aliveBefore) playerKiller = true;
+            return Result::kContinue;
+        }
+        Result ProcessEvent(const RE::TESSpellCastEvent* event, RE::BSTEventSource<RE::TESSpellCastEvent>*) override
+        {
+            if (event && event->object.get() == RE::PlayerCharacter::GetSingleton() &&
+                power && event->spell == power->GetFormID() && selected()) {
+                const auto generation = epoch.load();
+                SKSE::GetTaskInterface()->AddTask([generation] { if (generation == epoch.load()) showPower(); });
             }
-            {
-                std::lock_guard lock(mutex);
-                for (const auto& app : immediate) if (playerKiller) ledger.offer(app, true);
-                // OnDying and OnDeath can carry different killer fields. A
-                // confirmed earlier event must survive a later null-killer event.
-                const auto pending = ledger.candidates.find(id);
-                if (playerKiller || pending == ledger.candidates.end() || !pending->second.confirmed)
-                    ledger.death(id, playerKiller, eligible);
-            }
-            queueWork();
             return Result::kContinue;
         }
         Result ProcessEvent(const RE::TESFormDeleteEvent* event, RE::BSTEventSource<RE::TESFormDeleteEvent>*) override
         {
-            if (event) { std::lock_guard lock(mutex); ledger.forget(event->formID); }
+            if (event) { std::lock_guard lock(mutex); ledger.forgetActor(event->formID); }
             return Result::kContinue;
         }
     };
 
     void reset()
     {
-        ++epoch; queued.store(false);
-        std::lock_guard lock(mutex);
-        ledger.clear(); pins.clear();
+        ++epoch; queued.store(false); menuBusy.store(false);
+        std::lock_guard lock(mutex); ledger.clear();
     }
-
     void save(SKSE::SerializationInterface* api)
     {
         std::lock_guard lock(mutex);
         const auto bytes = harvest::encode(ledger);
-        if (!api->WriteRecord(recordID, 1, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
-            SKSE::log::error("Could not write Venom Harvester save state");
+        if (!api->WriteRecord(recordID, 2, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
+            SKSE::log::error("Could not write Huntsman's Satchel save state");
     }
-
     void load(SKSE::SerializationInterface* api)
     {
         reset();
-        std::uint32_t type = 0, version = 0, length = 0;
+        std::uint32_t type, version, length;
         while (api->GetNextRecordInfo(type, version, length)) {
-            if (type != recordID || version != 1 || length > 64 * 1024 * 1024) continue;
+            if (type != recordID || version != 2 || length > 64 * 1024 * 1024) continue;
             std::vector<std::uint8_t> bytes(length);
             if (api->ReadRecordData(bytes.data(), length) != length) continue;
-            auto restored = harvest::decode(bytes, [api](harvest::ID oldID) {
-                RE::FormID id = 0;
-                return api->ResolveFormID(oldID, id) ? id : 0;
+            auto state = harvest::decode(bytes, [api](harvest::ID oldID) {
+                RE::FormID id = 0; return api->ResolveFormID(oldID, id) ? id : 0;
             });
-            if (restored) {
-                std::lock_guard lock(mutex);
-                ledger = std::move(*restored);
-                SKSE::log::info("Loaded {} poison effects, {} pending and {} completed harvests",
-                    ledger.effects.size(), ledger.candidates.size(), ledger.rewarded.size());
-            } else SKSE::log::error("Rejected invalid Venom Harvester save state");
+            if (state) {
+                std::lock_guard lock(mutex); ledger = std::move(*state);
+                SKSE::log::info("Restored {} crafting batches", ledger.batches.size());
+            } else SKSE::log::error("Rejected invalid Satchel state; no inferred refunds");
         }
     }
-
+    void resume()
+    {
+        if (!ready.load()) return;
+        // Also account for saved marked poisons when the co-save was missing.
+        std::uint32_t maximum = 0;
+        retained->ForEachForm([&](RE::TESForm* form) {
+            if (form) maximum = std::max(maximum, nonceOf(form->As<RE::AlchemyItem>()));
+            return RE::BSContainer::ForEachResult::kContinue;
+        });
+        {
+            std::lock_guard lock(mutex); ledger.sequence = std::max(ledger.sequence, maximum);
+        }
+        queueWork();
+    }
     void onMessage(SKSE::MessagingInterface::Message* message)
     {
         if (message->type == SKSE::MessagingInterface::kDataLoaded) {
-            auto data = RE::TESDataHandler::GetSingleton();
-            const bool merged = data->LookupModByName(mergedTraitFile) != nullptr;
-            const auto traitFile = merged ? mergedTraitFile : legacyTraitFile;
-            const RE::FormID base = merged ? 0xA00 : 0x800;
-            trait = data->LookupForm<RE::SpellItem>(base, traitFile);
-            retained = data->LookupForm<RE::BGSListForm>(base + 6, traitFile);
-            const auto migration = data->LookupForm<RE::TESGlobal>(base + 5, traitFile);
-            phialPoison = data->LookupForm<RE::AlchemyItem>(0x80C, phialFile);
-            phials = data->LookupForm<RE::BGSListForm>(0x817, phialFile);
-            selectedLiquid = data->LookupForm<RE::BGSListForm>(0xD4A, phialFile);
-            refillPoison = data->LookupForm<RE::EffectSetting>(0x80B, phialFile);
-            refillPotion = data->LookupForm<RE::EffectSetting>(0x9D6, "Update.esm");
-            ready.store(trait && retained && migration);
-            if (!ready.load()) {
-                SKSE::log::error("Disabled: enable the Venom Harvester ESP from Biggie Traits Combined v1.6 or the single-ESP v2.0 package");
-                return;
-            }
-            auto source = RE::ScriptEventSourceHolder::GetSingleton();
-            source->AddEventSink<RE::TESDeathEvent>(&Events::get());
+            const auto data = RE::TESDataHandler::GetSingleton();
+            trait = data->LookupForm<RE::SpellItem>(0xA00, pluginFile);
+            retained = data->LookupForm<RE::BGSListForm>(0xA06, pluginFile);
+            power = data->LookupForm<RE::SpellItem>(0xF40, pluginFile);
+            weakness = data->LookupForm<RE::SpellItem>(0xF42, pluginFile);
+            batchMarker = data->LookupForm<RE::EffectSetting>(0xF44, pluginFile);
+            jarrin = data->LookupForm<RE::IngredientItem>(0x1BCBC, "Skyrim.esm");
+            ready.store(trait && retained && power && weakness && batchMarker && jarrin);
+            if (!ready.load()) { SKSE::log::error("Requires Biggie Traits Combined 2.8.0 or later Satchel records"); return; }
+            const auto source = RE::ScriptEventSourceHolder::GetSingleton();
+            source->AddEventSink<RE::TESSpellCastEvent>(&Events::get());
             source->AddEventSink<RE::TESFormDeleteEvent>(&Events::get());
-            installHooks();
-            SKSE::log::info("Trait layout: {}; plugin {}", merged ? "merged" : "four ESPs", traitFile);
-            SKSE::log::info("Ready; trait {:08X}; White Phial mapping available={}", trait->GetFormID(),
-                phialPoison && phials && selectedLiquid && refillPoison && refillPotion);
+            RE::ItemCrafted::GetEventSource()->AddEventSink(&Events::get());
+            CraftHooks::install();
+            DamageHook<RE::ValueModifierEffect>::install();
+            DamageHook<RE::DualValueModifierEffect>::install();
+            DamageHook<RE::PeakValueModifierEffect>::install();
+            DamageHook<RE::AccumulatingValueModifierEffect>::install();
+            DamageHook<RE::AbsorbEffect>::install();
+            SKSE::log::info("Ready: Huntsman's Satchel; PoisonResist -50; outgoing poisons unchanged");
         } else if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
             session.store(false); reset();
         } else if (message->type == SKSE::MessagingInterface::kNewGame) {
-            reset(); session.store(true); queueWork();
+            reset(); session.store(true); resume();
         } else if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
-            session.store(message->data != nullptr); queueWork();
+            session.store(message->data != nullptr); if (session.load()) resume();
         }
     }
 }
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({ 1, 1, 0, 0 });
-    data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 0, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
-    data.UsesAddressLibrary(true);
-    data.UsesStructsPost629(true);
-    data.CompatibleVersions({ REL::Version{ 1, 6, 1170, 0 } });
+    data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
+    data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
     return data;
 }();
-
 extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse)
 {
-    if (skse->RuntimeVersion() != REL::Version{ 1, 6, 1170, 0 }) return false;
-    auto path = SKSE::log::log_directory();
-    if (!path) return false;
+    if (skse->RuntimeVersion() != REL::Version{1, 6, 1170, 0}) return false;
+    auto path = SKSE::log::log_directory(); if (!path) return false;
     *path /= "VenomHarvester.log";
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global",
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
-    spdlog::set_level(spdlog::level::info);
-    spdlog::flush_on(spdlog::level::info);
+    spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("VenomHarvester 1.1.0; Skyrim 1.6.1170; instance penalty 0.75; one poison per victim");
-    auto serialization = SKSE::GetSerializationInterface();
-    serialization->SetUniqueID(saveID);
-    serialization->SetSaveCallback(save);
-    serialization->SetLoadCallback(load);
-    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });
+    SKSE::log::info("Huntsman's Satchel 2.0.0 beta; Skyrim 1.6.1170; one ingredient refund per crafting batch");
+    const auto serialization = SKSE::GetSerializationInterface();
+    serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
+    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });
     if (!SKSE::GetPapyrusInterface()->Register([](RE::BSScript::IVirtualMachine* vm) {
-        vm->RegisterFunction("Poll", "VH_Native", poll);
-        return true;
+        vm->RegisterFunction("Poll", "VH_Native", poll); return true;
     })) return false;
     return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
 }

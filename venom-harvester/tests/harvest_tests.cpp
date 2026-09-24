@@ -1,74 +1,92 @@
 #include "Harvest.h"
 #include <cassert>
-#include <limits>
-
+#include <iostream>
+using namespace harvest;
+constexpr ID a = 0xFF000100, b = 0xFF000101, c = 0xFF000102;
+const Recipe roots{0x100, 0x200};
+const Recipe flowers{0x300, 0x400, 0x500};
+Ledger prepared()
+{
+    Ledger result;
+    result.sequence = 3;
+    assert(result.remember(roots));
+    assert(result.add({a, 1, roots, {{0x100, 1}, {0x200, 1}}, false}));
+    assert(result.add({b, 2, roots, {{0x100, 1}, {0x200, 2}}, false}));
+    assert(result.add({c, 3, flowers, {{0x300, 1}, {0x400, 1}, {0x500, 1}}, false}));
+    return result;
+}
 int main()
 {
-    using namespace harvest;
-    float magnitude = 100, duration = 20;
-    weaken(magnitude, duration, false);
-    assert(magnitude == 75 && duration == 20);
-    magnitude = 0;
-    weaken(magnitude, duration, true);
-    assert(duration == 15 && magnitude == 0);
-    assert(live(false, false, false, 9, 10, false));
-    assert(!live(false, false, false, 10, 10, false));
-    assert(live(false, false, false, 10, 10, true));
-    assert(!live(false, false, false, 11, 10, true));
-    assert(!live(false, false, false, 0, 0, false));
-    assert(live(false, false, false, 0, 0, true));
-    assert(!live(true, false, false, 0, 10, true));
-    assert(!live(false, true, false, 0, 10, true));
-    assert(!live(false, false, true, 0, 10, true));
-    assert(!live(false, false, false, 0, std::numeric_limits<float>::quiet_NaN(), false));
-
-    const Key a{100, 200, 300, 1}, b{100, 201, 301, 2}, secondEffect{100, 200, 302, 3};
-    Ledger l;
-    l.begin(a, 200, true); l.begin(secondEffect, 200, true);
-    const std::vector<Key> samePoison{a, secondEffect};
-    assert(l.death(100, true, samePoison));
-    assert(l.claim(100) == 200);
-    assert(!l.claim(100));
-    l.begin(a, 200, true);                      // resurrected corpse
-    assert(!l.death(100, true, samePoison));
-
-    l.clear(); l.begin(a, 200, true); l.begin(b, 201, true);
-    const std::vector<Key> mixed{a, b};
-    assert(l.death(100, true, mixed));
-    assert(l.claim(100) == 201);                // newest still-active poison
-    l.clear(); l.begin(a, 200, true); l.begin(b, 201, true); l.end(b, false);
-    assert(l.death(100, true, mixed));
-    assert(l.claim(100) == 200);                // newest expired; older active poison wins
-    l.clear(); l.begin(a, 200, true); l.end(a, false);
-    assert(!l.death(100, true, samePoison));     // expired or dispelled
-    l.clear(); l.begin(a, 200, true);
-    assert(!l.death(100, false, samePoison));    // follower/NPC/environment kill
-    assert(!l.claim(100));
-
-    l.clear(); l.begin(a, 0xFF001234, true);
-    l.begin(a, 201, false);                    // phial changed after poisoning
-    assert(l.find(a)->bottle == 0xFF001234);    // original brewed poison retained
-    l.end(a, true);                            // death cleans effects before death event
-    assert(!l.claim(100));                     // still needs killer confirmation
-    assert(l.death(100, true, {}));
-    const auto pendingSave = encode(l);
-    auto restored = decode(pendingSave, [](ID id) { return id; });
-    assert(restored && restored->claim(100) == 0xFF001234);
-    auto done = decode(encode(*restored), [](ID id) { return id; });
-    assert(done && !done->claim(100) && done->rewarded.contains(100));
-
-    l.clear(); l.begin(a, 200, true); l.begin(b, 201, true);
-    const auto saved = encode(l);
-    auto remapped = decode(saved, [](ID id) { return id + 1000; });
-    const std::vector<Key> moved{{1100,1200,1300,1},{1100,1201,1301,2}};
-    assert(remapped && remapped->death(1100, true, moved));
-    assert(remapped->claim(1100) == 1201);
-    auto missing = decode(saved, [](ID id) { return id == 201 ? 0 : id; });
-    assert(missing && missing->effects.size() == 1);
-    for (std::size_t size = 0; size < saved.size(); ++size)
-        assert(!decode(std::span(saved).first(size), [](ID id) { return id; }));
-    auto corrupt = saved; corrupt.push_back(0);
-    assert(!decode(corrupt, [](ID id) { return id; }));
-    l.forget(100); assert(l.effects.empty() && l.candidates.empty());
-    l.clear(); assert(l.rewarded.empty());      // no state crossing characters
+    {
+        auto ledger = prepared();
+        // Bought/free/old untracked bottles have no recorded expenditure.
+        assert(!ledger.offer(1, 0x100ABC));
+        assert(!ledger.offer(1, 0xFF001234));
+        assert(!ledger.claim(1)); // Poison is active, but no lethal callback.
+        assert(ledger.offer(1, a));
+        assert(!ledger.offer(1, b)); // Actual lethal source cannot be replaced.
+        assert(ledger.claim(1) == Ingredients({{0x100, 1}, {0x200, 1}}));
+        for (ID victim = 1; victim <= 100; ++victim) {
+            assert(!ledger.offer(victim, a)); assert(!ledger.claim(victim));
+        }
+        assert(ledger.eligible(b));
+        assert(ledger.offer(200, b));
+        assert(ledger.claim(200) == Ingredients({{0x100, 1}, {0x200, 2}}));
+    }
+    {
+        auto ledger = prepared();
+        assert(!ledger.offer(1, c));
+        assert(ledger.offer(1, a)); assert(ledger.claim(1));
+        assert(ledger.remember(flowers));
+        assert(ledger.offer(2, c)); assert(ledger.claim(2));
+        assert(ledger.remember(roots));
+        assert(!ledger.offer(3, a)); // Reselecting cannot reset spent batches.
+        assert(ledger.offer(3, b));
+        ++ledger.sequence;
+        assert(ledger.add({0xFF000200, 4, roots, {{0x100, 1}, {0x200, 1}}, false}));
+        assert(ledger.offer(4, 0xFF000200)); assert(ledger.claim(4));
+    }
+    {
+        auto ledger = prepared();
+        assert(ledger.offer(10, a)); assert(ledger.offer(11, a));
+        assert(ledger.claim(11)); assert(!ledger.claim(10));
+        ledger.forgetActor(11);
+        assert(!ledger.offer(11, a));
+    }
+    {
+        auto ledger = prepared();
+        assert(ledger.offer(10, a));
+        ledger.giftGiven = true; ledger.armed = true;
+        const auto bytes = encode(ledger);
+        const auto restore = decode(bytes, [](ID id) { return id; });
+        assert(restore && encode(*restore) == bytes);
+        assert(restore->giftGiven && restore->armed);
+        auto paid = *restore; assert(paid.claim(10));
+        auto again = decode(encode(paid), [](ID id) { return id; });
+        assert(again && !again->offer(12, a)); assert(again->offer(12, b));
+        auto remap = decode(bytes, [](ID id) { return id + 0x1000; });
+        assert(remap && remap->stored == Recipe({0x1100, 0x1200}));
+        assert(remap->claim(0x100A) == Ingredients({{0x1100, 1}, {0x1200, 1}}));
+        auto missing = decode(bytes, [](ID id) { return id == 0x100 ? 0 : id; });
+        assert(missing && !missing->eligible(a) && !missing->eligible(b));
+        for (std::size_t i = 0; i < bytes.size(); ++i)
+            assert(!decode(std::span(bytes).first(i), [](ID id) { return id; }));
+        auto corrupt = bytes; corrupt.push_back(0);
+        assert(!decode(corrupt, [](ID id) { return id; }));
+        corrupt = bytes; corrupt[0] = 1;
+        assert(!decode(corrupt, [](ID id) { return id; }));
+    }
+    {
+        auto ledger = prepared();
+        assert(!ledger.add({a, 1, roots, {{0x100, 1}, {0x200, 1}}, false}));
+        assert(!ledger.add({0x123, 1, roots, {{0x100, 1}}, false}));
+        assert(!ledger.add({0xFF002222, 3, roots, {}, false}));
+        assert(!ledger.add({0xFF002222, 3, roots, {{0x100, 0}}, false}));
+        assert(!ledger.add({0xFF002222, 3, roots, {{0x300, 1}}, false}));
+        ++ledger.sequence;
+        assert(ledger.add({0xFF002222, 4, roots, {{0x100, 1}}, false}));
+        assert(ledger.offer(1, 0xFF002222));
+        assert(ledger.claim(1) == Ingredients({{0x100, 1}}));
+    }
+    std::cout << "Huntsman's Satchel: batch, lethal-source, recipe, multi-hit, save and cost tests passed\n";
 }

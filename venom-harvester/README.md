@@ -1,61 +1,79 @@
-# Venom Harvester
+# Huntsman's Satchel — native 2.0.0 beta
 
-Native backend 1.1.0 for Venom Harvester in Biggie Traits Combined v1.6 or the single-ESP v2.0 package.
-Requires Skyrim 1.6.1170, matching SKSE and Address Library for AE. Install the
-complete combined archive; this DLL alone does not add a selectable trait.
+Replaces Venom Harvester inside Biggie Traits Combined 2.8.0-beta1. The DLL
+keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
+Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
 
-When you kill an actor while one of your poisons is active, recover one bottle
-of the most recently applied poison that still has a harmful effect active.
-Each actor reference can pay only once, including across save/load or resurrection.
-Applied poison magnitude is multiplied by 0.75; duration-only effects instead
-receive 0.75 duration. Crafted and purchased base items are never edited.
-Beneficial potion effects, NPC poisons, weapon enchantments and ordinary spells
-are excluded. Arbitrary damage hard-coded inside another mod's Papyrus script
-cannot be rescaled by modifying the effect's magnitude/duration.
+Select the trait, cast the Huntsman's Satchel lesser power, choose **Remember
+next poison**, then brew a poison. Its exact ingredients become the stored
+recipe. Future batches brewed with those ingredients qualify too. Only one
+recipe is stored; use the power again to replace it.
 
-The original White Phial mod's custom poison maps to its selected ordinary
-poison at application time. Recovery never duplicates a phial or its refill
-marker. A later liquid reassignment does not change an earlier target's reward.
-Unrecognized or mismatched phial contents are refused rather than guessed.
+A kill caused by the stored poison's own native Health damage returns the
+ingredients actually consumed by its crafting action, once. All output bottles
+and all weapon hits from a batch share that one allowance. The actual lethal
+poison determines the refund when several poisons affect an enemy. A weapon,
+shout or other attack finishing a poisoned target does not qualify. Paralysis
+and weakness alone do not kill. Purchased bottles, White Phial refills, old
+untracked bottles and completely free crafts have no refundable expenditure.
+Reselecting a recipe or trait never resets spent batches. Rebrewing reclaimed
+ingredients is a new crafting action and can earn a new refund.
 
-The plugin hooks each concrete active-effect vtable using CommonLib's documented
-AdjustForPerks, Start, Update, Finish and OnRemove virtual slots. It calls the
-previous function in each slot. Poison ownership is checked through the caster,
-target and source AlchemyItem. Current active effects and death events determine
-eligibility. Instant poison only qualifies during its lethal native callback.
-Deferred game-thread inventory changes require actual death; essential knockdowns
-and canceled deaths do not pay. It keeps copied IDs instead of dangling effect
-pointers after engine callbacks.
+The trait grants one Jarrin Root per character on first selection, including
+the first load of an existing Venom Harvester character after this update.
+A saved FormList marker and co-save state guard against repeated gifts.
 
-The SKSE co-save stores application ordering, original returned poison forms,
-pending rewards and completed victim references. Its load path resolves FormIDs.
-A private saved form list retains dynamic brewed poisons. Keep the matching
-`.skse` co-save with each Skyrim save. With a missing co-save, the plugin cannot
-recover old application history; start with a freshly poisoned target.
+**Drawback: 50 percentage points less poison resistance.** Outgoing poison
+magnitude and duration retain their normal values. This replaces the old 25%
+weaker-poison penalty. Resistance gear and other modifiers still combine with
+the weakness normally; this is not an unconditional final-damage multiplier.
 
-The four-ESP package retains the legacy `Biggie Traits - Devoted Alchemist.esp`
-filename, its internal trait IDs and thumbnail path for upgrades. A one-time
-controller migration refreshes the selected ability, removes the retired crafting
-perk and disease effect, and disables future starting gifts. Items already gifted
-remain in inventory. Other combined traits retain their existing behavior.
+## Implementation and compatibility limits
 
-Build: run `tools/build_windows.ps1` on Windows with Visual Studio 2022 C++ tools,
-CMake, Git and PowerShell 7. Dependencies are pinned in the script. The build
-compiles the actual DLL, runs native rule/serialization tests and records hashes
-in BuildInfo.json. Source is in the `codex/venom-harvester` branch of
-https://github.com/sl168898/Physics-helper.
+The adapter wraps documented AlchemyMenu callbacks and its craft confirmation,
+captures ItemCrafted, and measures actual ingredient consumption and output.
+It uses BGSCreatedObjectManager to make a distinct engine-created poison for
+the batch, with a hidden, zero-cost, empty script effect holding a batch number.
+Every real EFIT entry is checked before exchanging the new output, and the
+original poison name, weight and alchemy data are retained. Eligible batches
+therefore appear as separate inventory stacks even if their displayed names
+match. There is no new craftable item recipe or extra ESP.
 
-Validation does not include a running Skyrim instance. In-game checks still
-needed: ordinary damage poison, paralysis, a brewed multi-effect poison, two
-different active poisons, expired/dispelled poison, non-player kills, save/reload,
-the White Phial and reassigning its selected poison. Diagnostic output goes to
-VenomHarvester.log in the SKSE log folder; no custom on-screen notifications.
+ValueModifierEffect's native ModifyActorValue operation provides lethal Health
+change evidence. There is no broad scan of poisons on TESDeathEvent and no
+outgoing magnitude/duration adjustment. Essential actors and nonlethal effects
+cannot claim a refund. A completed death is required before inventory changes.
 
-API references (pinned CommonLib b93280e832f263dbef44e44cbe2936622a02f91a):
-- include/RE/A/ActiveEffect.h
-- include/RE/M/MagicTarget.h
-- include/RE/T/TESDeathEvent.h
-- include/RE/B/BGSListForm.h
-- include/SKSE/Interfaces.h
+The standard alchemy menu and mods using that menu are supported by this
+capture path. Script-only or custom-menu crafting and scripted kill effects
+outside native Health modifiers need a separate adapter. Delayed extra bottles
+created after the crafting callback are not bound. Conditional EFIT entries
+or failed native identity checks leave the original inventory intact and log
+the rejected batch. In-game behavior and interactions with the installed
+portable-alchemy mod have not yet been verified.
 
-Single-ESP v2.0 resolves Venom Harvester at local ID 0xA00 in Biggie Traits - Combined.esp, with its private saved form list at 0xA06. The legacy four-plugin layout remains supported. This selection does not migrate saved game state between plugin layouts. Use the merged package on a new game or a save made before installing the four addons.
+## Upgrade and validation
+
+Exit Skyrim and replace the previous combined package. Keep the same ESP;
+replace VenomHarvester.dll and keep BiggieTraitMechanics.dll from the combined
+release. The original trait FormID, FLM identity, existing scripts and other
+traits remain. The new power and resistance drawback synchronize within the
+existing half-second poll. Already-active poison effects finish naturally;
+new applications use normal outgoing strength. Brew a new batch after choosing
+the recipe: earlier poison inventories have no known ingredient provenance.
+
+This is an implementation beta. The build runs the native rule tests. They
+cover actual lethal-source selection, shared multi-hit/output budgets, recipe
+switching, rebrewing, consumed counts, save remapping and malformed saves.
+These tests do not run Skyrim or substitute for gameplay verification.
+
+For an in-game check, compare poison resistance before/after selection, record
+a recipe with the power, brew two batches, and poison two targets with one
+batch. Only the first poison kill should return its ingredients. A weapon kill
+should return none. Save/reload and switch recipes to check that used batches
+stay used. Test with multi-hit poison perks and the portable alchemy equipment.
+VenomHarvester.log contains Bound batch, Poison lethal and Refunded messages.
+
+API provenance: pinned CharmedBaryon/CommonLibSSE-NG headers; the created potion
+API and Address Library IDs are documented in powerof3/CommonLibSSE's
+BGSCreatedObjectManager.h/.cpp. No guessed machine-code instruction offsets.
