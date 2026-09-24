@@ -289,14 +289,14 @@ namespace
         {
             const auto generation = epoch.load(), serial = lethalSerial;
             const bool alive = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
-            const float health = alive ? actor->GetActorValue(RE::ActorValue::kHealth) : 0;
+            const float health = alive ? actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) : 0;
             const bool eligible = alive && health > 0 && ownedPoison(effect, actor);
             // The ActiveEffect can be deleted inside the engine's call.
             const auto source = eligible ? effect->spell->GetFormID() : 0;
             const RE::NiPointer<RE::Actor> keepAlive(actor);
             original(effect, actor, value, av);
             if (!alive || health <= 0 || !actor || serial != lethalSerial ||
-                actor->GetActorValue(RE::ActorValue::kHealth) > 0) return;
+                actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0) return;
             const auto state = actor->AsActorState()->GetLifeState();
             if (state != RE::ACTOR_LIFE_STATE::kDying && state != RE::ACTOR_LIFE_STATE::kDead) return;
             ++lethalSerial; // An unbound poison can also block outer attribution.
