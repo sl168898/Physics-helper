@@ -86,7 +86,7 @@ namespace
         using Fn = void(RE::BGSCreatedObjectManager*, CreatedPoison&, RE::BSTArray<RE::Effect>&);
         static REL::Relocation<Fn*> create{RELOCATION_ID(35265, 36167)};
         create(manager, result, effects);
-        if (!result || result.get() == original || (result->GetFormID() >> 24) != 0xFF ||
+        if (!result || !result->IsPoison() || result.get() == original || (result->GetFormID() >> 24) != 0xFF ||
             retained->HasForm(result.get()) || nonceOf(result.get()) != nonce ||
             result->effects.size() != original->effects.size() + 1) return {};
         // Verify every real effect survived native creation exactly once.
@@ -267,6 +267,8 @@ namespace
     bool ownedPoison(RE::ActiveEffect* effect, RE::Actor* target)
     {
         if (!effect || !target || !effect->spell || !effect->effect || !effect->effect->baseEffect) return false;
+        const auto base = effect->effect->baseEffect;
+        if ((!base->IsHostile() && !base->IsDetrimental()) || base == batchMarker) return false;
         const auto poison = effect->spell->As<RE::AlchemyItem>();
         const auto player = RE::PlayerCharacter::GetSingleton();
         if (!poison || !poison->IsPoison() || !player || target == player ||
