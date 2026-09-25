@@ -240,7 +240,7 @@ namespace
             player->AddObjectToContainer(unique.get(), nullptr, bottles, nullptr);
             if (remembered) RE::DebugNotification("Huntsman's Satchel recorded this poison's recipe and batch.");
             SKSE::log::info("Bound batch {}: {:08X} -> {:08X}; {} bottles; {} ingredient types", nonce,
-                original->GetFormID(), poisonID, bottles, cost.size());
+                output.item, poisonID, bottles, cost.size());
             for (const auto& part : cost)
                 SKSE::log::info("Batch {} ingredient {:08X}: consumed {}", nonce, part.form, part.count);
         }
