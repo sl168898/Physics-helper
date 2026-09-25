@@ -2,6 +2,7 @@
 #include <SKSE/SKSE.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include "Harvest.h"
+#include "MenuGate.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -16,7 +17,8 @@ namespace
     RE::EffectSetting* batchMarker{};
     RE::BGSListForm* retained{};
     RE::IngredientItem* jarrin{};
-    std::atomic_bool ready{}, session{}, queued{}, menuBusy{};
+    std::atomic_bool ready{}, session{}, queued{};
+    harvest::MenuGate menuGate;
     std::atomic<std::uint64_t> epoch{};
     std::mutex mutex;
     harvest::Ledger ledger;
@@ -322,27 +324,52 @@ namespace
 
     class Choice final : public RE::IMessageBoxCallback
     {
-        std::uint64_t generation = epoch.load();
-        bool cancel;
+        const harvest::MenuRequest request;
+        std::atomic_bool submitted{};
     public:
-        explicit Choice(bool armed) : cancel(armed) {}
+        explicit Choice(harvest::MenuRequest value) : request(value) { unk0C = 0; }
         void Run(Message button) override
         {
-            if (generation != epoch.load()) return;
-            menuBusy.store(false);
-            if (static_cast<std::uint32_t>(button) != 0 || !selected()) return;
-            {
-                std::lock_guard lock(mutex);
-                ledger.armed = !cancel;
+            if (submitted.exchange(true)) return;
+            const auto captured = request;
+            const auto index = static_cast<unsigned>(button);
+            SKSE::log::info("Satchel menu: callback ticket={}, button={}", captured.ticket, index);
+            // The menu owns this object. Copy only values into the game task;
+            // never retain this or call actor/inventory APIs from the UI callback.
+            if (auto tasks = SKSE::GetTaskInterface()) {
+                tasks->AddTask([captured, index] {
+                    const auto recording = menuGate.resolve(captured, epoch.load(), index, selected());
+                    if (!recording.has_value()) return;
+                    {
+                        std::lock_guard lock(mutex);
+                        ledger.armed = *recording;
+                    }
+                    SKSE::log::info("Satchel menu: recording={}", *recording);
+                    RE::DebugNotification(*recording ?
+                        "Brew a poison to teach its recipe to the Satchel." :
+                        "The Satchel stops waiting for a new recipe.");
+                });
+            } else {
+                menuGate.finish(captured.ticket);
+                SKSE::log::error("Satchel menu: task interface unavailable");
             }
-            RE::DebugNotification(cancel ? "The Satchel stops waiting for a new recipe." :
-                "Brew a poison to teach its recipe to the Satchel.");
         }
     };
 
     void showPower()
     {
-        if (!selected() || menuBusy.exchange(true)) return;
+        if (!selected()) return;
+        const auto ticket = menuGate.begin();
+        if (!ticket) return;
+        auto factories = RE::MessageDataFactoryManager::GetSingleton();
+        auto strings = RE::InterfaceStrings::GetSingleton();
+        auto factory = factories && strings ? factories->GetCreator<RE::MessageBoxData>(strings->messageBoxData) : nullptr;
+        auto box = factory ? factory->Create() : nullptr;
+        if (!box) {
+            menuGate.finish(ticket);
+            SKSE::log::error("Satchel menu: message-box factory unavailable");
+            return;
+        }
         harvest::Recipe recipe;
         bool armed;
         {
@@ -361,8 +388,21 @@ namespace
         }
         body += armed ? "\nWaiting for the next poison you brew." :
             "\nA killing blow from this poison returns the ingredients spent on its batch, once. Remember a new recipe by brewing it.";
-        RE::CreateMessage(body.c_str(), new Choice(armed), 0, 4, 10,
-            armed ? "Cancel recording" : "Remember next poison", "Close");
+        // Do NOT pass an IMessageBoxCallback object to RE::CreateMessage.
+        // Its pinned CommonLib signature is misleading: the native helper
+        // expects an old-style raw function pointer and null-ended varargs.
+        // MessageBoxData's smart callback field is the actual object API.
+        static_assert(offsetof(RE::MessageBoxData, callback) == 0x40);
+        static_assert(offsetof(RE::MessageBoxData, unk4C) == 0x4C);
+        box->bodyText = body.c_str();
+        box->buttonText.push_back(armed ? "Cancel recording" : "Remember next poison");
+        box->buttonText.push_back("Close");
+        box->unk3C = 1; // cancelButtonIndex: Close
+        box->unk4C = 0; // buttonPressOffset
+        box->unk4F = 1; // isCancellable
+        box->callback = RE::make_smart<Choice>(harvest::MenuRequest{epoch.load(), ticket, armed});
+        SKSE::log::info("Satchel menu: opened ticket={}, recording={}", ticket, armed);
+        box->QueueMessage();
     }
 
     void syncTrait()
@@ -478,7 +518,7 @@ namespace
 
     void reset()
     {
-        ++epoch; queued.store(false); menuBusy.store(false);
+        ++epoch; queued.store(false); menuGate.reset();
         std::lock_guard lock(mutex); ledger.clear();
     }
     void save(SKSE::SerializationInterface* api)
@@ -554,7 +594,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 0, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 1, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -569,7 +609,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.0 beta; Skyrim 1.6.1170; one ingredient refund per crafting batch");
+    SKSE::log::info("Huntsman's Satchel 2.0.1 beta; Skyrim 1.6.1170; safe message-box callback; one ingredient refund per crafting batch");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

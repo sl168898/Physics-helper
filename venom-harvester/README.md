@@ -77,3 +77,18 @@ VenomHarvester.log contains Bound batch, Poison lethal and Refunded messages.
 API provenance: pinned CharmedBaryon/CommonLibSSE-NG headers; the created potion
 API and Address Library IDs are documented in powerof3/CommonLibSSE's
 BGSCreatedObjectManager.h/.cpp. No guessed machine-code instruction offsets.
+
+
+## Version 2.0.1: Satchel button crash repair
+
+The power now creates a native MessageBoxData, attaches a reference-counted IMessageBoxCallback to its callback field, and queues it. The old RE::CreateMessage wrapper accepted the wrong callback type: the engine expects a raw function pointer at 51420/52269. Passing a C++ callback object there can execute heap data when a button is pressed. The fixed menu bypasses that helper and its variadic button-list ambiguity entirely.
+
+The callback initializes its inherited state, copies its request into a game-thread task, and never captures its own pointer. Ticket and save-generation checks reject duplicate or stale callbacks. Close/Escape and trait removal do not arm recording. Menu opening failures release the ticket. Recording, stored recipes, refunds, Jarrin Root and the 50% poison weakness retain their existing rules; the HSAT version-2 save format is unchanged. VenomHarvester.log records menu opening, callback and recording state.
+
+Primary technical references:
+- CommonLibSSE-NG MessageBoxData and IMessageBoxCallback at b93280e832f263dbef44e44cbe2936622a02f91a.
+- MessageBoxData field names: https://github.com/adya/CommonLibSSE/blob/3adc3270274f954caebc165ddcc7a3969596eb1e/include/RE/M/MessageBoxData.h
+- Native CreateMessage callback ABI: https://github.com/NoahBoddie/poison-aid/blob/9d4b176553f08de385e08f70d95a492e7cd9a9b8/src/PoisonHandler.h
+- Independent description of the same crash and missing variadic terminator: https://github.com/Modding-Forge/xEditLinker/blob/1983a759619fc111e97b0ec3e6f1ad5598e6db05/src/sse/main.cpp
+
+Windows compilation, harvest tests and menu lifecycle tests are required. Skyrim itself has not been run here.
