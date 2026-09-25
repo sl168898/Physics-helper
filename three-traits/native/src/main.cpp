@@ -10,6 +10,7 @@
 #include "EchoDiagnostics.h"
 #include "IronLungsRuntime.h"
 #include "RunicOverdriveRuntime.h"
+#include "ArcaneDynamoRuntime.h"
 
 namespace {
 constexpr auto pluginFile = "Biggie Traits - Combined.esp";
@@ -25,6 +26,7 @@ traits::Combat combat;
 traits::SkaldRuntime skald;
 traits::IronLungsRuntime ironLungs;
 traits::RunicOverdriveRuntime runicOverdrive;
+traits::ArcaneDynamoRuntime arcaneDynamo;
 EchoDiagnostics echoDiagnostics;
 RE::ATTACK_STATE_ENUM lastState = RE::ATTACK_STATE_ENUM::kNone;
 RE::BGSAttackData* lastData = nullptr;
@@ -44,6 +46,7 @@ void reset() {
     std::lock_guard lock(stateMutex); combat = {}; lastData = nullptr; lastState = RE::ATTACK_STATE_ENUM::kNone;
     ironLungs.reset();
     runicOverdrive.reset();
+    arcaneDynamo.reset();
     echoDiagnostics.reset();
     labVisit.cancel(); ++labEpoch; hadLabTrait = false;
 }
@@ -311,9 +314,10 @@ void message(SKSE::MessagingInterface::Message* msg) {
         SKSE::GetActionEventSource()->AddEventSink(&actions);
         // Allocate shared storage once: neither feature may replace the
         // trampoline memory already used by the other's call-site hook.
-        SKSE::AllocTrampoline(64);
+        SKSE::AllocTrampoline(128);
         ironLungs.init(data, pluginFile, [] { return ready.load() && session.load(); }, [] { return skald.casting(); });
         runicOverdrive.init(data, pluginFile, [] { return ready.load() && session.load(); });
+        arcaneDynamo.init(data, pluginFile, [] { return ready.load() && session.load(); });
         ready = true;
         SKSE::log::info("Ready: Burden of Devotion, Unbroken Guard, Echoing Steel");
     } else if (msg->type == SKSE::MessagingInterface::kPreLoadGame) { session = false; reset(); skald.clear(); }
@@ -322,7 +326,7 @@ void message(SKSE::MessagingInterface::Message* msg) {
 }
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
-    SKSE::PluginVersionData d{}; d.PluginVersion({1,5,0,0}); d.PluginName("BiggieTraitMechanics");
+    SKSE::PluginVersionData d{}; d.PluginVersion({1,6,0,0}); d.PluginName("BiggieTraitMechanics");
     d.AuthorName("Physics-helper contributors"); d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -332,7 +336,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(),true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("BiggieTraitMechanics 1.5.0; Skyrim 1.6.1170");
+    SKSE::log::info("BiggieTraitMechanics 1.6.0; Skyrim 1.6.1170");
     echoDiagnostics.configure();
     auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(0x42544D33); // BTM3, separate from Venom Harvester

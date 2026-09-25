@@ -372,3 +372,14 @@ Technical sources:
   https://github.com/KrisV-777/Acheron/blob/ab9d303af7636ad6b25d04d9a61d82e497890249/src/Acheron/Hooks/Hooks.cpp
   https://github.com/D7ry/valhallaCombat/blob/48fb4c3b9bb6bbaa691ce41dbd33f096b74c07e3/src/include/Hooks.h
 No external mod source is copied into this helper.
+
+
+## Arcane Dynamo (1.6.0; Combined 2.10.0 beta)
+
+Arcane Dynamo (SPEL F60, MGEF F61) replaces the resource cost of native touch weapon enchantments with Magicka. The baseline is 15 Magicka, multiplied by the native actor-dependent charge cost divided by the same enchantment's actor-independent cost. This preserves charge-use perks and buffs instead of imposing a fixed fee. Zero-cost enchantments remain free; invalid costs fail closed. Staff spells, armor, poisons and scripted rune explosions are outside this contact-enchantment path.
+
+MagicCaster::FindTargets (33632/34410, pinned CommonLib ABI) reserves the cost once for the entire delivery, before Absorb Magicka can take effect. Zero-target deliveries refund their reservation. Insufficient Magicka suppresses only the enchantment delivery. A receipt ties native SpellCast resource suppression to the delivery; no inventory charge is restored, replenished or overwritten. CheckCast chains the previous handler (including Iron Lungs) with only the charge-resource query bypassed. AE resource call sites 34145+BE and 34143+151 follow ProjectStaff c2d9d4266724c09316f14e84d9db8b8d82e1d9bb. Opcode guards disable the feature if the expected call sites differ.
+
+The effect-adjustment chain applies +30% to native Health/Magicka/Stamina damage and absorption magnitudes only. Other effects retain their values. Runic Overdrive's existing x2 therefore stacks to x2.6 on qualifying power attacks. No duration multiplication is added by Dynamo. The player's positive MagickaRate read is multiplied by .65, preserving other regeneration modifiers and avoiding permanent actor-value changes. No new drawback or rune scaling is added to Runic Overdrive.
+
+Diagnostics: first 80 payments, refunds, failed payments and magnitude changes are logged as [ArcaneDynamo]. Required in-game acceptance: empty-charge weapon with sufficient Magicka; insufficient Magicka with unchanged physical damage; multi-effect weapon pays once; left/right hand; bow/crossbow native delivery; Absorb Magicka; enchanted Runemaster weapon; trait removal; save/load; existing Iron Lungs/Skald/Runic Overdrive. Windows compilation and rule tests do not replace these in-game checks. This version has not been tested in Skyrim.
