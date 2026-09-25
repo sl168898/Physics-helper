@@ -20,6 +20,7 @@ namespace
     std::atomic_bool ready{}, session{}, queued{};
     harvest::MenuGate menuGate;
     std::atomic<std::uint64_t> epoch{};
+    std::atomic_uint damageDiagnostics{};
     std::mutex mutex;
     harvest::Ledger ledger;
 
@@ -113,6 +114,7 @@ namespace
     using AlchemyMenu = RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu;
     struct Craft;
     thread_local Craft* crafting{};
+    thread_local const char* captureStatus = "no alchemy callback captured";
 
     struct Craft
     {
@@ -126,21 +128,26 @@ namespace
         explicit Craft(AlchemyMenu* menu)
         {
             if (previous || !menu || !selected()) return;
+            captureStatus = "no stored recipe and recording is not armed";
             {
                 std::lock_guard lock(mutex);
                 if (!ledger.armed && ledger.stored.empty()) return;
             }
             for (auto index : menu->selectedIndexes) {
+                captureStatus = "selected ingredient index is invalid";
                 if (index >= menu->ingredientEntries.size()) return;
                 const auto entry = menu->ingredientEntries[index].ingredient;
                 auto object = entry ? entry->object : nullptr;
+                captureStatus = "selected item is not an ingredient";
                 if (!object || !object->As<RE::IngredientItem>()) return;
                 recipe.push_back(object->GetFormID());
             }
             std::sort(recipe.begin(), recipe.end());
+            captureStatus = "recipe does not contain two or three distinct ingredients";
             if (!harvest::validRecipe(recipe)) return;
             {
                 std::lock_guard lock(mutex);
+                captureStatus = "recipe differs from the remembered ingredients";
                 if (!ledger.armed && recipe != ledger.stored) return;
             }
             const auto player = RE::PlayerCharacter::GetSingleton();
@@ -150,6 +157,7 @@ namespace
             }
             active = true;
             crafting = this;
+            captureStatus = "captured";
         }
         ~Craft()
         {
@@ -161,19 +169,33 @@ namespace
         }
         void finish()
         {
-            if (generation != epoch.load() || !selected() || outputs.size() != 1) return;
+            if (outputs.empty()) return; // Normal non-crafting menu callbacks.
+            if (generation != epoch.load() || !selected()) return;
+            if (outputs.size() != 1) {
+                SKSE::log::warn("Craft rejected: {} distinct poison outputs in one callback", outputs.size());
+                return;
+            }
             auto original = outputs.front();
             const auto player = RE::PlayerCharacter::GetSingleton();
-            if (!player || !original || !original->IsPoison() || nonceOf(original)) return;
+            if (!player || !original || !original->IsPoison() || nonceOf(original)) {
+                SKSE::log::warn("Craft rejected: output is missing, not poison, or already bound");
+                return;
+            }
             std::map<RE::FormID, std::int32_t> after;
             for (const auto& [item, count] : player->GetInventoryCounts())
                 if (item && (item->As<RE::IngredientItem>() || item->As<RE::AlchemyItem>())) after[item->GetFormID()] = count;
             const auto bottles = after[original->GetFormID()] - before[original->GetFormID()];
-            if (bottles <= 0 || bottles > 100000) return;
+            if (bottles <= 0 || bottles > 100000) {
+                SKSE::log::warn("Craft {:08X} rejected: net output {} bottles", original->GetFormID(), bottles);
+                return;
+            }
             harvest::Ingredients cost;
             for (auto id : recipe) {
                 const auto spent = before[id] - after[id];
-                if (spent < 0 || spent > 100000) return;
+                if (spent < 0 || spent > 100000) {
+                    SKSE::log::warn("Craft rejected: ingredient {:08X} has invalid expenditure {}", id, spent);
+                    return;
+                }
                 if (spent) cost.push_back({id, static_cast<std::uint32_t>(spent)});
             }
             bool remembered = false;
@@ -184,8 +206,12 @@ namespace
                 if (ledger.stored != recipe) return;
                 if (harvest::validCost(cost, recipe) && ledger.sequence < harvest::nonceLimit) nonce = ++ledger.sequence;
             }
-            if (remembered) RE::DebugNotification("Huntsman's Satchel remembers this poison's recipe.");
-            if (!nonce) return; // A completely free craft has no ingredients to refund.
+            if (!nonce) {
+                SKSE::log::info("Recipe recorded={}; no refundable batch: {} consumed ingredient types, nonce unavailable",
+                    remembered, cost.size());
+                if (remembered) RE::DebugNotification("The Satchel remembers the recipe, but this batch has no refund recorded.");
+                return; // A completely free craft has no ingredients to refund.
+            }
             auto unique = makeBatch(original, nonce);
             if (!unique) {
                 SKSE::log::warn("Batch {}: native poison identity check failed; inventory left intact", nonce);
@@ -202,8 +228,11 @@ namespace
             retained->AddForm(unique.get());
             player->RemoveItem(original, bottles, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
             player->AddObjectToContainer(unique.get(), nullptr, bottles, nullptr);
+            if (remembered) RE::DebugNotification("Huntsman's Satchel recorded this poison's recipe and batch.");
             SKSE::log::info("Bound batch {}: {:08X} -> {:08X}; {} bottles; {} ingredient types", nonce,
                 original->GetFormID(), poisonID, bottles, cost.size());
+            for (const auto& part : cost)
+                SKSE::log::info("Batch {} ingredient {:08X}: consumed {}", nonce, part.form, part.count);
         }
     };
 
@@ -292,16 +321,32 @@ namespace
         static void Modify(RE::ValueModifierEffect* effect, RE::Actor* actor, float value, RE::ActorValue av)
         {
             const auto generation = epoch.load(), serial = lethalSerial;
+            const bool healthChange = av == RE::ActorValue::kHealth;
             const bool alive = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
             const float health = alive ? actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) : 0;
-            const bool eligible = alive && health > 0 && ownedPoison(effect, actor);
+            const bool eligible = healthChange && alive && health > 0 && ownedPoison(effect, actor);
             // The ActiveEffect can be deleted inside the engine's call.
             const auto source = eligible ? effect->spell->GetFormID() : 0;
+            RE::FormID diagnosticSource = 0;
+            std::uint32_t diagnosticNonce = 0;
+            if (healthChange && actor && effect && effect->spell && selected() && damageDiagnostics.load() < 80) {
+                const auto poison = effect->spell->As<RE::AlchemyItem>();
+                if (poison && poison->IsPoison() && effect->GetCasterActor().get() == RE::PlayerCharacter::GetSingleton()) {
+                    if (damageDiagnostics.fetch_add(1) < 80) {
+                        diagnosticSource = poison->GetFormID();
+                        diagnosticNonce = nonceOf(poison);
+                    }
+                }
+            }
             const RE::NiPointer<RE::Actor> keepAlive(actor);
             original(effect, actor, value, av);
-            if (!alive || health <= 0 || !actor || serial != lethalSerial ||
-                actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) > 0) return;
+            if (!actor || !healthChange) return;
+            const float after = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const auto state = actor->AsActorState()->GetLifeState();
+            if (diagnosticSource) SKSE::log::info(
+                "Poison Health change: source {:08X}; batch {}; victim {:08X}; alive-before {}; health {} -> {}; state {}; eligible {}",
+                diagnosticSource, diagnosticNonce, actor->GetFormID(), alive, health, after, static_cast<unsigned>(state), eligible);
+            if (!alive || health <= 0 || serial != lethalSerial || after > 0) return;
             if (state != RE::ACTOR_LIFE_STATE::kDying && state != RE::ACTOR_LIFE_STATE::kDead) return;
             ++lethalSerial; // An unbound poison can also block outer attribution.
             if (!eligible || generation != epoch.load() || !selected()) return;
@@ -372,9 +417,11 @@ namespace
         }
         harvest::Recipe recipe;
         bool armed;
+        std::size_t unclaimed;
         {
             std::lock_guard lock(mutex);
             recipe = ledger.stored; armed = ledger.armed;
+            unclaimed = ledger.unclaimed();
         }
         std::string body = "Huntsman's Satchel\n\n";
         if (recipe.empty()) body += "No poison recipe remembered.\n";
@@ -385,6 +432,7 @@ namespace
                 body += ingredient ? ingredient->GetName() : "Missing ingredient";
                 body += "\n";
             }
+            body += "\nUnclaimed crafting batches: " + std::to_string(unclaimed) + "\n";
         }
         body += armed ? "\nWaiting for the next poison you brew." :
             "\nA killing blow from this poison returns the ingredients spent on its batch, once. Remember a new recipe by brewing it.";
@@ -401,7 +449,7 @@ namespace
         box->unk4C = 0; // buttonPressOffset
         box->unk4F = 1; // isCancellable
         box->callback = RE::make_smart<Choice>(harvest::MenuRequest{epoch.load(), ticket, armed});
-        SKSE::log::info("Satchel menu: opened ticket={}, recording={}", ticket, armed);
+        SKSE::log::info("Satchel menu: opened ticket={}, recording={}, unclaimed batches={}", ticket, armed, unclaimed);
         box->QueueMessage();
     }
 
@@ -446,23 +494,13 @@ namespace
             for (const auto& [actor, poison] : ledger.candidates) victims.push_back(actor);
         }
         for (auto id : victims) {
-            auto actor = RE::TESForm::LookupByID<RE::Actor>(id);
-            if (!actor) continue;
-            const auto state = actor->AsActorState()->GetLifeState();
-            if (state == RE::ACTOR_LIFE_STATE::kDying) continue;
             std::optional<harvest::Ingredients> reward;
             {
                 std::lock_guard lock(mutex);
                 if (generation != epoch.load()) return;
-                if (state != RE::ACTOR_LIFE_STATE::kDead) { ledger.candidates.erase(id); continue; }
-                const auto candidate = ledger.candidates.find(id);
-                if (candidate == ledger.candidates.end()) continue;
-                const auto batch = ledger.batches.find(candidate->second);
-                bool valid = batch != ledger.batches.end();
-                if (valid) for (const auto& part : batch->second.cost)
-                    valid = valid && RE::TESForm::LookupByID<RE::IngredientItem>(part.form);
-                if (valid) reward = ledger.claim(id);
-                else ledger.candidates.erase(id);
+                reward = ledger.claimVerified(id, [](harvest::ID ingredient) {
+                    return RE::TESForm::LookupByID<RE::IngredientItem>(ingredient) != nullptr;
+                });
             }
             if (!reward) continue;
             const auto player = RE::PlayerCharacter::GetSingleton();
@@ -496,7 +534,8 @@ namespace
                     if (std::find(crafting->outputs.begin(), crafting->outputs.end(), item) == crafting->outputs.end())
                         crafting->outputs.push_back(item);
                 }
-                else SKSE::log::info("Poison craft outside a captured alchemy transaction: {:08X}; no refund budget", item->GetFormID());
+                else SKSE::log::info("Poison craft outside a captured alchemy transaction: {:08X}; {}; no refund budget",
+                    item->GetFormID(), captureStatus);
             }
             return Result::kContinue;
         }
@@ -518,7 +557,7 @@ namespace
 
     void reset()
     {
-        ++epoch; queued.store(false); menuGate.reset();
+        ++epoch; queued.store(false); menuGate.reset(); damageDiagnostics.store(0);
         std::lock_guard lock(mutex); ledger.clear();
     }
     void save(SKSE::SerializationInterface* api)
@@ -594,7 +633,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 1, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 2, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -609,7 +648,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.1 beta; Skyrim 1.6.1170; safe message-box callback; one ingredient refund per crafting batch");
+    SKSE::log::info("Huntsman's Satchel 2.0.2 beta; Skyrim 1.6.1170; corpse-independent confirmed-kill refunds; one ingredient refund per crafting batch");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

@@ -80,6 +80,12 @@ namespace harvest
             const auto it = batches.find(poison);
             return it != batches.end() && !it->second.paid && it->second.recipe == stored;
         }
+        std::size_t unclaimed() const
+        {
+            return std::count_if(batches.begin(), batches.end(), [this](const auto& entry) {
+                return eligible(entry.first);
+            });
+        }
         bool offer(ID actor, ID poison)
         {
             if (!actor || rewarded.contains(actor) || !eligible(poison)) return false;
@@ -99,7 +105,28 @@ namespace harvest
             rewarded.insert(actor);
             return batch.cost;
         }
-        void forgetActor(ID actor) { candidates.erase(actor); rewarded.erase(actor); }
+        template<class ValidIngredient>
+        std::optional<Ingredients> claimVerified(ID actor, ValidIngredient validIngredient)
+        {
+            const auto candidate = candidates.find(actor);
+            if (candidate == candidates.end()) return std::nullopt;
+            const auto batch = batches.find(candidate->second);
+            if (batch == batches.end() || !std::all_of(batch->second.cost.begin(), batch->second.cost.end(),
+                    [&](const Ingredient& part) { return validIngredient(part.form); })) {
+                candidates.erase(candidate);
+                return std::nullopt;
+            }
+            // offer() already requires a proven lethal poison change. Settling
+            // that debt does not require a surviving corpse or another death
+            // transition; kDying was sufficient evidence at the native hook.
+            return claim(actor);
+        }
+        void forgetActor(ID actor)
+        {
+            // Corpse cleanup must not erase a confirmed, unpaid killing blow.
+            // The batch's paid flag remains the duplicate-refund guard.
+            rewarded.erase(actor);
+        }
     };
 
     // Explicit little-endian format: no pointers, padding or cached load order.

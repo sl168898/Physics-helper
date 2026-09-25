@@ -55,13 +55,56 @@ int main()
     }
     {
         auto ledger = prepared();
+        const auto ingredientExists = [](ID id) { return id == 0x100 || id == 0x200; };
+        assert(ledger.unclaimed() == 2);
+        // No proven lethal callback: being poisoned or a weapon kill cannot pay.
+        assert(!ledger.claimVerified(10, ingredientExists));
+        assert(ledger.offer(10, a));
+        assert(ledger.offer(11, a));
+        // Native hook has already proved death (kDying or kDead). Payout has
+        // no actor lookup dependency and works on the very next queued task.
+        assert(ledger.claimVerified(10, ingredientExists) == Ingredients({{0x100, 1}, {0x200, 1}}));
+        assert(!ledger.claimVerified(11, ingredientExists));
+        assert(!ledger.claimVerified(10, ingredientExists));
+        assert(ledger.unclaimed() == 1);
+        assert(ledger.candidates.empty());
+    }
+    {
+        auto ledger = prepared();
+        assert(ledger.offer(10, a));
+        // FEC or other corpse cleanup can delete the victim before the task.
+        ledger.forgetActor(10);
+        assert(ledger.candidates.contains(10));
+        assert(ledger.claimVerified(10, [](ID) { return true; }));
+        ledger.forgetActor(10);
+        assert(!ledger.offer(10, a)); // Paid batch cannot be revived by deletion.
+        assert(!ledger.claimVerified(10, [](ID) { return true; }));
+        assert(ledger.unclaimed() == 1);
+    }
+    {
+        auto ledger = prepared();
+        assert(ledger.offer(10, a));
+        // Missing ingredients must not consume the batch or give a partial refund.
+        assert(!ledger.claimVerified(10, [](ID id) { return id != 0x200; }));
+        assert(ledger.unclaimed() == 2);
+        assert(ledger.candidates.empty());
+        assert(ledger.offer(11, a));
+        assert(ledger.claimVerified(11, [](ID) { return true; }));
+        assert(ledger.remember(flowers));
+        assert(ledger.unclaimed() == 1);
+        assert(ledger.offer(12, c));
+        assert(ledger.remember(roots));
+        assert(!ledger.claimVerified(12, [](ID) { return true; }));
+    }
+    {
+        auto ledger = prepared();
         assert(ledger.offer(10, a));
         ledger.giftGiven = true; ledger.armed = true;
         const auto bytes = encode(ledger);
         const auto restore = decode(bytes, [](ID id) { return id; });
         assert(restore && encode(*restore) == bytes);
         assert(restore->giftGiven && restore->armed);
-        auto paid = *restore; assert(paid.claim(10));
+        auto paid = *restore; assert(paid.claimVerified(10, [](ID) { return true; }));
         auto again = decode(encode(paid), [](ID id) { return id; });
         assert(again && !again->offer(12, a)); assert(again->offer(12, b));
         auto remap = decode(bytes, [](ID id) { return id + 0x1000; });
@@ -88,5 +131,5 @@ int main()
         assert(ledger.offer(1, 0xFF002222));
         assert(ledger.claim(1) == Ingredients({{0x100, 1}}));
     }
-    std::cout << "Huntsman's Satchel: batch, lethal-source, recipe, multi-hit, save and cost tests passed\n";
+    std::cout << "Huntsman's Satchel: batch, lethal-source, immediate refund, corpse deletion, recipe, multi-hit, save and cost tests passed\n";
 }

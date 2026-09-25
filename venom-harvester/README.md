@@ -1,6 +1,6 @@
-# Huntsman's Satchel — native 2.0.0 beta
+# Huntsman's Satchel — native 2.0.2 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.8.0-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.2-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
 
@@ -42,7 +42,9 @@ match. There is no new craftable item recipe or extra ESP.
 ValueModifierEffect's native ModifyActorValue operation provides lethal Health
 change evidence. There is no broad scan of poisons on TESDeathEvent and no
 outgoing magnitude/duration adjustment. Essential actors and nonlethal effects
-cannot claim a refund. A completed death is required before inventory changes.
+cannot claim a refund. The lethal native Health change must leave the victim
+dying or dead; its confirmed refund is paid on the next game task without
+waiting for a second death-state check or requiring the corpse to remain.
 
 The standard alchemy menu and mods using that menu are supported by this
 capture path. Script-only or custom-menu crafting and scripted kill effects
@@ -57,8 +59,9 @@ portable-alchemy mod have not yet been verified.
 Exit Skyrim and replace the previous combined package. Keep the same ESP;
 replace VenomHarvester.dll and keep BiggieTraitMechanics.dll from the combined
 release. The original trait FormID, FLM identity, existing scripts and other
-traits remain. The new power and resistance drawback synchronize within the
-existing half-second poll. Already-active poison effects finish naturally;
+traits remain. The power and resistance drawback synchronize on game load and
+native work tasks (the legacy Papyrus Poll binding is also retained).
+Already-active poison effects finish naturally;
 new applications use normal outgoing strength. Brew a new batch after choosing
 the recipe: earlier poison inventories have no known ingredient provenance.
 
@@ -73,6 +76,30 @@ batch. Only the first poison kill should return its ingredients. A weapon kill
 should return none. Save/reload and switch recipes to check that used batches
 stay used. Test with multi-hit poison perks and the portable alchemy equipment.
 VenomHarvester.log contains Bound batch, Poison lethal and Refunded messages.
+
+## Version 2.0.2: confirmed poison kill refund repair
+
+The old payout task skipped victims still in kDying, with no reliable retry,
+and lost pending proof if another mod deleted the corpse. The native damage
+hook had already proved the poison's killing blow. The payout now uses that
+proof immediately and corpse deletion preserves the unpaid candidate. It
+still validates ingredient forms and marks the crafting batch paid before
+changing inventory. There is no on-death scan or refund for a later weapon kill.
+Only Health value changes can qualify at the native hook.
+
+The power displays the number of unclaimed batches for the stored recipe.
+The first recipe/batch success message now waits until binding actually succeeds.
+Crafting rejection reasons, ingredient expenditures and the first 80 player
+poison Health changes per loaded game are logged for diagnosis. If no refund
+occurs, send Documents/My Games/Skyrim Special Edition/SKSE/VenomHarvester.log
+from that session before restarting Skyrim (the log is overwritten on launch).
+
+The HSAT version-2 co-save is unchanged: old verified batches and unpaid kills
+that survived in the co-save can still settle; spent batches stay spent. No
+unknown ingredient costs are inferred for older inventory. Regression coverage
+includes immediate settlement, deletion before payout, repeated payout tasks,
+multiple victims per batch, missing ingredient forms and save/reload.
+Windows compilation and native tests do not establish in-game success.
 
 API provenance: pinned CharmedBaryon/CommonLibSSE-NG headers; the created potion
 API and Address Library IDs are documented in powerof3/CommonLibSSE's

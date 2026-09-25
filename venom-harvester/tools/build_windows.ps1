@@ -51,13 +51,14 @@ foreach ($Name in @('src/main.cpp','src/Harvest.h','src/MenuGate.h','tests/harve
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'VenomHarvester'; version = '2.0.1'; runtime = '1.6.1170'
+    plugin = 'VenomHarvester'; version = '2.0.2'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; harvest_tests = 'passed'; menu_tests = 'passed'; in_game_tested = $false
     trait = "Huntsman's Satchel"; combined_package_required = '2.8.0-beta1'
     poison_resistance_penalty = 50; outgoing_poison_multiplier = 1.0
     unique_native_poison_per_batch = $true; no_new_esp = $true
+    confirmed_kill_refund_requires_corpse = $false; pending_kill_survives_corpse_deletion = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_2.zip')
