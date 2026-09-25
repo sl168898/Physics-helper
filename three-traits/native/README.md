@@ -1,4 +1,44 @@
-# Biggie Trait Mechanics 1.5.0 — Runic Overdrive
+# Biggie Trait Mechanics 1.6.1 — Arcane Dynamo charge correction
+
+For Skyrim 1.6.1170 and Combined 2.10.10-beta1. The user's 1.6.0 log shows
+12.75 Magicka payments and fire magnitude 35 -> 45.5 (70 -> 91 with Runic
+Overdrive), on weapon 0001DDA2 / enchantment 00045C2D. Weapon charge also
+decreased according to the in-game report. That log does not record the native
+charge call, so it does not establish which old callback/offset was missed.
+
+The correction removes the fixed GetAssociatedResource call-site patches and
+delivery receipts. It scopes native CalculateCost to zero for the exact player
+and weapon enchantment during CheckCast, SpellCast and FindTargets. Full native
+CheckCast/SpellCast entry hooks also cover direct calls; vtable wrappers retain
+other handlers, including Iron Lungs. Nested matching wrappers do not run the
+Magicka gate twice. Instant/other casters can match the exact equipped weapon.
+
+Dynamo's own cost probe explicitly reads the original engine cost, including
+perks, so the 15 base Magicka normalization is unchanged. Outside managed casts,
+CalculateCost remains untouched: it is also used for gold values. No charge bar,
+inventory data, enchantment record, or other actor is overwritten or refilled.
+The existing delivery reservation, no-target refund, damage and regeneration
+rules remain intact. All other trait implementations are unchanged.
+
+The new regression suite covers release before/after delivery, original-cost
+payment, insufficient Magicka, zero charge, nested enchantments, and shared-form
+NPC isolation. These are logic tests, not execution of Skyrim. In-game testing
+is still required, including empty-charge weapons and the user's load order.
+
+The first 120 charge diagnostics per load include CHECK, RELEASE with both
+hands' charge before/after, CHARGE COST SUPPRESSED, and UNSCOPED COST FORWARDED.
+An unscoped query may be a normal inventory/value lookup; its presence alone
+does not prove a failed charge bypass. Existing payment/damage logs remain.
+
+API references: CommonLibSSE-NG b93280e832f263dbef44e44cbe2936622a02f91a,
+MagicItem.cpp / Offsets.h (CalculateCost 11213/11321), MagicCaster.cpp
+(FindTargets 33632/34410), and ActorMagicCaster.h (CheckCast/SpellCast ABIs).
+CheckCast 33364/34145 and SpellCast 33362/34143 are corroborated by ProjectStaff
+c2d9d4266724c09316f14e84d9db8b8d82e1d9bb; no instruction offsets from it are
+used for charge handling. BakaBloodMagic 10aa95c56244aff3f1c78c5584968e8a9f827341
+documents release cost -> CalculateMagickaCost in ActorMagicCaster.h / Utils.h.
+
+# Earlier Biggie Trait Mechanics 1.5.0 — Runic Overdrive
 
 Requires Skyrim 1.6.1170, SKSE and Address Library, plus the matching Combined
 2.9.0 ESP. This DLL includes all existing 1.4.5 trait behavior.

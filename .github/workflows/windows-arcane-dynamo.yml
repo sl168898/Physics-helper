@@ -23,6 +23,6 @@ jobs:
         run: '& .\three-traits\native\tools\build_windows.ps1'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Arcane-Dynamo-Native-v1-6
+          name: Arcane-Dynamo-Charge-Fix-v1-6-1
           path: three-traits/native/_build/Biggie_Trait_Mechanics_v1.zip
           if-no-files-found: error

@@ -2,6 +2,7 @@
 #include "ArcaneDynamo.h"
 #include <array>
 #include <functional>
+#include <intrin.h>
 
 namespace traits {
 class ArcaneDynamoRuntime {
@@ -9,29 +10,31 @@ class ArcaneDynamoRuntime {
     std::function<bool()> inSession;
     bool installed{};
     std::uint32_t diagnostics{};
+    std::uint32_t chargeDiagnostics{};
     static inline ArcaneDynamoRuntime* self{};
 
     struct Delivery {
         RE::MagicCaster* caster{};
         RE::MagicItem* enchantment{};
         RE::TESObjectWEAP* weapon{};
-        bool paid{}, notified{};
+        bool paid{};
     };
-    struct Receipt { RE::MagicCaster* caster{}; RE::MagicItem* spell{}; bool valid{}; };
     static inline thread_local Delivery* delivery{};
-    static inline thread_local RE::MagicItem* bypassCharge{};
-    std::array<Receipt, 4> receipts{};
+    static inline thread_local const dynamo::CostContext* costContext{};
+    static inline thread_local bool readingOriginalCost{};
 
     using TargetsFn = bool (*)(RE::MagicCaster*, float, std::uint32_t&, RE::TESBoundObject*, bool, bool);
     using CheckFn = bool (*)(RE::ActorMagicCaster*, RE::MagicItem*, bool, float*, RE::MagicSystem::CannotCastReason*, bool);
     using CastFn = void (*)(RE::ActorMagicCaster*, bool, std::uint32_t, RE::MagicItem*);
-    using ResourceFn = RE::ActorValue (*)(RE::MagicItem*, RE::MagicSystem::CastingSource);
+    using CostFn = float (*)(const RE::MagicItem*, RE::Actor*);
     using AdjustFn = void (*)(RE::ActiveEffect*, float, bool);
     using ValueFn = float (*)(RE::ActorValueOwner*, RE::ActorValue);
     static inline TargetsFn originalTargets{};
+    static inline CostFn originalCost{};
+    static inline CheckFn originalNativeCheck{};
+    static inline CastFn originalNativeCast{};
     static inline REL::Relocation<CheckFn> originalCheck;
     static inline REL::Relocation<CastFn> originalCast;
-    static inline REL::Relocation<ResourceFn> originalCheckResource, originalCastResource;
     static inline REL::Relocation<AdjustFn> originalAdjust;
     static inline REL::Relocation<ValueFn> originalValue;
 
@@ -56,23 +59,26 @@ class ArcaneDynamoRuntime {
         if (auto weapon = explicitSource ? explicitSource->As<RE::TESObjectWEAP>() : nullptr;
             physicalWeapon(weapon)) return weapon;
         const auto hand = caster->GetCastingSource();
-        if (hand != RE::MagicSystem::CastingSource::kLeftHand &&
-            hand != RE::MagicSystem::CastingSource::kRightHand) return nullptr;
-        auto entry = player->GetEquippedEntryData(hand == RE::MagicSystem::CastingSource::kLeftHand);
-        auto weapon = entry && entry->object ? entry->object->As<RE::TESObjectWEAP>() : nullptr;
-        return physicalWeapon(weapon) && entry->GetEnchantment() == spell ? weapon : nullptr;
+        const auto equipped = [player, spell](bool left) -> RE::TESObjectWEAP* {
+            auto entry = player->GetEquippedEntryData(left);
+            auto weapon = entry && entry->object ? entry->object->As<RE::TESObjectWEAP>() : nullptr;
+            return physicalWeapon(weapon) && entry->GetEnchantment() == spell ? weapon : nullptr;
+        };
+        if (hand == RE::MagicSystem::CastingSource::kLeftHand) return equipped(true);
+        if (hand == RE::MagicSystem::CastingSource::kRightHand) return equipped(false);
+        // Instant/other casters have no useful hand index. Require an exact
+        // equipped enchantment match, rather than rejecting their charge checks.
+        if (auto weapon = equipped(false)) return weapon;
+        return equipped(true);
     }
     static float payment(RE::MagicItem* enchantment, RE::Actor* player) {
         if (RE::PlayerCharacter::IsGodMode()) return 0.f;
+        dynamo::Scope<bool> probe(readingOriginalCost, true);
         // CalculateTotalGoldValue's documented/default null actor uses this same
         // CalculateCost routine. Both calls see the winning enchantment data.
         const float base = enchantment->CalculateMagickaCost(nullptr);
         const float final = enchantment->CalculateMagickaCost(player);
         return dynamo::cost(base, final);
-    }
-    Receipt* receipt(RE::MagicCaster* caster) {
-        const auto hand = static_cast<std::uint32_t>(caster->GetCastingSource());
-        return hand < receipts.size() ? &receipts[hand] : nullptr;
     }
     static RE::Actor* targetActor(RE::ActiveEffect* effect) {
         auto ref = effect && effect->target ? effect->target->GetTargetStatsObject() : nullptr;
@@ -92,8 +98,6 @@ class ArcaneDynamoRuntime {
             return originalTargets(caster, power, count, source, loading, onlyHostile);
         auto player = RE::PlayerCharacter::GetSingleton();
         const float amount = payment(spell, player);
-        auto pending = s->receipt(caster);
-        if (pending) *pending = {caster, spell, true};
         if (!dynamo::canPay(player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kMagicka), amount)) {
             count = 0;
             s->log("INSUFFICIENT MAGICKA", spell, amount, 0);
@@ -102,28 +106,31 @@ class ArcaneDynamoRuntime {
         // Reserve once BEFORE any effects can absorb Magicka. Multiple effects
         // on the same enchantment all run within this one native delivery.
         player->AsActorValueOwner()->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, -amount);
-        Delivery current{caster, spell, weapon, true, false};
+        Delivery current{caster, spell, weapon, true};
         dynamo::Scope<Delivery*> context(delivery, &current);
+        const dynamo::CostContext charge{player, spell};
+        dynamo::Scope<const dynamo::CostContext*> chargeScope(costContext, &charge);
         const bool result = originalTargets(caster, power, count, source, loading, onlyHostile);
         if (count == 0) {
             player->AsActorValueOwner()->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, amount);
             s->log("NO TARGET / REFUNDED", spell, amount, count);
         } else s->log("PAID", spell, amount, count);
-        // Some paths notify SpellCast inside FindTargets; others do so directly
-        // afterward. Retain only an unconsumed receipt for the latter path.
-        if (pending) *pending = {caster, spell, !current.notified};
         return result;
     }
-    static bool check(RE::ActorMagicCaster* caster, RE::MagicItem* spell, bool dual,
+    static bool checkImpl(CheckFn next, RE::ActorMagicCaster* caster, RE::MagicItem* spell, bool dual,
         float* strength, RE::MagicSystem::CannotCastReason* reason, bool baseValue) {
         auto s = self;
         auto item = spell ? spell : (caster ? caster->currentSpell : nullptr);
         if (!s || !s->selected() || !sourceWeapon(caster, item))
-            return originalCheck(caster, spell, dual, strength, reason, baseValue);
-        // Preserve the game's other cast restrictions; replace only the resource
-        // check. An empty soul-charge bar is allowed with sufficient Magicka.
-        dynamo::Scope<RE::MagicItem*> scope(bypassCharge, item);
-        const bool allowed = originalCheck(caster, spell, dual, strength, reason, baseValue);
+            return next(caster, spell, dual, strength, reason, baseValue);
+        if (costContext && costContext->matches(caster->actor, item))
+            return next(caster, spell, dual, strength, reason, baseValue);
+        const dynamo::CostContext charge{caster->actor, item};
+        dynamo::Scope<const dynamo::CostContext*> scope(costContext, &charge);
+        const bool allowed = next(caster, spell, dual, strength, reason, baseValue);
+        if (s->chargeDiagnostics++ < 120)
+            SKSE::log::info("[ArcaneDynamo] CHECK enchantment={:08X}; casting_source={}; native_allowed={}",
+                item->GetFormID(), int(caster->GetCastingSource()), allowed);
         if (!allowed) return false;
         if (!dynamo::canPay(caster->actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kMagicka), payment(item, caster->actor))) {
             if (reason) *reason = RE::MagicSystem::CannotCastReason::kMagicka;
@@ -131,28 +138,51 @@ class ArcaneDynamoRuntime {
         }
         return true;
     }
-    static void cast(RE::ActorMagicCaster* caster, bool success, std::uint32_t count, RE::MagicItem* spell) {
+    static bool check(RE::ActorMagicCaster* caster, RE::MagicItem* spell, bool dual,
+        float* strength, RE::MagicSystem::CannotCastReason* reason, bool baseValue) {
+        return checkImpl(originalCheck.get(), caster, spell, dual, strength, reason, baseValue);
+    }
+    static bool nativeCheck(RE::ActorMagicCaster* caster, RE::MagicItem* spell, bool dual,
+        float* strength, RE::MagicSystem::CannotCastReason* reason, bool baseValue) {
+        return checkImpl(originalNativeCheck, caster, spell, dual, strength, reason, baseValue);
+    }
+    static void castImpl(CastFn next, RE::ActorMagicCaster* caster, bool success, std::uint32_t count, RE::MagicItem* spell) {
         auto s = self;
         auto item = spell ? spell : (caster ? caster->currentSpell : nullptr);
-        auto pending = s && caster ? s->receipt(caster) : nullptr;
-        const bool current = delivery && delivery->caster == caster && delivery->enchantment == item;
-        const bool received = pending && pending->valid && pending->caster == caster && pending->spell == item;
-        if (!s || !s->selected() || !contact(item) || (!current && !received)) {
-            originalCast(caster, success, count, spell);
+        if (!s || !s->selected() || !sourceWeapon(caster, item) ||
+            (costContext && costContext->matches(caster->actor, item))) {
+            next(caster, success, count, spell);
             return;
         }
-        if (current) delivery->notified = true;
-        if (received) pending->valid = false;
-        dynamo::Scope<RE::MagicItem*> scope(bypassCharge, item);
-        // Keep events, visuals and other release behavior. The native charge
-        // drain is bypassed only for this already managed delivery.
-        originalCast(caster, success, count, spell);
+        // No receipt/timing dependency: validation, release and delivery all
+        // suppress charge for the same eligible cast, in any native order.
+        const dynamo::CostContext charge{caster->actor, item};
+        dynamo::Scope<const dynamo::CostContext*> scope(costContext, &charge);
+        auto av = caster->actor->AsActorValueOwner();
+        const float right = av->GetActorValue(RE::ActorValue::kRightItemCharge);
+        const float left = av->GetActorValue(RE::ActorValue::kLeftItemCharge);
+        next(caster, success, count, spell);
+        if (s->chargeDiagnostics++ < 120)
+            SKSE::log::info("[ArcaneDynamo] RELEASE enchantment={:08X}; casting_source={}; success={}; targets={}; charge_right={}->{}; charge_left={}->{}",
+                item->GetFormID(), int(caster->GetCastingSource()), success, count, right,
+                av->GetActorValue(RE::ActorValue::kRightItemCharge), left,
+                av->GetActorValue(RE::ActorValue::kLeftItemCharge));
     }
-    static RE::ActorValue checkResource(RE::MagicItem* item, RE::MagicSystem::CastingSource hand) {
-        return item && item == bypassCharge ? RE::ActorValue::kNone : originalCheckResource(item, hand);
+    static void cast(RE::ActorMagicCaster* caster, bool success, std::uint32_t count, RE::MagicItem* spell) {
+        castImpl(originalCast.get(), caster, success, count, spell);
     }
-    static RE::ActorValue castResource(RE::MagicItem* item, RE::MagicSystem::CastingSource hand) {
-        return item && item == bypassCharge ? RE::ActorValue::kNone : originalCastResource(item, hand);
+    static void nativeCast(RE::ActorMagicCaster* caster, bool success, std::uint32_t count, RE::MagicItem* spell) {
+        castImpl(originalNativeCast, caster, success, count, spell);
+    }
+    static float calculateCost(const RE::MagicItem* item, RE::Actor* actor) {
+        const float raw = originalCost(item, actor);
+        const float result = dynamo::nativeChargeCost(raw, costContext, actor, item, readingOriginalCost);
+        if (!readingOriginalCost && self && self->selected() && actor == RE::PlayerCharacter::GetSingleton() &&
+            contact(const_cast<RE::MagicItem*>(item)) && self->chargeDiagnostics++ < 120)
+            SKSE::log::info("[ArcaneDynamo] {} enchantment={:08X}; native_cost={}->{}; caller={:X}",
+                costContext && costContext->matches(actor, item) ? "CHARGE COST SUPPRESSED" : "UNSCOPED COST FORWARDED",
+                item->GetFormID(), raw, result, reinterpret_cast<std::uintptr_t>(_ReturnAddress()));
+        return result;
     }
     static void adjust(RE::ActiveEffect* effect, float power, bool onlyHostile) {
         originalAdjust(effect, power, onlyHostile);
@@ -183,32 +213,34 @@ class ArcaneDynamoRuntime {
         return dynamo::regeneration(result, s && player && owner == player->AsActorValueOwner() && s->selected());
     }
 public:
-    void reset() { receipts = {}; diagnostics = 0; }
+    void reset() { diagnostics = 0; chargeDiagnostics = 0; }
     bool init(RE::TESDataHandler* data, const char* plugin, std::function<bool()> session) {
         self = this; inSession = std::move(session);
         trait = data->LookupForm<RE::SpellItem>(0xF60, plugin);
         auto player = RE::PlayerCharacter::GetSingleton();
         if (!trait || !player) { SKSE::log::error("Arcane Dynamo: missing trait/player; disabled"); return false; }
-        // AE call sites from ProjectStaff c2d9d4266724c09316f14e84d9db8b8d82e1d9bb.
-        // They call MagicUtilities::GetAssociatedResource for this exact caster.
-        const auto checkAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(33364,34145)}.address() + 0xBE;
-        const auto castAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(33362,34143)}.address() + 0x151;
         const auto adjustAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(33763,34547)}.address() + 0x656;
-        for (auto address : {checkAddress, castAddress, adjustAddress}) {
-            if (*reinterpret_cast<const std::uint8_t*>(address) != 0xE8) {
-                SKSE::log::error("Arcane Dynamo: resource/effect call is not E8; feature disabled"); return false;
+        if (*reinterpret_cast<const std::uint8_t*>(adjustAddress) != 0xE8) {
+            SKSE::log::error("Arcane Dynamo: effect call is not E8; feature disabled"); return false;
+        }
+        struct Hook { std::uintptr_t address; void* replacement; void** original; };
+        const Hook hooks[] = {
+            {REL::Relocation<std::uintptr_t>{REL::RelocationID(33632,34410)}.address(), reinterpret_cast<void*>(targets), reinterpret_cast<void**>(&originalTargets)},
+            {REL::Relocation<std::uintptr_t>{RE::Offset::MagicItem::CalculateCost}.address(), reinterpret_cast<void*>(calculateCost), reinterpret_cast<void**>(&originalCost)},
+            {REL::Relocation<std::uintptr_t>{REL::RelocationID(33364,34145)}.address(), reinterpret_cast<void*>(nativeCheck), reinterpret_cast<void**>(&originalNativeCheck)},
+            {REL::Relocation<std::uintptr_t>{REL::RelocationID(33362,34143)}.address(), reinterpret_cast<void*>(nativeCast), reinterpret_cast<void**>(&originalNativeCast)}
+        };
+        std::array<void*, 4> created{};
+        std::size_t createdCount{};
+        for (const auto& hook : hooks) {
+            auto address = reinterpret_cast<void*>(hook.address);
+            auto status = MH_CreateHook(address, hook.replacement, hook.original);
+            if (status == MH_OK) { created[createdCount++] = address; status = MH_EnableHook(address); }
+            if (status != MH_OK) {
+                for (std::size_t i = 0; i < createdCount; ++i) { MH_DisableHook(created[i]); MH_RemoveHook(created[i]); }
+                SKSE::log::error("Arcane Dynamo: native hook installation failed {}; feature disabled", int(status)); return false;
             }
         }
-        const auto targetAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(33632,34410)}.address();
-        const auto status = MH_CreateHook(reinterpret_cast<void*>(targetAddress), reinterpret_cast<void*>(targets),
-            reinterpret_cast<void**>(&originalTargets));
-        if (status != MH_OK) { SKSE::log::error("Arcane Dynamo: target hook creation failed {}", int(status)); return false; }
-        if (const auto enabled = MH_EnableHook(reinterpret_cast<void*>(targetAddress)); enabled != MH_OK) {
-            MH_RemoveHook(reinterpret_cast<void*>(targetAddress));
-            SKSE::log::error("Arcane Dynamo: target hook enable failed {}", int(enabled)); return false;
-        }
-        originalCheckResource = SKSE::GetTrampoline().write_call<5>(checkAddress, checkResource);
-        originalCastResource = SKSE::GetTrampoline().write_call<5>(castAddress, castResource);
         originalAdjust = SKSE::GetTrampoline().write_call<5>(adjustAddress, adjust);
         REL::Relocation<std::uintptr_t> casterTable{RE::VTABLE_ActorMagicCaster[0]};
         originalCheck = casterTable.write_vfunc(0xA, check);
@@ -218,7 +250,7 @@ public:
         REL::Relocation<std::uintptr_t> valueTable{*reinterpret_cast<std::uintptr_t*>(player->AsActorValueOwner())};
         originalValue = valueTable.write_vfunc(0x1, value);
         installed = true;
-        SKSE::log::info("Arcane Dynamo ready: damage x1.30; 15 Magicka normalized by native charge cost; regeneration x0.65; contact weapon enchantments only");
+        SKSE::log::info("Arcane Dynamo 1.6.1 ready: scoped native charge cost=0; damage x1.30; 15 Magicka normalized by original charge cost; regeneration x0.65; direct and virtual cast paths covered");
         return true;
     }
 };

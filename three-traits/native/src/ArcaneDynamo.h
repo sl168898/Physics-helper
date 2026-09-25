@@ -40,6 +40,20 @@ inline float regeneration(float rate, bool selected) {
     return selected && std::isfinite(rate) && rate > 0.f ? rate * regenerationMultiplier : rate;
 }
 
+// Valid only on the synchronous stack of a managed weapon-enchantment cast.
+// Do not globally zero CalculateCost: the engine also uses it for gold values.
+struct CostContext {
+    const void* actor{};
+    const void* enchantment{};
+    bool matches(const void* queryActor, const void* queryItem) const {
+        return actor && enchantment && actor == queryActor && enchantment == queryItem;
+    }
+};
+inline float nativeChargeCost(float original, const CostContext* context,
+    const void* actor, const void* enchantment, bool readingOriginal) {
+    return !readingOriginal && context && context->matches(actor, enchantment) ? 0.f : original;
+}
+
 template<class T> class Scope {
     T& slot;
     T previous;
