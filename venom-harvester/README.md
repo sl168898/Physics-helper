@@ -1,8 +1,55 @@
-# Huntsman's Satchel — native 2.0.6 beta
+# Huntsman's Satchel — native 2.0.7 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.6-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.7-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Version 2.0.7: leave the crafting inventory intact until the menu closes
+
+The new 2.0.6 log records a successful batch at 20:42:07 and release of its
+temporary references 25 ms later. At 20:42:14, a later crafting confirmation
+crashes in an AlchemyItem destructor through Crafting Inventory Extender's
+inventory query. This is a different stack from the earlier PAPER event crash.
+CIE 2.6 caches original inventory entries and source indices for the crafting
+session. Replacing and removing the source poison inside that session is
+consistent with the stale object observed in the new crash. The crash log does
+not independently prove which owner first invalidated that object.
+
+Craft callbacks now only capture the actual output and ingredient expenditure,
+reserve a batch number, and retain the original native form. They do not call
+AddPoison or remove/add inventory. A task after the crafting-menu close event
+performs creation and replacement only once UI::GetMenu reports no remaining
+CraftingMenu object and the player has left the station. CIE can lazily restart
+its cache while GetOccupiedFurniture remains set, so both conditions are
+required. This waits through closing animations or a quick reopen; the existing
+Poll path retries after closure. CIE resets its session in
+its synchronous close-event handler, before that task can exchange inventory.
+
+Each captured craft retains its own cost and bottle count. Several crafts with
+the same original form become separate marked batches after closure. The
+original pre-crafting bottle count is reserved; missing new output causes a
+rejection instead of converting that older stock. Source references survive
+through menu closure, and both forms remain pinned through PAPER's queued
+inventory events as in 2.0.6. There is no timer-based delay or permanent pin.
+
+Pending captures are stored in an additional HSAP v1 co-save record for saves
+made before menu closure. Existing HSAT v2 batches and kill/refund rules remain
+unchanged. Load/revert clears old-world work without dereferencing old pointers;
+restored pending work resolves IDs again. Neither CIE nor PAPER is modified.
+
+For the gameplay check: record a recipe, brew it twice in the same alchemy
+session, then CLOSE the crafting menu and wait for the Satchel preparation
+notification before applying a new bottle. Expect Staged batch while crafting,
+then Crafting menu destroyed and Bound batch after closure, followed by Poison
+lethal / Refunded after a poison killing blow. Keep both logs if a crash occurs.
+This change has not been tested inside Skyrim; the regression tests model menu
+lifetime, repeated crafts, reserved stock, save/load, and shared batch refunds.
+
+Primary source references:
+- https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/src/Hooks/InventoryHooks.cpp
+- https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/include/Hooks/CraftingSession.h
+- https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/src/Hooks/CraftingSession.cpp
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/src/RE/U/UI.cpp
 
 ## Version 2.0.6: keep forms alive through queued inventory events
 
