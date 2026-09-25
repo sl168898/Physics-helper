@@ -20,6 +20,13 @@ namespace harvest
     using Ingredients = std::vector<Ingredient>;
     constexpr std::uint32_t nonceLimit = 0x00FFFFFF;
 
+    // Read the learned skill at payout, not at brewing. Keep recorded costs
+    // unchanged so saved batches still represent their original expenditure.
+    constexpr std::uint32_t refundSets(float baseAlchemy)
+    {
+        return baseAlchemy >= 50.0f ? 2u : 1u;
+    }
+
     inline bool validRecipe(const Recipe& recipe)
     {
         return recipe.size() >= 2 && recipe.size() <= 3 && recipe.front() &&
@@ -106,7 +113,7 @@ namespace harvest
             return batch.cost;
         }
         template<class ValidIngredient>
-        std::optional<Ingredients> claimVerified(ID actor, ValidIngredient validIngredient)
+        std::optional<Ingredients> claimVerified(ID actor, ValidIngredient validIngredient, float baseAlchemy = 0.0f)
         {
             const auto candidate = candidates.find(actor);
             if (candidate == candidates.end()) return std::nullopt;
@@ -119,7 +126,9 @@ namespace harvest
             // offer() already requires a proven lethal poison change. Settling
             // that debt does not require a surviving corpse or another death
             // transition; kDying was sufficient evidence at the native hook.
-            return claim(actor);
+            auto reward = claim(actor);
+            if (reward) for (auto& part : *reward) part.count *= refundSets(baseAlchemy);
+            return reward;
         }
         void forgetActor(ID actor)
         {

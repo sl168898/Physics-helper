@@ -1,8 +1,30 @@
-# Huntsman's Satchel — native 2.0.9 beta
+# Huntsman's Satchel — native 2.0.11 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.9-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.11-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Version 2.0.11: Alchemy 50 ingredient refund
+
+A qualifying killing blow returns one set of recorded ingredients below learned
+Alchemy level 50, or two sets at level 50 and above. The base skill is read at
+payout, so temporary buffs are excluded and already-recorded unclaimed batches
+benefit immediately after reaching 50. No harvesting perk or Botanist is needed.
+Every ingredient's recorded quantity is multiplied by the same set count.
+
+The batch is still claimed once before inventory callbacks run. Recorded costs
+and HSAT v2 / HSAP v1 save formats are unchanged. Already-refunded batches cannot
+pay again. The poison must still deliver the killing blow. Jarrin Root remains
+a one-time gift and the 50% poison weakness is unchanged.
+
+The Satchel menu shows the current number of ingredient sets. Refund logs record
+the base Alchemy value and set count. Combined 2.10.11 also updates the existing
+trait/power descriptions and preserves the Arcane Dynamo 1.6.1 charge correction.
+The earlier aborted harvesting-perk experiment is not included.
+
+Tests cover the 49/50 boundary, unequal ingredient counts, all three ingredients,
+old saved batches, missing ingredient validation, and duplicate claims through
+multiple doses or save/reload. Skyrim runtime verification is separate.
 
 ## Version 2.0.9: observe the native poison damage correctly
 

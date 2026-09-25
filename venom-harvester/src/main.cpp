@@ -684,6 +684,10 @@ namespace
         }
         body += armed ? "\nWaiting for the next poison you brew." :
             "\nA killing blow from this poison returns the ingredients spent on its batch, once. Remember a new recipe by brewing it.";
+        const auto player = RE::PlayerCharacter::GetSingleton();
+        const auto sets = harvest::refundSets(player ? player->GetBaseActorValue(RE::ActorValue::kAlchemy) : 0.0f);
+        body += sets == 2 ? "\n\nCurrent refund: 2 ingredient sets (Alchemy 50+)." :
+            "\n\nCurrent refund: 1 ingredient set. Reach Alchemy 50 for 2 sets.";
         // Do NOT pass an IMessageBoxCallback object to RE::CreateMessage.
         // Its pinned CommonLib signature is misleading: the native helper
         // expects an old-style raw function pointer and null-ended varargs.
@@ -737,26 +741,31 @@ namespace
         syncTrait();
         bindPendingCrafts();
         if (!selected()) return;
+        const auto player = RE::PlayerCharacter::GetSingleton();
+        if (!player) return;
         std::vector<harvest::ID> victims;
         {
             std::lock_guard lock(mutex);
             for (const auto& [actor, poison] : ledger.candidates) victims.push_back(actor);
         }
         for (auto id : victims) {
+            const auto baseAlchemy = player->GetBaseActorValue(RE::ActorValue::kAlchemy);
             std::optional<harvest::Ingredients> reward;
             {
                 std::lock_guard lock(mutex);
                 if (generation != epoch.load()) return;
                 reward = ledger.claimVerified(id, [](harvest::ID ingredient) {
                     return RE::TESForm::LookupByID<RE::IngredientItem>(ingredient) != nullptr;
-                });
+                }, baseAlchemy);
             }
             if (!reward) continue;
-            const auto player = RE::PlayerCharacter::GetSingleton();
             for (const auto& part : *reward) player->AddObjectToContainer(
                 RE::TESForm::LookupByID<RE::IngredientItem>(part.form), nullptr, static_cast<std::int32_t>(part.count), nullptr);
-            RE::DebugNotification("Huntsman's Satchel returns your poison's ingredients.");
-            SKSE::log::info("Refunded {} ingredient types for victim {:08X}", reward->size(), id);
+            const auto sets = harvest::refundSets(baseAlchemy);
+            RE::DebugNotification(sets == 2 ? "Huntsman's Satchel returns two sets of ingredients." :
+                "Huntsman's Satchel returns your poison's ingredients.");
+            SKSE::log::info("Refunded {} ingredient types for victim {:08X}; base Alchemy={}; ingredient sets={}",
+                reward->size(), id, baseAlchemy, sets);
         }
     }
     void queueWork()
@@ -915,7 +924,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 9, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 11, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -930,7 +939,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.9 beta; Skyrim 1.6.1170; native poison stat, target and queued-death observation corrected");
+    SKSE::log::info("Huntsman's Satchel 2.0.11 beta; Skyrim 1.6.1170; two ingredient sets at base Alchemy 50+; native poison damage observation retained");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

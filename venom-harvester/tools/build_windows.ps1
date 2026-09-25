@@ -51,13 +51,17 @@ foreach ($Name in @('src/main.cpp','src/Harvest.h','src/MenuGate.h','src/CraftCa
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'VenomHarvester'; version = '2.0.9'; runtime = '1.6.1170'
+    plugin = 'VenomHarvester'; version = '2.0.11'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; harvest_tests = 'passed'; menu_tests = 'passed'; crafting_tests = 'passed'; inventory_event_tests = 'passed'; pending_crafts_tests = 'passed'; inventory_ownership_tests = 'passed'; damage_observation_tests = 'passed'; in_game_tested = $false
     trait = "Huntsman's Satchel"; combined_package_required = '2.8.0-beta1'
     poison_resistance_penalty = 50; outgoing_poison_multiplier = 1.0
     unique_native_poison_per_batch = $true; no_new_esp = $true
+    alchemy_refund_threshold = 50; alchemy_below_threshold_sets = 1; alchemy_at_or_above_threshold_sets = 2
+    refund_uses_base_alchemy_at_payout = $true; recorded_costs_unchanged = $true
+    harvest_perk_yield_synergy = $false; alchemy_refund_tests = 'passed'
+    combined_version = '2.10.11-beta1'; native_test_suites = 7
     confirmed_kill_refund_requires_corpse = $false; pending_kill_survives_corpse_deletion = $true
     crafted_poison_identity = 'unique positive unbound poison inventory delta within captured alchemy callback'
     generic_craft_event_is_output_identity = $false
@@ -89,4 +93,4 @@ $Info = [ordered]@{
     broad_on_death_poison_scan = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_9_beta1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_11_beta1.zip')

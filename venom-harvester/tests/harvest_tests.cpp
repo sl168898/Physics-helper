@@ -131,5 +131,39 @@ int main()
         assert(ledger.offer(1, 0xFF002222));
         assert(ledger.claim(1) == Ingredients({{0x100, 1}}));
     }
-    std::cout << "Huntsman's Satchel: batch, lethal-source, immediate refund, corpse deletion, recipe, multi-hit, save and cost tests passed\n";
+    {
+        // Two-ingredient and uneven recorded-cost batches cross the exact
+        // learned-skill threshold without changing the saved expenditure.
+        for (const auto level : {0.0f, 49.0f, 49.99f, 50.0f, 100.0f, 150.0f}) {
+            auto ledger = prepared();
+            const auto expectedSets = level < 50.0f ? 1u : 2u;
+            assert(ledger.offer(10, a));
+            assert(ledger.offer(11, a)); // Extra doses share this one allowance.
+            assert(ledger.claimVerified(10, [](ID) { return true; }, level) ==
+                Ingredients({{0x100, expectedSets}, {0x200, expectedSets}}));
+            assert(!ledger.claimVerified(11, [](ID) { return true; }, level));
+            assert(ledger.batches.at(a).cost == Ingredients({{0x100, 1}, {0x200, 1}}));
+            assert(ledger.offer(20, b));
+            assert(ledger.claimVerified(20, [](ID) { return true; }, level) ==
+                Ingredients({{0x100, expectedSets}, {0x200, 2u * expectedSets}}));
+            auto restored = decode(encode(ledger), [](ID id) { return id; });
+            assert(restored && !restored->offer(30, a) && !restored->offer(30, b));
+        }
+    }
+    {
+        // Existing unclaimed batches upgrade at payout, including after a
+        // save/reload. All three ingredients are returned twice, once only.
+        auto ledger = prepared();
+        assert(ledger.remember(flowers));
+        assert(ledger.offer(10, c));
+        auto restored = decode(encode(ledger), [](ID id) { return id; });
+        assert(restored);
+        assert(!restored->claimVerified(10, [](ID id) { return id != 0x400; }, 50.0f));
+        assert(restored->eligible(c));
+        assert(restored->offer(11, c));
+        assert(restored->claimVerified(11, [](ID) { return true; }, 50.0f) ==
+            Ingredients({{0x300, 2}, {0x400, 2}, {0x500, 2}}));
+        assert(!restored->offer(12, c));
+    }
+    std::cout << "Huntsman's Satchel: batch, lethal-source, immediate refund, corpse deletion, recipe, multi-hit, save, cost and Alchemy 50 refund tests passed\n";
 }
