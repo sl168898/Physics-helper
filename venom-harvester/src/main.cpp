@@ -353,6 +353,15 @@ namespace
         }
         if (!selected()) return;
         const auto generation = epoch.load();
+        // GetInventoryCounts below iterates InventoryChanges directly, and
+        // CIE's RemoveItem hook does not run EnsureSessionActive. A cache that
+        // restarted during the exit animation could therefore remain active.
+        // Make one ordinary engine count query AFTER furniture release. CIE's
+        // hook runs EnsureSessionActive here and clears that leftover session.
+        // Signature and IDs: SCIE 2.6 InventoryHooks.h / InventoryHooks.cpp.
+        using CountInventory = std::int32_t(RE::TESObjectREFR*, bool, bool);
+        static REL::Relocation<CountInventory*> countInventory{RELOCATION_ID(19274, 19700)};
+        (void)countInventory(player, false, true);
         harvest::InventoryCounts counts;
         for (const auto& [item, count] : player->GetInventoryCounts())
             if (item && item->As<RE::AlchemyItem>()) counts[item->GetFormID()] = count;

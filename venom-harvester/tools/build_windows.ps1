@@ -70,6 +70,7 @@ $Info = [ordered]@{
     paper_dll_modified = $false; arbitrary_timer_delay = $false; permanent_reference_pins = $false
     creation_and_exchange_wait_for_crafting_menu_destruction = $true
     exchange_waits_for_furniture_release = $true
+    post_exit_inventory_query_clears_late_crafting_session = $true
     expenditure_captured_synchronously = $true; source_retained_until_menu_close = $true
     pending_crafts_cosave_record = 'HSAP v1'; bound_batches_cosave_record = 'HSAT v2 unchanged'
     crafting_inventory_extender_dll_modified = $false

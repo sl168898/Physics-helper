@@ -24,6 +24,10 @@ its cache while GetOccupiedFurniture remains set, so both conditions are
 required. This waits through closing animations or a quick reopen; the existing
 Poll path retries after closure. CIE resets its session in
 its synchronous close-event handler, before that task can exchange inventory.
+After furniture release, an ordinary engine GetContainerItemCount query also
+lets CIE clear a session restarted during the exit animation. This is needed
+because CommonLib GetInventoryCounts iterates inventory directly, and CIE's
+RemoveItem hook does not itself check whether the crafting session has ended.
 
 Each captured craft retains its own cost and bottle count. Several crafts with
 the same original form become separate marked batches after closure. The
@@ -49,6 +53,7 @@ Primary source references:
 - https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/src/Hooks/InventoryHooks.cpp
 - https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/include/Hooks/CraftingSession.h
 - https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/src/Hooks/CraftingSession.cpp
+- https://github.com/ohfor/scie/blob/558ddd0c8026cb16bac0fb157cde23d9c0a3edb2/include/Hooks/InventoryHooks.h
 - https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/src/RE/U/UI.cpp
 
 ## Version 2.0.6: keep forms alive through queued inventory events
