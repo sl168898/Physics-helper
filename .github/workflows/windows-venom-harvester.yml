@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable native mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Huntsmans-Satchel-SKSE-v2-0-8-beta1
-          path: venom-harvester/_build/Huntsmans_Satchel_SKSE_v2_0_8_beta1.zip
+          name: Huntsmans-Satchel-SKSE-v2-0-9-beta1
+          path: venom-harvester/_build/Huntsmans_Satchel_SKSE_v2_0_9_beta1.zip
           if-no-files-found: error

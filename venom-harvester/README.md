@@ -1,8 +1,71 @@
-# Huntsman's Satchel — native 2.0.8 beta
+# Huntsman's Satchel — native 2.0.9 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.8-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.9-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Version 2.0.9: observe the native poison damage correctly
+
+The user's 2.0.8 test no longer crashed. Its log confirms a recorded batch,
+three consumed ingredients, a valid native poison, and exactly one native
+reference after temporary cleanup. It contains no poison-modification, lethal,
+or refund entries. Creation and inventory ownership succeeded; the detector
+was silent before any refund was offered.
+
+Two verified adapter defects blocked valid calls:
+1. ModifyActorValue can receive ActorValue::kNone, meaning use the effect's
+   actorValue member. The old hook tested only an explicit Health argument.
+   It therefore ignored native implicit-Health calls, including its diagnostics.
+   The observer now resolves this sentinel; the original native call still
+   receives the original argument, so actual damage is not changed.
+2. The pinned CommonLib GetTargetActor implementation reinterpret_casts the
+   secondary MagicTarget pointer into an Actor pointer. On Skyrim 1.6.1170,
+   AsMagicTarget returns Actor+0xA0. Comparing that reinterpreted address against
+   the native target Actor pointer rejected the same actor. We now compare
+   effect->target directly to nativeTarget->AsMagicTarget(). No guessed cast or
+   hard-coded runtime offset is used in production.
+
+Native poison code also demonstrates that a lethal operation can set killQueued
+before the victim's life state becomes dying/dead. The observer accepts a newly
+queued death only when that same native Health operation crosses from positive
+to zero/negative Health and the victim is not essential. Already-queued deaths,
+corpse ticks, non-Health changes, nonlethal poison, and bleedout do not qualify.
+Immediate dying/dead transitions continue to qualify. This is still native
+poison killing-blow evidence, not an on-death scan of active poisons.
+
+Diagnostics now capture raw/stored/resolved actor values, source and batch,
+caster, target, Health before/after, life state, killQueued transition, source
+rejection reason and nested lethal attribution. The first 160 poison operations
+per loaded game are logged, including non-Health and non-player rejections.
+All effect-derived data are captured BEFORE the original call, because it may
+destroy the ActiveEffect. The original function is called exactly once and its
+arguments are unmodified. Actor lifetime is retained across the call as before.
+
+The new regression suite reproduces the kNone rejection and the secondary-target
+address mismatch, checks explicit AV precedence and immediate/queued deaths,
+rejects nonlethal/essential/prequeued/corpse cases, and connects the corrected
+observation to one shared batch refund. Tests model these conditions; they do
+not execute Skyrim. The Windows build and gameplay check remain separate gates.
+
+Install with Skyrim closed. Load a save before the consumed test bottle if it
+is available, or record and brew a fresh batch. Close alchemy and wait for the
+preparation notification. Apply the tracked bottle, hit a living nonessential
+enemy, and let the poison deliver the final damage. This update does not infer
+refunds for kills the old detector never recorded. Keep VenomHarvester.log
+before relaunching if a refund still fails; it should now show Poison modification
+with an explicit reason, followed by Poison lethal and Refunded when eligible.
+
+The one-reference-per-bottle repair, menu-exit guards, event retention, crafting
+ledger, one-refund allowance, gift guard, and HSAT v2 / HSAP v1 formats remain.
+No ESP, other trait, thumbnail, script, configuration, or third-party DLL changes.
+
+Primary sources:
+- https://github.com/alandtse/FloatingDamageNG/blob/01d57836beb6e4bade622dee9d0ec1a6074f1336/src/Capture.cpp (OnEffectModify resolves kNone)
+- https://github.com/NoahBoddie/poison-aid/blob/9d4b176553f08de385e08f70d95a492e7cd9a9b8/src/Hooks.h (PoisonBlameHook handles kNone and killQueued)
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/src/RE/A/ActiveEffect.cpp (GetTargetActor cast)
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/A/Actor.h (runtime AsMagicTarget accessor)
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/V/ValueModifierEffect.h (slot 0x20 ABI and actorValue member)
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/M/MiddleHighProcessData.h (killQueued)
 
 ## Version 2.0.8: give inventory bottles their native ownership references
 

@@ -5,6 +5,7 @@
 #include "CraftCapture.h"
 #include "DeferredForms.h"
 #include "InventoryBottleRefs.h"
+#include "DamageObservation.h"
 #include "PendingCrafts.h"
 #include "MenuGate.h"
 #include <array>
@@ -514,21 +515,31 @@ namespace
         }
     };
 
-    bool ownedPoison(RE::ActiveEffect* effect, RE::Actor* target)
+    const char* poisonRejection(RE::ActiveEffect* effect, RE::Actor* target)
     {
-        if (!effect || !target || !effect->spell || !effect->effect || !effect->effect->baseEffect) return false;
+        if (!effect || !target || !effect->spell || !effect->effect || !effect->effect->baseEffect)
+            return "missing effect, source or target";
         const auto base = effect->effect->baseEffect;
-        if ((!base->IsHostile() && !base->IsDetrimental()) || base == batchMarker) return false;
+        if ((!base->IsHostile() && !base->IsDetrimental()) || base == batchMarker)
+            return "effect is harmless or the batch marker";
         const auto poison = effect->spell->As<RE::AlchemyItem>();
         const auto player = RE::PlayerCharacter::GetSingleton();
-        if (!poison || !poison->IsPoison() || !player || target == player ||
-            effect->GetTargetActor() != target || effect->GetCasterActor().get() != player || !selected()) return false;
-        if (effect->flags.any(RE::ActiveEffect::Flag::kDispelled) ||
-            effect->conditionStatus == RE::ActiveEffect::ConditionStatus::kFalse) return false;
+        if (!poison || !poison->IsPoison()) return "source is not an alchemy poison";
+        if (!player || target == player) return "player missing or self-target";
+        if (!harvest::matchesMagicTarget(effect->target, target)) return "effect/native target mismatch";
+        if (effect->GetCasterActor().get() != player) return "caster is not the player";
+        if (!selected()) return "trait is not selected in this session";
+        if (effect->flags.any(RE::ActiveEffect::Flag::kDispelled)) return "effect is dispelled";
+        if (effect->conditionStatus == RE::ActiveEffect::ConditionStatus::kFalse) return "effect conditions failed";
         const auto nonce = nonceOf(poison);
+        if (!nonce) return "poison has no crafting-batch marker";
         std::lock_guard lock(mutex);
         const auto found = ledger.batches.find(poison->GetFormID());
-        return nonce && found != ledger.batches.end() && found->second.nonce == nonce && ledger.eligible(poison->GetFormID());
+        if (found == ledger.batches.end()) return "batch is not in the crafting ledger";
+        if (found->second.nonce != nonce) return "batch marker differs from ledger";
+        if (found->second.paid) return "batch was already refunded";
+        if (!ledger.eligible(poison->GetFormID())) return "batch is not the remembered recipe";
+        return nullptr;
     }
 
     // Observe the native value-change operation itself. There is deliberately
@@ -540,33 +551,51 @@ namespace
         static void Modify(RE::ValueModifierEffect* effect, RE::Actor* actor, float value, RE::ActorValue av)
         {
             const auto generation = epoch.load(), serial = lethalSerial;
-            const bool healthChange = av == RE::ActorValue::kHealth;
+            const auto storedAV = effect ? effect->actorValue : RE::ActorValue::kNone;
+            const auto resolvedAV = harvest::effectiveActorValue(av, storedAV, RE::ActorValue::kNone);
+            const bool healthChange = resolvedAV == RE::ActorValue::kHealth;
             const bool alive = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
             const float health = alive ? actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) : 0;
-            const bool eligible = healthChange && alive && health > 0 && ownedPoison(effect, actor);
+            const auto beforeProcess = actor ? actor->GetMiddleHighProcess() : nullptr;
+            const bool queuedBefore = beforeProcess && beforeProcess->killQueued;
+            const bool essential = actor && actor->GetActorRuntimeData().boolFlags.any(RE::Actor::BOOL_FLAGS::kEssential);
+            const auto rejection = poisonRejection(effect, actor);
+            const bool eligible = healthChange && alive && health > 0 && !queuedBefore && !rejection;
             // The ActiveEffect can be deleted inside the engine's call.
             const auto source = eligible ? effect->spell->GetFormID() : 0;
-            RE::FormID diagnosticSource = 0;
+            RE::FormID diagnosticSource = 0, diagnosticCaster = 0;
             std::uint32_t diagnosticNonce = 0;
-            if (healthChange && actor && effect && effect->spell && selected() && damageDiagnostics.load() < 80) {
+            // Do not gate diagnostics on Health or player attribution: those
+            // filters made a rejected native poison call completely invisible.
+            if (effect && effect->spell && selected() && damageDiagnostics.load() < 160) {
                 const auto poison = effect->spell->As<RE::AlchemyItem>();
-                if (poison && poison->IsPoison() && effect->GetCasterActor().get() == RE::PlayerCharacter::GetSingleton()) {
-                    if (damageDiagnostics.fetch_add(1) < 80) {
+                if (poison && poison->IsPoison()) {
+                    if (damageDiagnostics.fetch_add(1) < 160) {
                         diagnosticSource = poison->GetFormID();
                         diagnosticNonce = nonceOf(poison);
+                        const auto caster = effect->GetCasterActor();
+                        diagnosticCaster = caster ? caster->GetFormID() : 0;
                     }
                 }
             }
             const RE::NiPointer<RE::Actor> keepAlive(actor);
+            // Preserve kNone when forwarding: only our observer resolves it.
             original(effect, actor, value, av);
-            if (!actor || !healthChange) return;
+            if (!actor || (!healthChange && !diagnosticSource)) return;
             const float after = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const auto state = actor->AsActorState()->GetLifeState();
+            const auto afterProcess = actor->GetMiddleHighProcess();
+            const bool queuedAfter = afterProcess && afterProcess->killQueued;
+            const bool lethal = harvest::isLethalHealthChange({healthChange, alive, health, after,
+                queuedBefore, queuedAfter,
+                state == RE::ACTOR_LIFE_STATE::kDying || state == RE::ACTOR_LIFE_STATE::kDead, essential});
             if (diagnosticSource) SKSE::log::info(
-                "Poison Health change: source {:08X}; batch {}; victim {:08X}; alive-before {}; health {} -> {}; state {}; eligible {}",
-                diagnosticSource, diagnosticNonce, actor->GetFormID(), alive, health, after, static_cast<unsigned>(state), eligible);
-            if (!alive || health <= 0 || serial != lethalSerial || after > 0) return;
-            if (state != RE::ACTOR_LIFE_STATE::kDying && state != RE::ACTOR_LIFE_STATE::kDead) return;
+                "Poison modification: source {:08X}; batch {}; victim {:08X}; caster {:08X}; AV input {} stored {} resolved {}; value {}; alive-before {}; Health {} -> {}; state {}; killQueued {} -> {}; eligible {}; source check {}; lethal {}; nested lethal {}",
+                diagnosticSource, diagnosticNonce, actor->GetFormID(), diagnosticCaster,
+                static_cast<std::int32_t>(av), static_cast<std::int32_t>(storedAV), static_cast<std::int32_t>(resolvedAV),
+                value, alive, health, after, static_cast<unsigned>(state), queuedBefore, queuedAfter,
+                eligible, rejection ? rejection : "accepted", lethal, serial != lethalSerial);
+            if (!lethal || serial != lethalSerial) return;
             ++lethalSerial; // An unbound poison can also block outer attribution.
             if (!eligible || generation != epoch.load() || !selected()) return;
             bool offered;
@@ -873,7 +902,7 @@ namespace
             DamageHook<RE::PeakValueModifierEffect>::install();
             DamageHook<RE::AccumulatingValueModifierEffect>::install();
             DamageHook<RE::AbsorbEffect>::install();
-            SKSE::log::info("Ready: Huntsman's Satchel; PoisonResist -50; outgoing poisons unchanged");
+            SKSE::log::info("Ready: Huntsman's Satchel; PoisonResist -50; outgoing poisons unchanged; 5 native damage observers; implicit actor values resolved");
         } else if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
             session.store(false); reset();
         } else if (message->type == SKSE::MessagingInterface::kNewGame) {
@@ -886,7 +915,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 8, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 9, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -901,7 +930,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.8 beta; Skyrim 1.6.1170; explicit native inventory references per created poison bottle");
+    SKSE::log::info("Huntsman's Satchel 2.0.9 beta; Skyrim 1.6.1170; native poison stat, target and queued-death observation corrected");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });
