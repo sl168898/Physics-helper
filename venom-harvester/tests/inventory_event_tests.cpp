@@ -1,4 +1,5 @@
 #include "DeferredForms.h"
+#include "InventoryBottleRefs.h"
 #include <array>
 #include <cassert>
 #include <deque>
@@ -41,6 +42,12 @@ namespace
         }
     };
     using Lease = harvest::DeferredForms<Forms>;
+    using Bottles = harvest::InventoryBottleRefs<Forms>;
+
+    // Raw inventory entries and created-object ownership are separate. The old
+    // test incorrectly granted a native ref as a side effect of inventory add.
+    std::unordered_map<ID, int> inventory;
+    void addObjectToContainer(ID id, int count) { inventory[id] += count; }
 
     struct Queue
     {
@@ -72,6 +79,7 @@ namespace
     void exchangeKeepsBothFormsThroughEvents()
     {
         Forms::reset();
+        inventory.clear();
         Forms::refs[source] = 1; // Inventory.
         Forms::refs[first] = 1;  // Native creation's scoped owner.
         Queue queue;
@@ -80,10 +88,13 @@ namespace
         const std::array<ID, 2> ids{source, first};
         auto lease = Lease::retain(Forms::world, ids);
         assert(lease);
+        auto bottles = Bottles::retain(Forms::world, first, 1);
+        assert(bottles);
         assert(harvest::retainAcrossQueuedEvents(std::move(lease), [&] {
             Forms::release(source);
             queue.push([&] { assert(Forms::exists(source)); ++delivered; });
-            assert(Forms::acquire(first)); // Add replacement bottle to inventory.
+            addObjectToContainer(first, 1);
+            bottles->transferToInventory();
             queue.push([&] { assert(Forms::exists(first)); ++delivered; });
         }, [&](auto task) { queue.push(std::move(task)); }));
         Forms::release(first); // makeBatch's scoped smart pointer leaves scope.
@@ -96,11 +107,15 @@ namespace
         queue.runOne(); // Cleanup follows all added/removed event consumers.
         assert(!Forms::exists(source)); // No permanent pin or leaked source form.
         assert(Forms::refs.at(first) == 1); // Only the real inventory owns it.
+        assert(inventory.at(first) == 1);
+        bottles.reset();
+        assert(Forms::refs.at(first) == 1); // Transfer is not an extra plugin pin.
     }
 
     void overlappingCraftsKeepIndependentReferences()
     {
         Forms::reset();
+        inventory.clear();
         Forms::refs[source] = 2;
         Forms::refs[first] = Forms::refs[second] = 1;
         Queue queue;
@@ -108,10 +123,13 @@ namespace
         for (ID replacement : {first, second}) {
             queue.push([&] { assert(Forms::exists(source)); ++delivered; });
             const std::array<ID, 2> ids{source, replacement};
+            auto bottles = Bottles::retain(Forms::world, replacement, 1);
+            assert(bottles);
             assert(harvest::retainAcrossQueuedEvents(Lease::retain(Forms::world, ids), [&] {
                 Forms::release(source);
                 queue.push([&] { assert(Forms::exists(source)); ++delivered; });
-                assert(Forms::acquire(replacement));
+                addObjectToContainer(replacement, 1);
+                bottles->transferToInventory();
                 queue.push([&, replacement] { assert(Forms::exists(replacement)); ++delivered; });
             }, [&](auto task) { queue.push(std::move(task)); }));
             Forms::release(replacement);

@@ -4,6 +4,7 @@
 #include "Harvest.h"
 #include "CraftCapture.h"
 #include "DeferredForms.h"
+#include "InventoryBottleRefs.h"
 #include "PendingCrafts.h"
 #include "MenuGate.h"
 #include <array>
@@ -81,7 +82,7 @@ namespace
         static bool acquire(std::uint32_t id)
         {
             auto item = RE::TESForm::LookupByID<RE::AlchemyItem>(id);
-            if (!item) return false;
+            if (!item || (id >> 24) != 0xFF || !RE::BGSCreatedObjectManager::GetSingleton()) return false;
             CreatedPolicy<RE::AlchemyItem>::Acquire(item);
             return true;
         }
@@ -94,12 +95,39 @@ namespace
                 SKSE::log::warn("Inventory-event retained form {:08X} disappeared before cleanup", id);
                 return;
             }
-            SKSE::log::info("Releasing temporary crafting/event reference to {:08X}", id);
+            SKSE::log::info("Releasing scoped native reference to {:08X}", id);
             CreatedPolicy<RE::AlchemyItem>::Release(item);
         }
     };
     using InventoryForms = harvest::DeferredForms<InventoryFormPolicy>;
+    using InventoryBottles = harvest::InventoryBottleRefs<InventoryFormPolicy>;
     std::map<std::uint32_t, std::shared_ptr<InventoryForms>> pendingForms;
+
+    void logNativeOwnership(std::uint32_t nonce, RE::FormID id, const char* stage)
+    {
+        // Read-only diagnostics. Compare addresses without dereferencing the
+        // lookup result: this also safely reports an absent manager entry after
+        // cleanup. Manager keys are not assumed to be form IDs.
+        const auto form = RE::TESForm::LookupByID(id);
+        const auto manager = RE::BGSCreatedObjectManager::GetSingleton();
+        bool inPoisons = false, inPotions = false;
+        std::uint32_t poisonRefs = 0, potionRefs = 0;
+        if (manager && form) {
+            const RE::BSSpinLockGuard lock(manager->lock);
+            for (const auto& pair : manager->poisons) if (pair.second.magicItem == form) {
+                inPoisons = true;
+                poisonRefs = pair.second.refCount;
+                break;
+            }
+            for (const auto& pair : manager->potions) if (pair.second.magicItem == form) {
+                inPotions = true;
+                potionRefs = pair.second.refCount;
+                break;
+            }
+        }
+        SKSE::log::info("Batch {} ownership {}: {:08X}; form present {}; poison entry {}; poison refs {}; potion entry {}; potion refs {}",
+            nonce, stage, id, form != nullptr, inPoisons, poisonRefs, inPotions, potionRefs);
+    }
 
     void logBatchItem(std::uint32_t nonce, const char* stage, RE::AlchemyItem* item)
     {
@@ -387,6 +415,16 @@ namespace
             const std::array<std::uint32_t, 2> eventForms{entry.source, poisonID};
             auto inventoryLease = InventoryForms::retain(generation, eventForms);
             if (!inventoryLease) continue;
+            logNativeOwnership(entry.nonce, poisonID, "before bottle references");
+            // Native poison-return code must explicitly increment once per
+            // bottle; AddObjectToContainer alone does not do this. Creation and
+            // queued-event smart pointers are separate temporary owners.
+            // Primary precedent: poison-aid, PoisonHandler::RemovePoison2.
+            auto bottleRefs = InventoryBottles::retain(generation, poisonID, entry.bottles);
+            if (!bottleRefs) {
+                SKSE::log::warn("Batch {} not exchanged: could not acquire inventory bottle references", entry.nonce);
+                continue;
+            }
             {
                 std::lock_guard lock(mutex);
                 if (!ledger.add({poisonID, entry.nonce, entry.recipe, entry.cost, false})) continue;
@@ -397,7 +435,18 @@ namespace
             harvest::retainAcrossQueuedEvents(std::move(inventoryLease), [&] {
                 player->RemoveItem(original, static_cast<std::int32_t>(entry.bottles), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
                 player->AddObjectToContainer(unique.get(), nullptr, static_cast<std::int32_t>(entry.bottles), nullptr);
+                bottleRefs->transferToInventory();
+                SKSE::log::info("Batch {} transferred {} native poison references to inventory bottles {:08X}",
+                    entry.nonce, entry.bottles, poisonID);
+                logNativeOwnership(entry.nonce, poisonID, "after bottle transfer; temporary owners still present");
             }, [tasks](auto cleanup) { tasks->AddTask(std::move(cleanup)); });
+            // A separate FIFO task runs after event cleanup has been disposed.
+            // It holds no extra reference, so the logged count proves what is
+            // left after both the creation and event owners have gone away.
+            tasks->AddTask([generation, nonce = entry.nonce, poisonID] {
+                if (generation == epoch.load() && session.load())
+                    logNativeOwnership(nonce, poisonID, "after temporary cleanup");
+            });
             ++bound;
             SKSE::log::info("Bound batch {} after menu destruction: {:08X} -> {:08X}; {} bottles; {} ingredient types",
                 entry.nonce, entry.source, poisonID, entry.bottles, entry.cost.size());
@@ -837,7 +886,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 7, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 8, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -852,7 +901,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.7 beta; Skyrim 1.6.1170; capture at brew, native creation and exchange after crafting menu destruction");
+    SKSE::log::info("Huntsman's Satchel 2.0.8 beta; Skyrim 1.6.1170; explicit native inventory references per created poison bottle");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

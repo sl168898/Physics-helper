@@ -1,8 +1,60 @@
-# Huntsman's Satchel — native 2.0.7 beta
+# Huntsman's Satchel — native 2.0.8 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.7-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.8-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Version 2.0.8: give inventory bottles their native ownership references
+
+The 2.0.7 log successfully creates and binds FF000DB1, then releases temporary
+references at 21:22:09. The matching crash at 21:22:15 occurs in Dynamic Tooltips
+1.0.5 when its inventory scan calls an item's GetPlayable virtual function.
+The object has an invalid virtual-function pointer. The stack does not identify
+that object's FormID; the two logs support a lifetime defect but do not prove
+which object was dereferenced.
+
+A concrete omission exists in the Satchel exchange: AddObjectToContainer was
+called without assigning native created-poison references for the added bottles.
+Creation and queued-event owners were then released. The former event test
+incorrectly modeled inventory addition as automatically granting a native ref.
+The primary poison-aid implementation explicitly calls IncrementCreatedPoisonRef
+once per bottle returned to inventory after AddObjectToContainer.
+
+This update reserves one native reference per output bottle before the exchange,
+then transfers those references to the inventory when addition returns. Normal
+game removal/consumption owns their lifecycle. Failed acquisition or an abandoned
+exchange releases only the uncommitted reservation. This is separate from the
+creation owner and queued-event owners, and is not a permanent plugin pin.
+Save-generation checks prevent rollback against a reused ID after loading.
+
+Read-only diagnostics report the created-object manager's poison/potion entries
+and counts before reservation, after transfer, and after temporary cleanup. The
+last diagnostic is a separate queued task with no native ownership of its own.
+It compares pointers while holding the manager lock and does not dereference a
+potentially missing item. It never edits manager maps or reference counts directly.
+
+The corrected regression model separates raw inventory entries from native
+ownership. It reproduces an inventory entry outliving its object under 2.0.7,
+then checks one and multiple bottles after temporary cleanup, normal consumption,
+failed acquisition rollback, and a load reusing the same ID. These are simulations
+of native ownership, not a Skyrim runtime test. Existing refund/kill rules and
+HSAT v2 / HSAP v1 formats are unchanged. Dynamic Tooltips, CIE and PAPER are not
+modified; menu-exit and event-lifetime guards remain in place.
+
+Install with Skyrim closed. For this crash test, load a save from BEFORE the
+failed Satchel brew, record and brew one new poison, close alchemy and wait for
+the prepared notification, then open inventory. A save already containing a
+bad dynamic item is not repaired retroactively by this change. If inventory
+opens, apply that fresh poison and let its poison damage kill an enemy. Keep
+VenomHarvester.log (and a matching crash log if any) before relaunching. In-game
+stability and refunding remain unverified until this check succeeds.
+
+Primary sources:
+- https://github.com/NoahBoddie/poison-aid/blob/9d4b176553f08de385e08f70d95a492e7cd9a9b8/src/PoisonHandler.h (RemovePoison2)
+- https://github.com/QTR-Modding/DynamicTooltipsSE/blob/v1.0.5/src/Modules.cpp (BuildLoreCache)
+- https://github.com/QTR-Modding/DynamicTooltipsSE/blob/v1.0.5/src/Hooks.cpp (inventory show)
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/B/BGSCreatedObjectManager.h
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/src/RE/I/InventoryEntryData.cpp
 
 ## Version 2.0.7: leave the crafting inventory intact until the menu closes
 
