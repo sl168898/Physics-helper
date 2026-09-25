@@ -1,8 +1,50 @@
-# Huntsman's Satchel — native 2.0.5 beta
+# Huntsman's Satchel — native 2.0.6 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.5-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.6-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Version 2.0.6: keep forms alive through queued inventory events
+
+The user's 2.0.5 log confirms native AddPoison succeeded, all real effects and
+the marker survived, and the batch was recorded. The following crash was in
+PAPER 2.2.4's ItemEventsFilter, reading a null form. Its register held the exact
+original poison ID that the Satchel had just removed during the exchange.
+
+PAPER stores container-event form IDs, queues SKSE tasks, and later resolves
+them into pointers. Its filter reads each pointer's form ID without a null
+check. Removing the last original bottle could destroy that dynamic form
+before the queued event used it. The Satchel now acquires native references to
+both original and replacement BEFORE the exchange. After removal and addition
+have queued their inventory events, it appends cleanup to the same FIFO SKSE
+task queue. The references are released after those earlier tasks run, rather
+than at the end of the crafting callback. This does not add a timing delay,
+keep permanent reference pins, or modify PAPER.dll.
+
+The deferred holder stores form IDs and the save generation. A stale task
+cannot dereference an old raw pointer or release a reused ID in a different
+save. Failed retention leaves inventory intact and records no batch. The
+native AddPoison call and the existing batch/poison-kill/refund rules remain.
+The existing HSAT version-2 co-save is unchanged.
+
+A new regression suite models the reported last-bottle deletion and queued
+lookup, then tests retention through added/removed events, overlapping crafts,
+failed acquisition rollback, release without permanent pins, and a save-load
+transition reusing dynamic IDs. It exercises the same retention helper as the
+plugin; it does not run PAPER or Skyrim itself.
+
+Primary source references:
+- PAPER 2.2.4 event collection and queueing: https://github.com/DennisSoemers/PAPER/blob/8d47b40d8d23ff74ad531abbde5e1cd47938407d/src/OnContainerChangedEventHandler.cpp
+- PAPER filter dereference: https://github.com/DennisSoemers/PAPER/blob/8d47b40d8d23ff74ad531abbde5e1cd47938407d/include/OnContainerChangedEventHandler.h
+- SKSE task FIFO and Run/Dispose order: https://github.com/ianpatt/skse64/blob/25b72352adb6543fa6d0bd3795780672b2e238e0/skse64/Hooks_Threads.cpp
+- CommonLib task callback ownership: https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/src/SKSE/Interfaces.cpp
+
+Install the full combined update and brew a fresh recorded batch. Confirm the
+power shows an unclaimed batch, then apply that fresh poison and let its damage
+deliver a killing blow. Logs retain native validation and batch details; after
+queued event delivery they also report release of temporary item references.
+If the game crashes or refunding fails, preserve the new VenomHarvester.log
+and any crash log before relaunching. In-game success still requires testing.
 
 ## Version 2.0.5: use the native poison creation path
 
