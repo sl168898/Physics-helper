@@ -685,7 +685,7 @@ namespace
         body += armed ? "\nWaiting for the next poison you brew." :
             "\nA killing blow from this poison returns the ingredients spent on its batch, once. Remember a new recipe by brewing it.";
         const auto player = RE::PlayerCharacter::GetSingleton();
-        const auto sets = harvest::refundSets(player ? player->GetBaseActorValue(RE::ActorValue::kAlchemy) : 0.0f);
+        const auto sets = harvest::refundSets(player ? player->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kAlchemy) : 0.0f);
         body += sets == 2 ? "\n\nCurrent refund: 2 ingredient sets (Alchemy 50+)." :
             "\n\nCurrent refund: 1 ingredient set. Reach Alchemy 50 for 2 sets.";
         // Do NOT pass an IMessageBoxCallback object to RE::CreateMessage.
@@ -749,7 +749,7 @@ namespace
             for (const auto& [actor, poison] : ledger.candidates) victims.push_back(actor);
         }
         for (auto id : victims) {
-            const auto baseAlchemy = player->GetBaseActorValue(RE::ActorValue::kAlchemy);
+            const auto baseAlchemy = player->AsActorValueOwner()->GetBaseActorValue(RE::ActorValue::kAlchemy);
             std::optional<harvest::Ingredients> reward;
             {
                 std::lock_guard lock(mutex);
