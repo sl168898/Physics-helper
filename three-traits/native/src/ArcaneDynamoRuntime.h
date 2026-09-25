@@ -9,6 +9,7 @@ class ArcaneDynamoRuntime {
     RE::SpellItem* trait{};
     std::function<bool()> inSession;
     bool installed{};
+    std::uintptr_t nativeCheckAddress{}, nativeCastAddress{};
     std::uint32_t diagnostics{};
     std::uint32_t chargeDiagnostics{};
     static inline ArcaneDynamoRuntime* self{};
@@ -213,12 +214,23 @@ class ArcaneDynamoRuntime {
         return dynamo::regeneration(result, s && player && owner == player->AsActorValueOwner() && s->selected());
     }
 public:
+    // Capture BEFORE Iron Lungs installs its CheckCast wrapper. Resolve these
+    // through the verified virtual slots; REL34143 is Update, NOT SpellCast.
+    void captureCasterEntries() {
+        REL::Relocation<std::uintptr_t> table{RE::VTABLE_ActorMagicCaster[0]};
+        auto entries = reinterpret_cast<const std::uintptr_t*>(table.address());
+        nativeCheckAddress = entries[0xA];
+        nativeCastAddress = entries[0x9];
+    }
     void reset() { diagnostics = 0; chargeDiagnostics = 0; }
     bool init(RE::TESDataHandler* data, const char* plugin, std::function<bool()> session) {
         self = this; inSession = std::move(session);
         trait = data->LookupForm<RE::SpellItem>(0xF60, plugin);
         auto player = RE::PlayerCharacter::GetSingleton();
         if (!trait || !player) { SKSE::log::error("Arcane Dynamo: missing trait/player; disabled"); return false; }
+        if (!nativeCheckAddress || !nativeCastAddress) {
+            SKSE::log::error("Arcane Dynamo: caster entries were not captured; disabled"); return false;
+        }
         const auto adjustAddress = REL::Relocation<std::uintptr_t>{REL::RelocationID(33763,34547)}.address() + 0x656;
         if (*reinterpret_cast<const std::uint8_t*>(adjustAddress) != 0xE8) {
             SKSE::log::error("Arcane Dynamo: effect call is not E8; feature disabled"); return false;
@@ -227,8 +239,8 @@ public:
         const Hook hooks[] = {
             {REL::Relocation<std::uintptr_t>{REL::RelocationID(33632,34410)}.address(), reinterpret_cast<void*>(targets), reinterpret_cast<void**>(&originalTargets)},
             {REL::Relocation<std::uintptr_t>{RE::Offset::MagicItem::CalculateCost}.address(), reinterpret_cast<void*>(calculateCost), reinterpret_cast<void**>(&originalCost)},
-            {REL::Relocation<std::uintptr_t>{REL::RelocationID(33364,34145)}.address(), reinterpret_cast<void*>(nativeCheck), reinterpret_cast<void**>(&originalNativeCheck)},
-            {REL::Relocation<std::uintptr_t>{REL::RelocationID(33362,34143)}.address(), reinterpret_cast<void*>(nativeCast), reinterpret_cast<void**>(&originalNativeCast)}
+            {nativeCheckAddress, reinterpret_cast<void*>(nativeCheck), reinterpret_cast<void**>(&originalNativeCheck)},
+            {nativeCastAddress, reinterpret_cast<void*>(nativeCast), reinterpret_cast<void**>(&originalNativeCast)}
         };
         std::array<void*, 4> created{};
         std::size_t createdCount{};

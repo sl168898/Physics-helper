@@ -3,14 +3,18 @@
 For Skyrim 1.6.1170 and Combined 2.10.10-beta1. The user's 1.6.0 log shows
 12.75 Magicka payments and fire magnitude 35 -> 45.5 (70 -> 91 with Runic
 Overdrive), on weapon 0001DDA2 / enchantment 00045C2D. Weapon charge also
-decreased according to the in-game report. That log does not record the native
-charge call, so it does not establish which old callback/offset was missed.
+decreased according to the in-game report. Source verification identifies the
+old suppression call 34143+151 as ActorMagicCaster::Update, not SpellCast.
+The SpellCast-only suppression scope therefore did not cover the weapon's
+native release charge call. The original log did not directly trace that call.
 
 The correction removes the fixed GetAssociatedResource call-site patches and
 delivery receipts. It scopes native CalculateCost to zero for the exact player
 and weapon enchantment during CheckCast, SpellCast and FindTargets. Full native
-CheckCast/SpellCast entry hooks also cover direct calls; vtable wrappers retain
-other handlers, including Iron Lungs. Nested matching wrappers do not run the
+CheckCast/SpellCast entry hooks also cover calls to the captured entry functions;
+their addresses come from verified vtable slots 0A/09 before the Iron Lungs
+wrapper is installed. Vtable wrappers retain other handlers, including Iron
+Lungs. Nested matching wrappers do not run the
 Magicka gate twice. Instant/other casters can match the exact equipped weapon.
 
 Dynamo's own cost probe explicitly reads the original engine cost, including
@@ -33,9 +37,11 @@ does not prove a failed charge bypass. Existing payment/damage logs remain.
 API references: CommonLibSSE-NG b93280e832f263dbef44e44cbe2936622a02f91a,
 MagicItem.cpp / Offsets.h (CalculateCost 11213/11321), MagicCaster.cpp
 (FindTargets 33632/34410), and ActorMagicCaster.h (CheckCast/SpellCast ABIs).
-CheckCast 33364/34145 and SpellCast 33362/34143 are corroborated by ProjectStaff
-c2d9d4266724c09316f14e84d9db8b8d82e1d9bb; no instruction offsets from it are
-used for charge handling. BakaBloodMagic 10aa95c56244aff3f1c78c5584968e8a9f827341
+Constellations f136590faf03efca649a98ea3b32dc1080d08e98, src/RE/Offset.h,
+identifies 34143 as ActorMagicCaster::Update. The old ProjectStaff-derived
+34143+151 hook was misattributed to SpellCast. Neither that ID nor those
+instruction offsets are used for charge handling. BakaBloodMagic
+10aa95c56244aff3f1c78c5584968e8a9f827341
 documents release cost -> CalculateMagickaCost in ActorMagicCaster.h / Utils.h.
 
 # Earlier Biggie Trait Mechanics 1.5.0 — Runic Overdrive

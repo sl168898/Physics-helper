@@ -315,6 +315,7 @@ void message(SKSE::MessagingInterface::Message* msg) {
         // Allocate shared storage once: neither feature may replace the
         // trampoline memory already used by the other's call-site hook.
         SKSE::AllocTrampoline(128);
+        arcaneDynamo.captureCasterEntries();
         ironLungs.init(data, pluginFile, [] { return ready.load() && session.load(); }, [] { return skald.casting(); });
         runicOverdrive.init(data, pluginFile, [] { return ready.load() && session.load(); });
         arcaneDynamo.init(data, pluginFile, [] { return ready.load() && session.load(); });
