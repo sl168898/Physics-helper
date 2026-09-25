@@ -1,8 +1,24 @@
-# Huntsman's Satchel — native 2.0.3 beta
+# Huntsman's Satchel — native 2.0.4 diagnostic
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.3-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.4-diagnostic. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Current diagnostic status
+
+The 2.0.3 user log confirms the finished poison is now found (one actual
+inventory bottle), but the native tracked-copy step is rejected. That warning
+combined many distinct checks, so the precise rejection cause is not yet known.
+This build preserves every creation/identity check and adds a distinct reason
+to each rejection. It logs the original and returned form IDs, poison flags,
+marker values, effect counts, and each effect's base ID, magnitude, duration,
+area, cost, condition presence, hostility and NoMagnitude status (up to 32
+effects per item). Native call entry and successful validation are also logged.
+
+No native-copy fix is claimed by 2.0.4. The next required check is to install it,
+arm recording, brew ONE poison, and upload VenomHarvester.log before restarting
+Skyrim. That crafting attempt is sufficient to expose the failing check; a
+combat test is not required at this stage. The game is not available here.
 
 Select the trait, cast the Huntsman's Satchel lesser power, choose **Remember
 next poison**, then brew a poison. Its exact ingredients become the stored

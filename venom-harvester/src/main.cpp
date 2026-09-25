@@ -67,16 +67,54 @@ namespace
     };
     using CreatedPoison = RE::BSTSmartPointer<RE::AlchemyItem, CreatedPolicy>;
 
+    void logBatchItem(std::uint32_t nonce, const char* stage, RE::AlchemyItem* item)
+    {
+        if (!item) {
+            SKSE::log::info("Batch {} {}: no item returned", nonce, stage);
+            return;
+        }
+        SKSE::log::info("Batch {} {}: form {:08X}; poison {}; effects {}; marker {}", nonce, stage,
+            item->GetFormID(), item->IsPoison(), item->effects.size(), nonceOf(item));
+        const auto limit = std::min<std::size_t>(item->effects.size(), 32);
+        for (std::size_t i = 0; i < limit; ++i) {
+            const auto e = item->effects[i];
+            if (!e) {
+                SKSE::log::info("Batch {} {} effect {}: null entry", nonce, stage, i);
+                continue;
+            }
+            const auto base = e->baseEffect;
+            using Flag = RE::EffectSetting::EffectSettingData::Flag;
+            SKSE::log::info(
+                "Batch {} {} effect {}: base {:08X}; magnitude {}; duration {}; area {}; cost {}; conditions {}; hostile {}; detrimental {}; noMagnitude {}",
+                nonce, stage, i, base ? base->GetFormID() : 0, e->effectItem.magnitude,
+                e->effectItem.duration, e->effectItem.area, e->cost, e->conditions.head != nullptr,
+                base && base->IsHostile(), base && base->IsDetrimental(), base && base->data.flags.any(Flag::kNoMagnitude));
+        }
+        if (item->effects.size() > limit)
+            SKSE::log::info("Batch {} {}: remaining {} effects omitted", nonce, stage, item->effects.size() - limit);
+    }
+
     CreatedPoison makeBatch(RE::AlchemyItem* original, std::uint32_t nonce)
     {
         CreatedPoison result;
         auto manager = RE::BGSCreatedObjectManager::GetSingleton();
-        if (!manager || !original || !original->IsPoison() || nonceOf(original) || original->effects.empty()) return result;
+        const auto reject = [nonce](const char* reason) {
+            SKSE::log::warn("Batch {} native-copy rejection: {}", nonce, reason);
+            return CreatedPoison{};
+        };
+        logBatchItem(nonce, "original", original);
+        if (!manager) return reject("created-object manager unavailable");
+        if (!original) return reject("original item missing");
+        if (!original->IsPoison()) return reject("original item is not classified as poison");
+        if (nonceOf(original)) return reject("original already has a batch marker");
+        if (original->effects.empty()) return reject("original has no effects");
         RE::BSTArray<RE::Effect> effects;
         // A freshly brewed vanilla-menu poison has unconditional EFIT entries.
         // Fail closed for a custom conditional entry rather than discard it.
         for (auto e : original->effects) {
-            if (!e || !e->baseEffect || e->conditions.head) return {};
+            if (!e) return reject("original contains a null effect entry");
+            if (!e->baseEffect) return reject("original effect has no base effect");
+            if (e->conditions.head) return reject("original effect has unsupported per-entry conditions");
             RE::Effect copy;
             copy.effectItem = e->effectItem;
             copy.baseEffect = e->baseEffect;
@@ -89,10 +127,17 @@ namespace
         effects.push_back(marker); // Hidden, zero cost, empty Script archetype.
         using Fn = void(RE::BGSCreatedObjectManager*, CreatedPoison&, RE::BSTArray<RE::Effect>&);
         static REL::Relocation<Fn*> create{RELOCATION_ID(35265, 36167)};
+        SKSE::log::info("Batch {} calling native AddPotion: {} input effects; marker base {:08X}; expected nonce {}",
+            nonce, effects.size(), batchMarker ? batchMarker->GetFormID() : 0, nonce);
         create(manager, result, effects);
-        if (!result || !result->IsPoison() || result.get() == original || (result->GetFormID() >> 24) != 0xFF ||
-            retained->HasForm(result.get()) || nonceOf(result.get()) != nonce ||
-            result->effects.size() != original->effects.size() + 1) return {};
+        logBatchItem(nonce, "native result", result.get());
+        if (!result) return reject("native AddPotion returned no object");
+        if (!result->IsPoison()) return reject("native result is not classified as poison before metadata copy");
+        if (result.get() == original) return reject("native AddPotion reused the original object");
+        if ((result->GetFormID() >> 24) != 0xFF) return reject("native result is not a dynamic form");
+        if (retained->HasForm(result.get())) return reject("native result is already retained as an earlier batch");
+        if (nonceOf(result.get()) != nonce) return reject("native result lost or changed the batch marker magnitude");
+        if (result->effects.size() != original->effects.size() + 1) return reject("native result effect count differs from original plus marker");
         // Verify every real effect survived native creation exactly once.
         std::vector<RE::Effect*> remaining;
         for (auto e : result->effects) if (e && e->baseEffect != batchMarker) remaining.push_back(e);
@@ -103,13 +148,15 @@ namespace
                     e->effectItem.duration == other->effectItem.duration &&
                     e->effectItem.area == other->effectItem.area;
             });
-            if (it == remaining.end()) return {};
+            if (it == remaining.end()) return reject("a real effect changed base, magnitude, duration, or area during native creation");
             remaining.erase(it);
         }
         result->data = original->data;
         result->fullName = original->fullName;
         result->weight = original->weight;
-        return result->IsPoison() ? result : CreatedPoison{};
+        if (!result->IsPoison()) return reject("result lost poison classification after metadata copy");
+        SKSE::log::info("Batch {} native-copy validation passed: {:08X}", nonce, result->GetFormID());
+        return result;
     }
 
     using AlchemyMenu = RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu;
@@ -224,7 +271,7 @@ namespace
             }
             auto unique = makeBatch(original, nonce);
             if (!unique) {
-                SKSE::log::warn("Batch {}: native poison identity check failed; inventory left intact", nonce);
+                SKSE::log::warn("Batch {} was not bound; see preceding native-copy rejection; inventory left intact", nonce);
                 RE::DebugNotification("The Satchel could not bind this batch.");
                 return;
             }
@@ -644,7 +691,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 3, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 4, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -659,7 +706,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.3 beta; Skyrim 1.6.1170; actual crafted inventory output capture; one ingredient refund per crafting batch");
+    SKSE::log::info("Huntsman's Satchel 2.0.4 diagnostic; Skyrim 1.6.1170; detailed native-copy rejection reasons; gameplay rules unchanged");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });
