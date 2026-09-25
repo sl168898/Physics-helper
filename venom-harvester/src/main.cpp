@@ -44,8 +44,8 @@ namespace
         return 0;
     }
 
-    // CommonLib powerof3's documented created-object API, adapted to the
-    // pinned CommonLibSSE-NG ABI. No raw TESForm duplication or borrowed effects.
+    // Created-object lifetime API, adapted to the pinned CommonLibSSE-NG ABI.
+    // No raw TESForm duplication or borrowed effects.
     template<class T> struct CreatedPolicy
     {
         static void Acquire(T* p)
@@ -66,6 +66,10 @@ namespace
         }
     };
     using CreatedPoison = RE::BSTSmartPointer<RE::AlchemyItem, CreatedPolicy>;
+    // Native creation writes one pointer through its smart-pointer out parameter.
+    // Keep the created-object release policy when that pointer leaves this scope.
+    static_assert(sizeof(CreatedPoison) == sizeof(RE::AlchemyItem*));
+    static_assert(alignof(CreatedPoison) == alignof(RE::AlchemyItem*));
 
     void logBatchItem(std::uint32_t nonce, const char* stage, RE::AlchemyItem* item)
     {
@@ -125,15 +129,19 @@ namespace
         marker.baseEffect = batchMarker;
         marker.effectItem.magnitude = static_cast<float>(nonce);
         effects.push_back(marker); // Hidden, zero cost, empty Script archetype.
-        using Fn = void(RE::BGSCreatedObjectManager*, CreatedPoison&, RE::BSTArray<RE::Effect>&);
-        static REL::Relocation<Fn*> create{RELOCATION_ID(35265, 36167)};
-        SKSE::log::info("Batch {} calling native AddPotion: {} input effects; marker base {:08X}; expected nonce {}",
+        // AddPotion (35265/36167) produced poison=false in the 2.0.4 log.
+        // Use the separate AddPoison API documented by
+        // CommonLibSSE-GG and CommonLibVR (35266/36168). Do not change an item's
+        // classification after registering it in the wrong manager collection.
+        using Fn = RE::AlchemyItem*(RE::BGSCreatedObjectManager*, CreatedPoison&, RE::BSTArray<RE::Effect>&);
+        static REL::Relocation<Fn*> create{RELOCATION_ID(35266, 36168)};
+        SKSE::log::info("Batch {} calling native AddPoison: {} input effects; marker base {:08X}; expected nonce {}",
             nonce, effects.size(), batchMarker ? batchMarker->GetFormID() : 0, nonce);
         create(manager, result, effects);
         logBatchItem(nonce, "native result", result.get());
-        if (!result) return reject("native AddPotion returned no object");
+        if (!result) return reject("native AddPoison returned no object");
         if (!result->IsPoison()) return reject("native result is not classified as poison before metadata copy");
-        if (result.get() == original) return reject("native AddPotion reused the original object");
+        if (result.get() == original) return reject("native AddPoison reused the original object");
         if ((result->GetFormID() >> 24) != 0xFF) return reject("native result is not a dynamic form");
         if (retained->HasForm(result.get())) return reject("native result is already retained as an earlier batch");
         if (nonceOf(result.get()) != nonce) return reject("native result lost or changed the batch marker magnitude");
@@ -691,7 +699,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 4, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 5, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -706,7 +714,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.4 diagnostic; Skyrim 1.6.1170; detailed native-copy rejection reasons; gameplay rules unchanged");
+    SKSE::log::info("Huntsman's Satchel 2.0.5 beta; Skyrim 1.6.1170; native AddPoison batch creation; one ingredient refund per crafting batch");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

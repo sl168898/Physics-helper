@@ -1,24 +1,36 @@
-# Huntsman's Satchel — native 2.0.4 diagnostic
+# Huntsman's Satchel — native 2.0.5 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.4-diagnostic. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.5-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
 
-## Current diagnostic status
+## Version 2.0.5: use the native poison creation path
 
-The 2.0.3 user log confirms the finished poison is now found (one actual
-inventory bottle), but the native tracked-copy step is rejected. That warning
-combined many distinct checks, so the precise rejection cause is not yet known.
-This build preserves every creation/identity check and adds a distinct reason
-to each rejection. It logs the original and returned form IDs, poison flags,
-marker values, effect counts, and each effect's base ID, magnitude, duration,
-area, cost, condition presence, hostility and NoMagnitude status (up to 32
-effects per item). Native call entry and successful validation are also logged.
+The 2.0.4 diagnostic log confirmed that the original poison was found, and its
+tracked copy preserved both real effects and the batch marker, but returned
+`poison false`. The copy was rejected before a refundable batch was recorded.
+The adapter had called the native `AddPotion` function (SE/AE 35265/36167).
+Skyrim has a separate `AddPoison` function (35266/36168), documented by both
+CommonLibSSE-GG and CommonLibVR. This update calls that poison-specific path.
 
-No native-copy fix is claimed by 2.0.4. The next required check is to install it,
-arm recording, brew ONE poison, and upload VenomHarvester.log before restarting
-Skyrim. That crafting attempt is sufficient to expose the failing check; a
-combat test is not required at this stage. The game is not available here.
+The returned object must still be a poison BEFORE copying its original
+metadata. No poison flag is forced on a potion, no manager maps are manually
+edited, and the marker's magic-effect flags are unchanged. The unique dynamic
+form, batch marker and every real effect must still pass the same checks.
+The created-object smart-pointer release policy remains in place.
+
+Primary API references (pinned source):
+- https://github.com/eddoursul/CommonLibSSE-GG/blob/2053e94fd1c147b36eae2b4338118552fba407e2/src/RE/B/BGSCreatedObjectManager.cpp
+- https://github.com/eddoursul/CommonLibSSE-GG/blob/2053e94fd1c147b36eae2b4338118552fba407e2/include/RE/B/BGSCreatedObjectManager.h
+- https://github.com/MinLL/CommonLibVR/blob/550cc4fb9114649dcf526d1f3d73d710c5d7003b/src/RE/B/BGSCreatedObjectManager.cpp
+
+Install the full combined update, arm recording, and brew a FRESH poison.
+Expect the recorded-batch notification and at least one unclaimed batch in the
+power's menu. Apply the fresh bottle and let its poison damage deliver the
+killing blow. Keep VenomHarvester.log before restarting if either step fails.
+Detailed original/copy and lethal-damage diagnostics remain enabled.
+Windows compilation and the existing native tests are required; they cannot
+run Skyrim's AddPoison implementation or prove an in-game refund.
 
 Select the trait, cast the Huntsman's Satchel lesser power, choose **Remember
 next poison**, then brew a poison. Its exact ingredients become the stored
@@ -53,7 +65,7 @@ than the finished poison. The output is the single unbound poison whose count
 increased in the inventory during that captured callback. More than one
 possible poison output is rejected rather than guessed. Only the added bottle
 count is exchanged; pre-existing stock is not included.
-It uses BGSCreatedObjectManager to make a distinct engine-created poison for
+It uses BGSCreatedObjectManager::AddPoison to make a distinct engine-created poison for
 the batch, with a hidden, zero-cost, empty script effect holding a batch number.
 Every real EFIT entry is checked before exchanging the new output, and the
 original poison name, weight and alchemy data are retained. Eligible batches
@@ -122,9 +134,9 @@ includes immediate settlement, deletion before payout, repeated payout tasks,
 multiple victims per batch, missing ingredient forms and save/reload.
 Windows compilation and native tests do not establish in-game success.
 
-API provenance: pinned CharmedBaryon/CommonLibSSE-NG headers; the created potion
-API and Address Library IDs are documented in powerof3/CommonLibSSE's
-BGSCreatedObjectManager.h/.cpp. No guessed machine-code instruction offsets.
+API provenance: pinned CharmedBaryon/CommonLibSSE-NG ABI headers and the
+CommonLibSSE-GG/CommonLibVR AddPoison references above. Created-object reference
+counting is also documented in powerof3/CommonLibSSE. No guessed offsets.
 
 ## Version 2.0.3: DefaultPoison craft-event identity repair
 
