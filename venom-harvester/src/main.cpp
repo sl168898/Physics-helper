@@ -2,6 +2,7 @@
 #include <SKSE/SKSE.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include "Harvest.h"
+#include "CraftCapture.h"
 #include "MenuGate.h"
 #include <array>
 #include <atomic>
@@ -121,8 +122,8 @@ namespace
         Craft* previous = crafting;
         std::uint64_t generation = epoch.load();
         harvest::Recipe recipe;
-        std::map<RE::FormID, std::int32_t> before;
-        std::vector<RE::AlchemyItem*> outputs;
+        harvest::InventoryCounts before;
+        std::vector<RE::FormID> craftEvents;
         bool active{};
 
         explicit Craft(AlchemyMenu* menu)
@@ -169,35 +170,44 @@ namespace
         }
         void finish()
         {
-            if (outputs.empty()) return; // Normal non-crafting menu callbacks.
+            if (craftEvents.empty()) return; // Normal non-crafting menu callbacks.
             if (generation != epoch.load() || !selected()) return;
-            if (outputs.size() != 1) {
-                SKSE::log::warn("Craft rejected: {} distinct poison outputs in one callback", outputs.size());
+            if (craftEvents.size() != 1) {
+                SKSE::log::warn("Craft rejected: {} distinct poison craft event forms in one callback", craftEvents.size());
                 return;
             }
-            auto original = outputs.front();
             const auto player = RE::PlayerCharacter::GetSingleton();
-            if (!player || !original || !original->IsPoison() || nonceOf(original)) {
-                SKSE::log::warn("Craft rejected: output is missing, not poison, or already bound");
-                return;
-            }
-            std::map<RE::FormID, std::int32_t> after;
+            if (!player) return;
+            harvest::InventoryCounts after;
             for (const auto& [item, count] : player->GetInventoryCounts())
                 if (item && (item->As<RE::IngredientItem>() || item->As<RE::AlchemyItem>())) after[item->GetFormID()] = count;
-            const auto bottles = after[original->GetFormID()] - before[original->GetFormID()];
-            if (bottles <= 0 || bottles > 100000) {
-                SKSE::log::warn("Craft {:08X} rejected: net output {} bottles", original->GetFormID(), bottles);
+            const auto output = harvest::identifyCraftOutput(!craftEvents.empty(), before, after, [](harvest::ID id) {
+                const auto item = RE::TESForm::LookupByID<RE::AlchemyItem>(id);
+                return item && item->IsPoison() && !nonceOf(item);
+            });
+            if (output.status != harvest::OutputStatus::found) {
+                SKSE::log::warn("Craft event {:08X} rejected: {}", craftEvents.front(), harvest::outputStatusName(output.status));
+                for (const auto& [id, count] : after) {
+                    const auto oldCount = harvest::inventoryCount(before, id);
+                    if (count > oldCount) if (const auto item = RE::TESForm::LookupByID<RE::AlchemyItem>(id))
+                        SKSE::log::info("Craft inventory diagnostic: {:08X}; {} -> {}; poison {}; marker {}",
+                            id, oldCount, count, item->IsPoison(), nonceOf(item));
+                }
+                RE::DebugNotification("The Satchel could not record this batch.");
                 return;
             }
-            harvest::Ingredients cost;
-            for (auto id : recipe) {
-                const auto spent = before[id] - after[id];
-                if (spent < 0 || spent > 100000) {
-                    SKSE::log::warn("Craft rejected: ingredient {:08X} has invalid expenditure {}", id, spent);
-                    return;
-                }
-                if (spent) cost.push_back({id, static_cast<std::uint32_t>(spent)});
+            auto original = RE::TESForm::LookupByID<RE::AlchemyItem>(output.item);
+            if (!original) return;
+            const auto bottles = output.bottles;
+            SKSE::log::info("Craft event {:08X}; actual output {:08X}; net {} bottles",
+                craftEvents.front(), output.item, bottles);
+            const auto consumed = harvest::consumedIngredients(recipe, before, after);
+            if (!consumed) {
+                SKSE::log::warn("Craft rejected: invalid ingredient expenditure");
+                RE::DebugNotification("The Satchel could not record this batch.");
+                return;
             }
+            const auto& cost = *consumed;
             bool remembered = false;
             std::uint32_t nonce = 0;
             {
@@ -531,8 +541,9 @@ namespace
             auto item = event->item->As<RE::AlchemyItem>();
             if (item && item->IsPoison()) {
                 if (crafting) {
-                    if (std::find(crafting->outputs.begin(), crafting->outputs.end(), item) == crafting->outputs.end())
-                        crafting->outputs.push_back(item);
+                    const auto id = item->GetFormID();
+                    if (std::find(crafting->craftEvents.begin(), crafting->craftEvents.end(), id) == crafting->craftEvents.end())
+                        crafting->craftEvents.push_back(id);
                 }
                 else SKSE::log::info("Poison craft outside a captured alchemy transaction: {:08X}; {}; no refund budget",
                     item->GetFormID(), captureStatus);
@@ -633,7 +644,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 2, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 3, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -648,7 +659,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.2 beta; Skyrim 1.6.1170; corpse-independent confirmed-kill refunds; one ingredient refund per crafting batch");
+    SKSE::log::info("Huntsman's Satchel 2.0.3 beta; Skyrim 1.6.1170; actual crafted inventory output capture; one ingredient refund per crafting batch");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

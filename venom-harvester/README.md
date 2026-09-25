@@ -1,6 +1,6 @@
-# Huntsman's Satchel — native 2.0.2 beta
+# Huntsman's Satchel — native 2.0.3 beta
 
-Replaces Venom Harvester inside Biggie Traits Combined 2.10.2-beta1. The DLL
+Replaces Venom Harvester inside Biggie Traits Combined 2.10.3-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
 
@@ -32,6 +32,11 @@ the weakness normally; this is not an unconditional final-damage multiplier.
 
 The adapter wraps documented AlchemyMenu callbacks and its craft confirmation,
 captures ItemCrafted, and measures actual ingredient consumption and output.
+The craft event is only a signal: it may name the DefaultPoison template rather
+than the finished poison. The output is the single unbound poison whose count
+increased in the inventory during that captured callback. More than one
+possible poison output is rejected rather than guessed. Only the added bottle
+count is exchanged; pre-existing stock is not included.
 It uses BGSCreatedObjectManager to make a distinct engine-created poison for
 the batch, with a hidden, zero-cost, empty script effect holding a batch number.
 Every real EFIT entry is checked before exchanging the new output, and the
@@ -104,6 +109,32 @@ Windows compilation and native tests do not establish in-game success.
 API provenance: pinned CharmedBaryon/CommonLibSSE-NG headers; the created potion
 API and Address Library IDs are documented in powerof3/CommonLibSSE's
 BGSCreatedObjectManager.h/.cpp. No guessed machine-code instruction offsets.
+
+## Version 2.0.3: DefaultPoison craft-event identity repair
+
+The user's 2.0.2 log confirmed recording was armed, then reported:
+`Craft 0005629E rejected: net output 0 bottles`.
+0005629E is Skyrim.esm's DefaultPoison, not the unique finished poison. Using
+that event form as the output inventory key prevented batch recording.
+The event now signals a poison craft while before/after inventory snapshots
+identify the actual output and exact new bottle count. Ingredients are still
+measured from the same callback. No arbitrary delay or later-inventory scan
+can mix purchases, free refills or a subsequent craft into the transaction.
+
+The shared capture helper has regressions for a generic event with zero
+template bottles but a positive actual poison output, existing stock, multiple
+bottles sharing one refund, ambiguous outputs, absent events, already-bound
+poisons, completely/partially free crafts and invalid/overflowing counts.
+New logs show the event form and actual output separately. If capture is
+rejected, positive alchemy inventory changes are logged for diagnosis.
+
+The native lethal-kill test, corpse-independent payout, menu callback repair,
+once-per-batch limit and HSAT version-2 co-save remain unchanged. A new batch
+must be brewed to record an expenditure that older versions failed to capture.
+The code is compiled and tested; successful gameplay still needs verification.
+
+DefaultPoison identifier reference:
+https://github.com/Mutagen-Modding/Mutagen.Bethesda.FormKeys/blob/650e147f854086b47b91ea80a881751466135256/Mutagen.Bethesda.FormKeys.SkyrimSE/Skyrim/Ingestible.cs
 
 
 ## Version 2.0.1: Satchel button crash repair
