@@ -44,17 +44,17 @@ Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/Harvest.h','src/MenuGate.h','src/CraftCapture.h','src/DeferredForms.h','src/InventoryBottleRefs.h','src/DamageObservation.h','src/PendingCrafts.h','tests/harvest_tests.cpp','tests/menu_tests.cpp','tests/crafting_tests.cpp','tests/inventory_event_tests.cpp','tests/inventory_ownership_tests.cpp','tests/damage_observation_tests.cpp','tests/pending_crafts_tests.cpp','CMakeLists.txt','vcpkg.json')) {
+foreach ($Name in @('src/main.cpp','src/Harvest.h','src/HarvestYield.h','src/MenuGate.h','src/CraftCapture.h','src/DeferredForms.h','src/InventoryBottleRefs.h','src/DamageObservation.h','src/PendingCrafts.h','tests/harvest_tests.cpp','tests/harvest_yield_tests.cpp','tests/menu_tests.cpp','tests/crafting_tests.cpp','tests/inventory_event_tests.cpp','tests/inventory_ownership_tests.cpp','tests/damage_observation_tests.cpp','tests/pending_crafts_tests.cpp','CMakeLists.txt','vcpkg.json')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'VenomHarvester'; version = '2.0.9'; runtime = '1.6.1170'
+    plugin = 'VenomHarvester'; version = '2.0.10'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; harvest_tests = 'passed'; menu_tests = 'passed'; crafting_tests = 'passed'; inventory_event_tests = 'passed'; pending_crafts_tests = 'passed'; inventory_ownership_tests = 'passed'; damage_observation_tests = 'passed'; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; harvest_tests = 'passed'; menu_tests = 'passed'; crafting_tests = 'passed'; inventory_event_tests = 'passed'; pending_crafts_tests = 'passed'; inventory_ownership_tests = 'passed'; damage_observation_tests = 'passed'; harvest_yield_tests = 'passed'; in_game_tested = $false
     trait = "Huntsman's Satchel"; combined_package_required = '2.8.0-beta1'
     poison_resistance_penalty = 50; outgoing_poison_multiplier = 1.0
     unique_native_poison_per_batch = $true; no_new_esp = $true
@@ -87,6 +87,11 @@ $Info = [ordered]@{
     queued_poison_death_requires_new_kill_queue_and_health_crossing = $true
     raw_and_resolved_actor_values_and_rejection_reasons_logged = $true
     broad_on_death_poison_scan = $false
+    harvest_yield_perks_discovered_from_loaded_records = $true
+    harvest_yield_checked_at_refund = $true
+    harvest_refund_multiplier_without_perk = 1; harvest_refund_multiplier_with_perk = 2
+    refund_once_per_batch_unchanged = $true; recorded_cost_not_multiplied = $true
+    initial_jarrin_root_gift_count = 1
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_9_beta1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_10_beta1.zip')

@@ -1,8 +1,54 @@
-# Huntsman's Satchel — native 2.0.9 beta
+# Huntsman's Satchel — native 2.0.10 beta
 
 Replaces Venom Harvester inside Biggie Traits Combined 2.10.9-beta1. The DLL
 keeps the filename VenomHarvester.dll and the existing VH_Native.Poll binding.
 Skyrim Steam 1.6.1170, matching SKSE and AE Address Library are required.
+
+## Version 2.0.10: double-harvest perk synergy
+
+Owning a perk that at least doubles ingredient harvesting grants two sets of
+spent ingredients on each qualifying Satchel refund. Without that perk, it
+returns one set. Check ownership at payout, so an unpaid existing batch benefits
+if the perk is taken after brewing. Removing the perk restores the normal yield.
+Every bottle, weapon hit and victim of one crafting action still shares ONE
+refund allowance. The multiplier is applied to the claimed copy only; stored
+costs, spent state and HSAT v2 / HSAP v1 serialization remain unchanged.
+The initial Jarrin Root gift remains exactly one per character.
+
+The supplied Requiem.esp nulls vanilla Green Thumb (Skyrim.esm:00105F2E).
+The exact replacement perk is not present in the supplied files. To avoid a
+wrong hard-coded FormID, discover qualifying perks from the winning loaded
+PERK records at DataLoaded and check Actor::HasPerk when refunding. Recognized
+entries are Mod Ingredients Harvested (87), single constant value, Set/Multiply
+at least 2 or Add at least 1, entry rank zero. Higher ordinary Skyrim ranks with
+separate PERK forms work normally. Internal nonzero entry ranks and scripted,
+random or actor-value-based harvesting rules are not inferred. Detection logs
+show each matched perk's actual name and FormID, plus unsupported internal ranks.
+If no qualifying record is loaded, ordinary one-set refunds remain available.
+
+This is a perk-ownership synergy: plant/source conditions on the harvesting
+entry are not carried onto the Satchel, which has no harvested plant reference.
+Any owned qualifying perk enables exactly 2x for every recorded ingredient,
+including animal ingredients and Jarrin Root spent in the recipe. Several perks
+or stronger harvesting values never stack the Satchel bonus beyond two sets.
+Catalysis/Mod Potions Created and extra weapon-hit perks do not enable it.
+
+The power menu shows current refund yield. Refund logs include the chosen perk,
+multiplier and actual ingredient counts. The native poison killing-blow detector,
+created-bottle ownership, alchemy-exit guards and one-time gift code are unchanged.
+The combined package updates only the Satchel's two spell descriptions and its
+active-effect description in the existing ESP, preserving IDs, gameplay records,
+thumbnails and other traits.
+
+Validation: focused 1x/2x, multiple victims, perk gain/removal between brewing and
+refund, save/load, already-paid batch, missing forms and partial/high expenditure
+tests. Windows compilation plus all regression suites are required for release.
+No Skyrim runtime test is claimed.
+
+Primary API evidence: pinned CommonLibSSE-NG BGSPerk, BGSPerkEntry,
+BGSEntryPointPerkEntry, BGSEntryPointFunctionDataOneValue and Actor::HasPerk;
+SmartHarvestSE dataCase.cpp independently discovers harvesting perks from the
+same entry point and constant function data. No new engine hook is introduced.
 
 ## Version 2.0.9: observe the native poison damage correctly
 

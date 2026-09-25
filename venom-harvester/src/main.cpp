@@ -2,6 +2,7 @@
 #include <SKSE/SKSE.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include "Harvest.h"
+#include "HarvestYield.h"
 #include "CraftCapture.h"
 #include "DeferredForms.h"
 #include "InventoryBottleRefs.h"
@@ -23,6 +24,7 @@ namespace
     RE::EffectSetting* batchMarker{};
     RE::BGSListForm* retained{};
     RE::IngredientItem* jarrin{};
+    std::vector<RE::BGSPerk*> doubleHarvestPerks;
     std::atomic_bool ready{}, session{}, queued{};
     harvest::MenuGate menuGate;
     std::atomic<std::uint64_t> epoch{};
@@ -37,6 +39,50 @@ namespace
         return ready.load() && session.load() && player && player->HasSpell(trait);
     }
     void queueWork();
+
+    void discoverHarvestPerks(RE::TESDataHandler* data)
+    {
+        using Function = RE::BGSEntryPointPerkEntry::EntryData::Function;
+        using DataType = RE::BGSEntryPointFunctionData::FunctionType;
+        static_assert(RE::BGSEntryPoint::ENTRY_POINT::kModIngredientsHarvested == 87);
+        static_assert(static_cast<std::uint32_t>(Function::kSetValue) == 1);
+        static_assert(static_cast<std::uint32_t>(Function::kAddValue) == 2);
+        static_assert(static_cast<std::uint32_t>(Function::kMultiplyValue) == 3);
+        doubleHarvestPerks.clear();
+        for (const auto perk : data->GetFormArray<RE::BGSPerk>()) {
+            if (!perk || perk->IsDeleted()) continue;
+            for (const auto base : perk->perkEntries) {
+                if (!base || base->GetType() != RE::PERK_ENTRY_TYPE::kEntryPoint) continue;
+                const auto entry = static_cast<RE::BGSEntryPointPerkEntry*>(base);
+                if (!entry->functionData || entry->functionData->GetType() != DataType::kOneValue) continue;
+                const auto value = static_cast<RE::BGSEntryPointFunctionDataOneValue*>(entry->functionData)->data;
+                if (!harvest::doublesHarvestYield(
+                    static_cast<std::uint32_t>(entry->entryData.entryPoint.get()),
+                    static_cast<std::uint32_t>(entry->entryData.function.get()), value)) continue;
+                // Skyrim normally represents later player perk ranks by
+                // separate forms. Do not infer a nonzero entry rank from a
+                // yes/no HasPerk result.
+                if (entry->GetRank() != 0) {
+                    SKSE::log::warn("Harvest-yield perk {:08X} '{}' has unsupported internal entry rank {}",
+                        perk->GetFormID(), perk->GetName(), entry->GetRank());
+                    continue;
+                }
+                doubleHarvestPerks.push_back(perk);
+                SKSE::log::info("Double harvest perk: {:08X} '{}'; function {}; value {}",
+                    perk->GetFormID(), perk->GetName(), static_cast<std::uint32_t>(entry->entryData.function.get()), value);
+                break;
+            }
+        }
+        SKSE::log::info("Satchel harvest synergy: {} qualifying perk records; refund checks current ownership; bonus capped at two sets",
+            doubleHarvestPerks.size());
+    }
+
+    RE::BGSPerk* ownedHarvestPerk(RE::PlayerCharacter* player)
+    {
+        if (player) for (const auto perk : doubleHarvestPerks)
+            if (player->HasPerk(perk)) return perk;
+        return nullptr;
+    }
 
     std::uint32_t nonceOf(RE::AlchemyItem* item)
     {
@@ -684,6 +730,9 @@ namespace
         }
         body += armed ? "\nWaiting for the next poison you brew." :
             "\nA killing blow from this poison returns the ingredients spent on its batch, once. Remember a new recipe by brewing it.";
+        body += ownedHarvestPerk(RE::PlayerCharacter::GetSingleton()) ?
+            "\n\nRefund yield: 2 sets (double-harvest perk)." :
+            "\n\nRefund yield: 1 set. A double-harvest perk increases this to 2 sets.";
         // Do NOT pass an IMessageBoxCallback object to RE::CreateMessage.
         // Its pinned CommonLib signature is misleading: the native helper
         // expects an old-style raw function pointer and null-ended varargs.
@@ -743,20 +792,28 @@ namespace
             for (const auto& [actor, poison] : ledger.candidates) victims.push_back(actor);
         }
         for (auto id : victims) {
+            const auto player = RE::PlayerCharacter::GetSingleton();
+            if (!player) return;
+            const auto harvestPerk = ownedHarvestPerk(player);
+            const auto multiplier = harvestPerk ? 2u : 1u;
             std::optional<harvest::Ingredients> reward;
             {
                 std::lock_guard lock(mutex);
                 if (generation != epoch.load()) return;
-                reward = ledger.claimVerified(id, [](harvest::ID ingredient) {
+                reward = harvest::claimRefund(ledger, id, harvestPerk != nullptr, [](harvest::ID ingredient) {
                     return RE::TESForm::LookupByID<RE::IngredientItem>(ingredient) != nullptr;
                 });
             }
             if (!reward) continue;
-            const auto player = RE::PlayerCharacter::GetSingleton();
             for (const auto& part : *reward) player->AddObjectToContainer(
                 RE::TESForm::LookupByID<RE::IngredientItem>(part.form), nullptr, static_cast<std::int32_t>(part.count), nullptr);
-            RE::DebugNotification("Huntsman's Satchel returns your poison's ingredients.");
-            SKSE::log::info("Refunded {} ingredient types for victim {:08X}", reward->size(), id);
+            RE::DebugNotification(harvestPerk ?
+                "Huntsman's Satchel returns two sets of your poison's ingredients." :
+                "Huntsman's Satchel returns your poison's ingredients.");
+            SKSE::log::info("Refunded {} ingredient types for victim {:08X}; yield {}x; harvest perk {:08X}",
+                reward->size(), id, multiplier, harvestPerk ? harvestPerk->GetFormID() : 0);
+            for (const auto& part : *reward)
+                SKSE::log::info("Refund ingredient {:08X}: {}", part.form, part.count);
         }
     }
     void queueWork()
@@ -891,6 +948,7 @@ namespace
             jarrin = data->LookupForm<RE::IngredientItem>(0x1BCBC, "Skyrim.esm");
             ready.store(trait && retained && power && weakness && batchMarker && jarrin);
             if (!ready.load()) { SKSE::log::error("Requires Biggie Traits Combined 2.8.0 or later Satchel records"); return; }
+            discoverHarvestPerks(data);
             const auto source = RE::ScriptEventSourceHolder::GetSingleton();
             source->AddEventSink<RE::TESSpellCastEvent>(&Events::get());
             source->AddEventSink<RE::TESFormDeleteEvent>(&Events::get());
@@ -915,7 +973,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 9, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 10, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -930,7 +988,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.9 beta; Skyrim 1.6.1170; native poison stat, target and queued-death observation corrected");
+    SKSE::log::info("Huntsman's Satchel 2.0.10 beta; Skyrim 1.6.1170; double-harvest perk grants two ingredient sets per claimed batch");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });
