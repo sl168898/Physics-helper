@@ -94,19 +94,19 @@ class ArcaneDynamoRuntime {
         const float amount = payment(spell, player);
         auto pending = s->receipt(caster);
         if (pending) *pending = {caster, spell, true};
-        if (!dynamo::canPay(player->GetActorValue(RE::ActorValue::kMagicka), amount)) {
+        if (!dynamo::canPay(player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kMagicka), amount)) {
             count = 0;
             s->log("INSUFFICIENT MAGICKA", spell, amount, 0);
             return false;
         }
         // Reserve once BEFORE any effects can absorb Magicka. Multiple effects
         // on the same enchantment all run within this one native delivery.
-        player->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, -amount);
+        player->AsActorValueOwner()->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, -amount);
         Delivery current{caster, spell, weapon, true, false};
         dynamo::Scope<Delivery*> context(delivery, &current);
         const bool result = originalTargets(caster, power, count, source, loading, onlyHostile);
         if (count == 0) {
-            player->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, amount);
+            player->AsActorValueOwner()->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, amount);
             s->log("NO TARGET / REFUNDED", spell, amount, count);
         } else s->log("PAID", spell, amount, count);
         // Some paths notify SpellCast inside FindTargets; others do so directly
@@ -125,7 +125,7 @@ class ArcaneDynamoRuntime {
         dynamo::Scope<RE::MagicItem*> scope(bypassCharge, item);
         const bool allowed = originalCheck(caster, spell, dual, strength, reason, baseValue);
         if (!allowed) return false;
-        if (!dynamo::canPay(caster->actor->GetActorValue(RE::ActorValue::kMagicka), payment(item, caster->actor))) {
+        if (!dynamo::canPay(caster->actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kMagicka), payment(item, caster->actor))) {
             if (reason) *reason = RE::MagicSystem::CannotCastReason::kMagicka;
             return false;
         }
