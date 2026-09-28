@@ -166,7 +166,8 @@ namespace
         removeReward(player);
         // Clear the original two inn rewards, including a timed pre-update
         // reward. Kyne's Peace and unrelated potions are never dispelled.
-        if (const auto effects = player->GetActiveEffectList()) {
+        const auto target = player->GetMagicTarget();
+        if (const auto effects = target ? target->GetActiveEffectList() : nullptr) {
             for (auto effect : *effects) {
                 if (!effect || !effect->spell) continue;
                 const auto id = effect->spell->GetFormID();
