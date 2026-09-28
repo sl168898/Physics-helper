@@ -226,6 +226,87 @@ namespace
         return result;
     }
 
+    RE::InventoryEntryData* liveInventoryEntry(RE::PlayerCharacter* player, RE::AlchemyItem* item)
+    {
+        const auto changes = player ? player->GetInventoryChanges(false) : nullptr;
+        if (changes && changes->entryList)
+            for (auto entry : *changes->entryList)
+                if (entry && entry->object == item) return entry;
+        return nullptr;
+    }
+
+    std::string customStackName(RE::ExtraDataList* extra)
+    {
+        const auto text = extra ? extra->GetByType<RE::ExtraTextDisplayData>() : nullptr;
+        return text && text->displayName.c_str() ? text->displayName.c_str() : "";
+    }
+
+    std::optional<harvest::NameCounts> snapshotNames(
+        RE::PlayerCharacter* player, RE::AlchemyItem* item, std::int64_t total)
+    {
+        if (total < 0) return std::nullopt;
+        harvest::NameCounts names{{"", total}};
+        const auto entry = liveInventoryEntry(player, item);
+        std::set<RE::ExtraDataList*> seen;
+        if (entry && entry->extraLists) for (auto extra : *entry->extraLists) {
+            if (!extra || !seen.insert(extra).second) continue;
+            const auto name = customStackName(extra);
+            if (!harvest::validBatchName(name)) return std::nullopt;
+            if (name.empty()) continue;
+            const auto count = extra->GetCount();
+            if (count < 0 || count > names[""]) return std::nullopt;
+            names[name] += count;
+            names[""] -= count;
+        }
+        return names;
+    }
+
+    struct SourceStackPart
+    {
+        RE::ExtraDataList* extra{};
+        std::int32_t count{};
+        std::unique_ptr<RE::ExtraDataList> created;
+    };
+    struct SourceStackPlan
+    {
+        RE::InventoryEntryData* entry{};
+        std::vector<SourceStackPart> parts;
+    };
+    std::optional<SourceStackPlan> planSourceStacks(RE::PlayerCharacter* player,
+        RE::AlchemyItem* item, const std::string& name, std::uint32_t bottles, std::int64_t total)
+    {
+        SourceStackPlan plan;
+        plan.entry = liveInventoryEntry(player, item);
+        if (!plan.entry) return std::nullopt;
+        std::int64_t explicitCount = 0;
+        auto remaining = bottles;
+        std::set<RE::ExtraDataList*> seen;
+        if (plan.entry->extraLists) for (auto extra : *plan.entry->extraLists) {
+            if (!extra || !seen.insert(extra).second) continue;
+            const auto count = extra->GetCount();
+            if (count < 0) return std::nullopt;
+            explicitCount += count;
+            if (explicitCount > total) return std::nullopt;
+            if (remaining && customStackName(extra) == name) {
+                const auto take = std::min(remaining, static_cast<std::uint32_t>(count));
+                if (take) plan.parts.push_back({extra, static_cast<std::int32_t>(take), {}});
+                remaining -= take;
+            }
+        }
+        if (remaining && (!name.empty() || total - explicitCount < remaining)) return std::nullopt;
+        // Give unextended bottles explicit temporary stack entries so native
+        // RemoveItem cannot choose a differently named older stack by default.
+        while (remaining) {
+            const auto take = std::min<std::uint32_t>(remaining, INT16_MAX);
+            auto extra = std::make_unique<RE::ExtraDataList>();
+            extra->SetCount(static_cast<std::uint16_t>(take));
+            auto pointer = extra.get();
+            plan.parts.push_back({pointer, static_cast<std::int32_t>(take), std::move(extra)});
+            remaining -= take;
+        }
+        return plan;
+    }
+
     using AlchemyMenu = RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu;
     struct Craft;
     thread_local Craft* crafting{};
@@ -237,6 +318,7 @@ namespace
         std::uint64_t generation = epoch.load();
         harvest::Recipe recipe;
         harvest::InventoryCounts before;
+        std::map<harvest::ID, harvest::NameCounts> namesBefore;
         std::vector<RE::FormID> craftEvents;
         bool active{};
 
@@ -269,6 +351,9 @@ namespace
             for (const auto& [item, count] : player->GetInventoryCounts()) {
                 if (item && (item->As<RE::IngredientItem>() || item->As<RE::AlchemyItem>()))
                     before[item->GetFormID()] = count;
+                if (item) if (auto poison = item->As<RE::AlchemyItem>(); poison && poison->IsPoison() && !nonceOf(poison))
+                    if (auto names = snapshotNames(player, poison, std::max(count, 0)))
+                        namesBefore.emplace(item->GetFormID(), std::move(*names));
             }
             active = true;
             crafting = this;
@@ -313,6 +398,15 @@ namespace
             auto original = RE::TESForm::LookupByID<RE::AlchemyItem>(output.item);
             if (!original) return;
             const auto bottles = output.bottles;
+            const auto afterNames = snapshotNames(player, original, harvest::inventoryCount(after, output.item));
+            const auto priorNames = namesBefore.find(output.item);
+            const harvest::NameCounts emptyNames;
+            const auto& prior = priorNames == namesBefore.end() ? emptyNames : priorNames->second;
+            const auto name = afterNames ? harvest::craftedBatchName(prior, *afterNames, bottles) : std::nullopt;
+            if (!name || (priorNames == namesBefore.end() && harvest::inventoryCount(before, output.item) > 0)) {
+                SKSE::log::warn("Craft {:08X}: ambiguous custom-name inventory delta; batch left untouched", output.item);
+                return;
+            }
             SKSE::log::info("Craft event {:08X}; actual output {:08X}; net {} bottles",
                 craftEvents.front(), output.item, bottles);
             const auto consumed = harvest::consumedIngredients(recipe, before, after);
@@ -344,7 +438,8 @@ namespace
             }
             {
                 std::lock_guard lock(mutex);
-                if (!pendingCrafts.add({output.item, nonce, static_cast<std::uint32_t>(bottles), 0, recipe, cost},
+                if (!pendingCrafts.add({output.item, nonce, static_cast<std::uint32_t>(bottles), 0, recipe, cost,
+                        *name, true, static_cast<std::uint32_t>(harvest::nameCount(prior, *name))},
                         static_cast<std::int32_t>(harvest::inventoryCount(before, output.item)))) {
                     SKSE::log::warn("Batch {}: source count changed outside captured crafts; inventory left intact", nonce);
                     return;
@@ -354,6 +449,7 @@ namespace
             if (remembered) RE::DebugNotification("Recipe recorded. Close alchemy to prepare the Satchel's poison.");
             SKSE::log::info("Staged batch {}: source {:08X}; {} bottles; {} ingredient types; waiting for crafting menu destruction",
                 nonce, output.item, bottles, cost.size());
+            SKSE::log::info("Batch {} captured custom name: '{}'", nonce, *name);
             for (const auto& part : cost)
                 SKSE::log::info("Batch {} ingredient {:08X}: consumed {}", nonce, part.form, part.count);
         }
@@ -399,6 +495,17 @@ namespace
             const auto count = harvest::inventoryCount(counts, id);
             if (count < 0 || static_cast<std::uint64_t>(count) < required) missing.insert(id);
         }
+        std::map<std::pair<harvest::ID, std::string>, std::uint64_t> requiredNames;
+        for (const auto& entry : work) if (entry.nameKnown) {
+            const auto [it, fresh] = requiredNames.try_emplace(std::pair{entry.source, entry.customName}, entry.nameReserve);
+            it->second += entry.bottles;
+        }
+        for (const auto& [key, required] : requiredNames) {
+            const auto item = RE::TESForm::LookupByID<RE::AlchemyItem>(key.first);
+            const auto names = snapshotNames(player, item, harvest::inventoryCount(counts, key.first));
+            if (!names || static_cast<std::uint64_t>(harvest::nameCount(*names, key.second)) < required)
+                missing.insert(key.first);
+        }
         SKSE::log::info("Crafting menu destroyed and station released; settling {} captured batches", work.size());
         std::size_t bound = 0;
         for (const auto& entry : work) {
@@ -409,6 +516,39 @@ namespace
                 SKSE::log::warn("Batch {} not exchanged: source {:08X} missing, changed, or fewer captured bottles remain",
                     entry.nonce, entry.source);
                 continue;
+            }
+            auto name = entry.customName;
+            if (!entry.nameKnown) {
+                // Older pending records have no names. Infer only when every
+                // remaining bottle belongs to one unambiguous name group.
+                const auto names = snapshotNames(player, original, harvest::inventoryCount(counts, entry.source));
+                std::size_t groups = 0;
+                if (names) for (const auto& [candidate, count] : *names)
+                    if (count > 0) { name = candidate; ++groups; }
+                if (groups != 1) {
+                    SKSE::log::warn("Legacy pending batch {} has ambiguous names; inventory left intact", entry.nonce);
+                    continue;
+                }
+            }
+            auto sourcePlan = planSourceStacks(player, original, name, entry.bottles,
+                harvest::inventoryCount(counts, entry.source));
+            if (!sourcePlan) {
+                SKSE::log::warn("Batch {} name '{}' no longer has the required stack; inventory left intact", entry.nonce, name);
+                continue;
+            }
+            // All destination names are owned data; no borrowed inventory
+            // pointer or UI string survives the alchemy-menu boundary.
+            std::vector<std::pair<std::unique_ptr<RE::ExtraDataList>, std::int32_t>> destinations;
+            for (auto left = entry.bottles; left;) {
+                const auto take = std::min<std::uint32_t>(left, INT16_MAX);
+                std::unique_ptr<RE::ExtraDataList> extra;
+                if (!name.empty()) {
+                    extra = std::make_unique<RE::ExtraDataList>();
+                    extra->Add(new RE::ExtraTextDisplayData(name.c_str()));
+                    extra->SetCount(static_cast<std::uint16_t>(take));
+                }
+                destinations.emplace_back(std::move(extra), static_cast<std::int32_t>(take));
+                left -= take;
             }
             auto unique = makeBatch(original, entry.nonce);
             if (!unique) continue;
@@ -434,9 +574,15 @@ namespace
             // CIE no longer owns the crafting inventory. PAPER still consumes
             // queued container events, so preserve the 2.0.6 FIFO lifetime fix.
             harvest::retainAcrossQueuedEvents(std::move(inventoryLease), [&] {
-                player->RemoveItem(original, static_cast<std::int32_t>(entry.bottles), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-                player->AddObjectToContainer(unique.get(), nullptr, static_cast<std::int32_t>(entry.bottles), nullptr);
+                for (auto& part : sourcePlan->parts)
+                    if (part.created) sourcePlan->entry->AddExtraList(part.created.release());
+                for (const auto& part : sourcePlan->parts)
+                    player->RemoveItem(original, part.count, RE::ITEM_REMOVE_REASON::kRemove, part.extra, nullptr);
+                for (auto& [extra, count] : destinations)
+                    player->AddObjectToContainer(unique.get(), extra.release(), count, nullptr);
                 bottleRefs->transferToInventory();
+                counts[entry.source] -= entry.bottles;
+                SKSE::log::info("Batch {} preserved custom name '{}' on {:08X}", entry.nonce, name, poisonID);
                 SKSE::log::info("Batch {} transferred {} native poison references to inventory bottles {:08X}",
                     entry.nonce, entry.bottles, poisonID);
                 logNativeOwnership(entry.nonce, poisonID, "after bottle transfer; temporary owners still present");
@@ -835,7 +981,7 @@ namespace
         if (!api->WriteRecord(recordID, 2, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
             SKSE::log::error("Could not write Huntsman's Satchel save state");
         const auto pending = harvest::encodePending(pendingCrafts);
-        if (!api->WriteRecord(pendingRecordID, 1, pending.data(), static_cast<std::uint32_t>(pending.size())))
+        if (!api->WriteRecord(pendingRecordID, 2, pending.data(), static_cast<std::uint32_t>(pending.size())))
             SKSE::log::error("Could not write pending Satchel crafts");
     }
     void load(SKSE::SerializationInterface* api)
@@ -843,7 +989,7 @@ namespace
         reset();
         std::uint32_t type, version, length;
         while (api->GetNextRecordInfo(type, version, length)) {
-            if (type == pendingRecordID && version == 1 && length <= 64 * 1024 * 1024) {
+            if (type == pendingRecordID && (version == 1 || version == 2) && length <= 64 * 1024 * 1024) {
                 std::vector<std::uint8_t> bytes(length);
                 if (api->ReadRecordData(bytes.data(), length) != length) continue;
                 auto state = harvest::decodePending(bytes, [api](harvest::ID oldID) {
@@ -924,7 +1070,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 11, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 0, 12, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -939,7 +1085,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.11 beta; Skyrim 1.6.1170; two ingredient sets at base Alchemy 50+; native poison damage observation retained");
+    SKSE::log::info("Huntsman's Satchel 2.0.12 beta; Skyrim 1.6.1170; Rename Potions batch names preserved; Alchemy 50 double refund retained");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });

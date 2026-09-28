@@ -1,3 +1,27 @@
+# Huntsman's Satchel Rename Potions compatibility 2.0.12 beta
+
+Fixes custom names disappearing when Satchel replaces a brewed poison with its
+tracked copy after leaving the alchemy station. The captured inventory name is
+preserved in pending save data and copied into the new inventory stack. Source
+bottles are selected by their own name, including when one base poison has several
+custom names. Earlier named bottles are reserved; uncertain transfers are skipped.
+
+The 2.0.11 Alchemy 50 double ingredient return, once-per-batch refund ledger,
+poison damage detection and inventory lifetime fixes are retained. HSAT v2 is
+unchanged; pending HSAP v2 records include names and the loader also reads v1.
+
+Install the updated combined traits package and keep the Wheeler/I4 v1.3.2 patch.
+The file this update changes is SKSE/Plugins/VenomHarvester.dll. It does not replace
+RenamePotionsSKSE.dll, wheeler.dll or InventoryInjector.dll. Start Skyrim afresh.
+
+For a new batch, choose its name at the alchemy table before brewing, then leave
+the table normally. The name should remain on the Satchel-tracked bottles.
+Names already discarded by an older version cannot be reconstructed reliably;
+this update does not invent those lost names. Existing tracked batches keep their
+refund records. Validation is automated; no in-game test was available here.
+
+Earlier documentation follows for reference:
+
 # Huntsman's Satchel — native 2.0.11 beta
 
 Replaces Venom Harvester inside Biggie Traits Combined 2.10.11-beta1. The DLL
