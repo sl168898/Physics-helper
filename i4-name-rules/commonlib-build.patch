@@ -1,0 +1,11 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -14,7 +14,7 @@
+ endif()
+ 
+ find_package(binary_io REQUIRED CONFIG)
+-find_package(Boost REQUIRED COMPONENTS stl_interfaces)
++find_package(Boost REQUIRED)
+ find_package(spdlog REQUIRED CONFIG)
+ 
+ include(cmake/sourcelist.cmake)

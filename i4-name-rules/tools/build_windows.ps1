@@ -28,6 +28,8 @@ if ((& git -C (Join-Path $I4 'external/CommonLibSSE') rev-parse HEAD).Trim() -ne
 if ((& git -C (Join-Path $I4 'tools/SKSE-CMakeModules') rev-parse HEAD).Trim() -ne $CMakeCommit) { throw 'CMake module revision mismatch' }
 Run 'git' @('-C', $I4, 'apply', '--check', (Join-Path $Root 'name-keywords.patch'))
 Run 'git' @('-C', $I4, 'apply', (Join-Path $Root 'name-keywords.patch'))
+Run 'git' @('-C', (Join-Path $I4 'external/CommonLibSSE'), 'apply', '--check', (Join-Path $Root 'commonlib-build.patch'))
+Run 'git' @('-C', (Join-Path $I4 'external/CommonLibSSE'), 'apply', (Join-Path $Root 'commonlib-build.patch'))
 Run 'cmake' @('-S', (Join-Path $Root 'tests'), '-B', (Join-Path $WorkDirectory 'tests'),
     '-G', 'Visual Studio 17 2022', '-A', 'x64', "-DI4_SOURCE=$I4")
 Run 'cmake' @('--build', (Join-Path $WorkDirectory 'tests'), '--config', 'Release')
@@ -60,7 +62,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Source 'InventoryInjector'
 foreach ($Name in @('src','docs','CMakeLists.txt','CMakePresets.json','vcpkg.json','vcpkg-configuration.json','.clang-format','.editorconfig','.gitmodules','LICENSE','README.md')) {
     Copy-Item (Join-Path $I4 $Name) (Join-Path $Source 'InventoryInjector') -Recurse
 }
-foreach ($Name in @('tools','tests','name-keywords.patch','README.md')) {
+foreach ($Name in @('tools','tests','name-keywords.patch','commonlib-build.patch','README.md')) {
     Copy-Item (Join-Path $Root $Name) $Source -Recurse
 }
 $Info = [ordered]@{
@@ -70,6 +72,7 @@ $Info = [ordered]@{
     dependencyRegistryCommit = 'a7b6122f6b6504d16d96117336a0562693579933'; patchCommit = $env:GITHUB_SHA
     targetRuntime = 'Steam Skyrim SE 1.6.1170'; dllSHA256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLower()
     patchSHA256 = (Get-FileHash (Join-Path $Root 'name-keywords.patch') -Algorithm SHA256).Hash.ToLower()
+    commonLibBuildPatchSHA256 = (Get-FileHash (Join-Path $Root 'commonlib-build.patch') -Algorithm SHA256).Hash.ToLower()
     automatedTests = '22 name-matching checks'; inGameTested = $false
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'I4-KEYWORD-BUILD-INFO.json') -Encoding utf8

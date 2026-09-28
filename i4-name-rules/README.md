@@ -14,6 +14,8 @@ Build with Windows 2022/Visual Studio 2022 x64:
 `powershell -File tools/build_windows.ps1`
 The script pins upstream I4, both submodules, vcpkg tooling, and the 2023-02-24
 dependency registry compatible with upstream's 2023 CommonLib headers.
+The CommonLib build-only patch requests Boost headers without asking CMake to
+locate a nonexistent compiled stl_interfaces library; the dependency is header-only.
 It creates `InventoryInjector_Name_Keywords_v1_3.zip` containing the DLL, modified
 source, patch, licenses, test source, build script and build provenance.
 
