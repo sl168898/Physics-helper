@@ -13,6 +13,7 @@ namespace ovation
     inline constexpr std::array<std::uint32_t, 6> actorValues{24, 25, 26, 17, 107, 146};
     inline constexpr std::uint32_t spellStart = 0x870;
     inline constexpr std::uint32_t effectStart = 0x860;
+    inline constexpr float rewardMultiplier = 5.0f;
     using Amounts = std::array<float, actorValues.size()>;
 
     inline std::optional<std::size_t> slot(std::uint32_t av)
@@ -22,11 +23,11 @@ namespace ovation
         return std::nullopt;
     }
 
-    inline bool addTriple(Amounts& amounts, std::uint32_t av, float base)
+    inline bool addReward(Amounts& amounts, std::uint32_t av, float base)
     {
         const auto index = slot(av);
         if (!index || !std::isfinite(base) || base < 0.0f) return false;
-        const auto result = amounts[*index] + base * 3.0f;
+        const auto result = amounts[*index] + base * rewardMultiplier;
         if (!std::isfinite(result)) return false;
         amounts[*index] = result;
         return true;

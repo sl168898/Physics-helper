@@ -138,7 +138,7 @@ namespace
                 (type != RE::EffectArchetype::kValueModifier && type != RE::EffectArchetype::kPeakValueModifier) ||
                 !base->data.flags.all(RE::EffectSetting::EffectSettingData::Flag::kRecover) ||
                 effect->conditions.head || base->conditions.head ||
-                !ovation::addTriple(amounts, static_cast<std::uint32_t>(base->data.primaryAV), effect->effectItem.magnitude))
+                !ovation::addReward(amounts, static_cast<std::uint32_t>(base->data.primaryAV), effect->effectItem.magnitude))
                 return false;
             any = any || effect->effectItem.magnitude > 0.0f;
         }
@@ -201,7 +201,7 @@ namespace
             return;
         }
         state.award(combined, townOf(player->GetCurrentLocation()));
-        SKSE::log::info("Awarded 3x inn reward {:08X}; town={:08X}; health={} magicka={} stamina={} speech={} speechMod={} barter={}",
+        SKSE::log::info("Awarded 5x inn reward {:08X}; town={:08X}; health={} magicka={} stamina={} speech={} speechMod={} barter={}",
             rewardID, state.lastTown, amounts[0], amounts[1], amounts[2], amounts[3], amounts[4], amounts[5]);
     }
 
@@ -364,7 +364,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({1, 0, 0, 0});
+    data.PluginVersion({1, 1, 0, 0});
     data.PluginName("StandingOvation");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true);
@@ -384,7 +384,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_level(spdlog::level::info);
     spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Standing Ovation 1.0.0 beta; Skyrim 1.6.1170; constant 3x inn rewards, next-town arrival expiration.");
+    SKSE::log::info("Standing Ovation 1.1.0 beta; Skyrim 1.6.1170; constant 5x inn rewards, next-town arrival expiration.");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(signature);
     serialization->SetSaveCallback(save);

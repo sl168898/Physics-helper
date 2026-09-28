@@ -50,7 +50,7 @@ foreach ($Name in @('src/main.cpp','src/RewardState.h','tests/reward_tests.cpp',
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'StandingOvation'; version = '1.0.0-beta1'; runtime = '1.6.1170'
+    plugin = 'StandingOvation'; version = '1.1.0-beta1'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; reward_lifecycle_tests = 'passed'; in_game_tested = $false

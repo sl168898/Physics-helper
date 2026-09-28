@@ -16,16 +16,16 @@ void require(bool condition, const char* message)
 int main()
 {
     ovation::Amounts base{};
-    require(ovation::addTriple(base, 24, 25), "health reward accepted");
-    require(ovation::addTriple(base, 107, 10), "speech modifier accepted");
-    require(base[0] == 75 && base[4] == 30, "exactly three times base");
-    require(!ovation::addTriple(base, 999, 10), "unknown actor value rejected");
-    require(!ovation::addTriple(base, 24, -1), "negative reward rejected");
-    require(!ovation::addTriple(base, 24, std::numeric_limits<float>::infinity()), "infinity rejected");
+    require(ovation::addReward(base, 24, 25), "health reward accepted");
+    require(ovation::addReward(base, 107, 10), "speech modifier accepted");
+    require(base[0] == 125 && base[4] == 50, "exactly five times base");
+    require(!ovation::addReward(base, 999, 10), "unknown actor value rejected");
+    require(!ovation::addReward(base, 24, -1), "negative reward rejected");
+    require(!ovation::addReward(base, 24, std::numeric_limits<float>::infinity()), "infinity rejected");
     ovation::Amounts flute{};
     flute[4] = 60;
     auto combined = ovation::mergeReward(base, flute, 1u << 4);
-    require(combined[0] == 75 && combined[4] == 60, "different instrument stat bonuses coexist");
+    require(combined[0] == 125 && combined[4] == 60, "different instrument stat bonuses coexist");
     require(ovation::mergeReward(combined, flute, 1u << 4) == combined, "same stat does not stack");
 
     ovation::State state;
