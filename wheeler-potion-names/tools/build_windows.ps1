@@ -27,6 +27,8 @@ ClonePinned 'https://github.com/CharmedBaryon/CommonLibSSE-NG.git' $Common $Comm
 ClonePinned 'https://github.com/microsoft/vcpkg.git' $Vcpkg $VcpkgCommit
 Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'rename-potions.patch'))
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'rename-potions.patch'))
+Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'i4-named-icons.patch'))
+Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'i4-named-icons.patch'))
 Run (Join-Path $Vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 $env:VCPKG_ROOT = $Vcpkg
 Run 'cmake' @('-S', $Refined, '-B', $Build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
@@ -63,18 +65,19 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Source 'Wheeler-Refined') 
 foreach ($Name in @('src','cmake','CMakeLists.txt','CMakePresets.json','vcpkg.json','vcpkg-configuration.json','.clang-format','.editorconfig','LICENSE','LICENSES','NOTICE.md','THIRD_PARTY_NOTICES.md','BUILDING.md','README.md','tools')) {
     Copy-Item (Join-Path $Refined $Name) (Join-Path $Source 'Wheeler-Refined') -Recurse
 }
-foreach ($Name in @('tools','tests','rename-potions.patch','README.md')) {
+foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','README.md')) {
     Copy-Item (Join-Path $Root $Name) $Source -Recurse
 }
 $Info = [ordered]@{
-    patchVersion = '1.0'; builtUTC = [DateTime]::UtcNow.ToString('o')
+    patchVersion = '1.1'; builtUTC = [DateTime]::UtcNow.ToString('o')
     refinedCommit = $RefinedCommit; commonLibCommit = $CommonCommit; vcpkgCommit = $VcpkgCommit
     patchCommit = $env:GITHUB_SHA
     targetRuntime = 'Steam Skyrim SE 1.6.1170'; targetRefined = '1.3.3.0'
     dllSHA256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLower()
     patchSHA256 = (Get-FileHash (Join-Path $Root 'rename-potions.patch') -Algorithm SHA256).Hash.ToLower()
-    automatedTests = '16 batch selection, depletion, legacy migration and UTF-8 checks'
+    i4PatchSHA256 = (Get-FileHash (Join-Path $Root 'i4-named-icons.patch') -Algorithm SHA256).Hash.ToLower()
+    automatedTests = '16 batch identity checks and 11 name-dependent icon cache checks'
     inGameTested = $false
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'BUILD-INFO.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Rename_Potions_Patch_v1_0.zip') -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Rename_Potions_I4_Patch_v1_1.zip') -CompressionLevel Optimal

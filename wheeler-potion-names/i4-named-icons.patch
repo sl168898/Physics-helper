@@ -1,0 +1,304 @@
+diff --git a/src/bin/Integrations/I4/I4IconProvider.cpp b/src/bin/Integrations/I4/I4IconProvider.cpp
+index 930f8da..6dd3d93 100644
+--- a/src/bin/Integrations/I4/I4IconProvider.cpp
++++ b/src/bin/Integrations/I4/I4IconProvider.cpp
+@@ -313,7 +313,8 @@ namespace I4Integration
+ 		const Texture::Image& fallback,
+ 		RE::TESForm* object,
+ 		std::uint64_t signature,
+-		std::uint32_t requestedSizePx)
++		std::uint32_t requestedSizePx,
++		const std::string& displayName)
+ 	{
+ 		SyncConfig();
+ 		auto& stats = GetStats();
+@@ -401,7 +402,7 @@ namespace I4Integration
+ 			I4IconSpec cachedSpec{};
+ 			Texture::Image cachedImage{};
+ 			bool cachedPrecolored = false;
+-			const bool cachedResolved = I4IconResolver::GetSingleton().TryGetCached(object, signature, cachedSpec);
++			const bool cachedResolved = I4IconResolver::GetSingleton().TryGetCached(object, signature, cachedSpec, displayName);
+ 			const bool cachedRendered = cachedResolved &&
+ 			                            I4SwfIconRenderer::GetSingleton().TryGetCachedIcon(
+ 				                            cachedSpec,
+@@ -462,7 +463,7 @@ namespace I4Integration
+ 		}
+ 		_loggedUnavailable = false;
+ 
+-		I4IconSpec spec = I4IconResolver::GetSingleton().Resolve(object, signature);
++		I4IconSpec spec = I4IconResolver::GetSingleton().Resolve(object, signature, nullptr, nullptr, displayName);
+ 		if (!spec.valid) {
+ 			if (IsTrackedI4DiagForm(formID)) {
+ 				LogTrackedI4ProviderState("[I4Diag:00057A7A][provider] decision=fallback reason=no_spec");
+diff --git a/src/bin/Integrations/I4/I4IconProvider.h b/src/bin/Integrations/I4/I4IconProvider.h
+index 0d62d09..1ea592e 100644
+--- a/src/bin/Integrations/I4/I4IconProvider.h
++++ b/src/bin/Integrations/I4/I4IconProvider.h
+@@ -15,7 +15,8 @@ namespace I4Integration
+ 			const Texture::Image& fallback,
+ 			RE::TESForm* object,
+ 			std::uint64_t signature,
+-			std::uint32_t requestedSizePx);
++			std::uint32_t requestedSizePx,
++			const std::string& displayName = {});
+ 
+ 		void Reset();
+ 		std::string GetStatusString() const;
+diff --git a/src/bin/Integrations/I4/I4IconResolver.cpp b/src/bin/Integrations/I4/I4IconResolver.cpp
+index 068c8fb..04a5443 100644
+--- a/src/bin/Integrations/I4/I4IconResolver.cpp
++++ b/src/bin/Integrations/I4/I4IconResolver.cpp
+@@ -990,7 +990,7 @@ namespace I4Integration
+ 		return singleton;
+ 	}
+ 
+-	bool I4IconResolver::TryGetCached(RE::TESForm* object, std::uint64_t signature, I4IconSpec& outSpec)
++	bool I4IconResolver::TryGetCached(RE::TESForm* object, std::uint64_t signature, I4IconSpec& outSpec, const std::string& displayName)
+ 	{
+ 		const bool traceCache = Config::I4::TraceLog && Config::I4::TraceCacheHits;
+ 		const RE::FormID formID = object ? object->GetFormID() : 0;
+@@ -1001,7 +1001,7 @@ namespace I4Integration
+ 			return false;
+ 		}
+ 
+-		const ResolveKey key{ formID, signature };
++		const ResolveKey key{ formID, signature, displayName };
+ 		std::scoped_lock lock(_lock);
+ 		auto it = _cache.find(key);
+ 		if (it == _cache.end() || !it->second.valid) {
+@@ -1031,7 +1031,8 @@ namespace I4Integration
+ 		RE::TESForm* object,
+ 		std::uint64_t signature,
+ 		RE::ExtraDataList* extra,
+-		RE::InventoryEntryData* entryData)
++		RE::InventoryEntryData* entryData,
++		const std::string& displayName)
+ 	{
+ 		auto& stats = GetStats();
+ 		stats.resolveCalls.fetch_add(1, std::memory_order_relaxed);
+@@ -1076,7 +1077,7 @@ namespace I4Integration
+ 			return {};
+ 		}
+ 
+-		const ResolveKey key{ formID, signature };
++		const ResolveKey key{ formID, signature, displayName };
+ 		{
+ 			std::scoped_lock lock(_lock);
+ 			auto it = _cache.find(key);
+@@ -1095,7 +1096,7 @@ namespace I4Integration
+ 			}
+ 		}
+ 
+-		I4IconSpec resolved = ResolveImpl(object, movie, signature, extra, entryData);
++		I4IconSpec resolved = ResolveImpl(object, movie, signature, extra, entryData, key.displayName);
+ 
+ 		{
+ 			std::scoped_lock lock(_lock);
+@@ -1134,7 +1135,8 @@ namespace I4Integration
+ 		RE::GFxMovieView* movie,
+ 		std::uint64_t signature,
+ 		RE::ExtraDataList*,
+-		RE::InventoryEntryData*)
++		RE::InventoryEntryData*,
++		const std::string& displayName)
+ 	{
+ 		const bool trace = Config::I4::TraceLog;
+ 		const RE::FormID formID = object ? object->GetFormID() : 0;
+@@ -1160,6 +1162,10 @@ namespace I4Integration
+ 		RE::GFxValue entryObj;
+ 		movie->CreateObject(&entryObj);
+ 		entryObj.SetMember("iconSource", kDefaultIconSource);
++		// SkyUI supplies the undecorated inventory-row name in text. A potion
++		// batch name is independent of the shared base form and excludes count.
++		const char* baseName = object->GetName();
++		entryObj.SetMember("text", displayName.empty() ? (baseName ? baseName : "") : displayName.c_str());
+ 
+ 		SetNumber(entryObj, "formType", static_cast<std::int32_t>(object->GetFormType()));
+ 		entryObj.SetMember("formId", static_cast<double>(object->GetFormID()));
+diff --git a/src/bin/Integrations/I4/I4IconResolver.h b/src/bin/Integrations/I4/I4IconResolver.h
+index ba35f7b..6d198c0 100644
+--- a/src/bin/Integrations/I4/I4IconResolver.h
++++ b/src/bin/Integrations/I4/I4IconResolver.h
+@@ -5,6 +5,7 @@
+ #include <unordered_set>
+ 
+ #include "I4Types.h"
++#include "I4ResolveKey.h"
+ 
+ namespace I4Integration
+ {
+@@ -17,38 +18,20 @@ namespace I4Integration
+ 			RE::TESForm* object,
+ 			std::uint64_t signature = 0,
+ 			RE::ExtraDataList* extra = nullptr,
+-			RE::InventoryEntryData* entryData = nullptr);
+-		bool TryGetCached(RE::TESForm* object, std::uint64_t signature, I4IconSpec& outSpec);
++			RE::InventoryEntryData* entryData = nullptr,
++			const std::string& displayName = {});
++		bool TryGetCached(RE::TESForm* object, std::uint64_t signature, I4IconSpec& outSpec, const std::string& displayName = {});
+ 
+ 		void ClearCache();
+ 
+ 	private:
+-		struct ResolveKey
+-		{
+-			RE::FormID formID = 0;
+-			std::uint64_t signature = 0;
+-
+-			bool operator==(const ResolveKey& rhs) const
+-			{
+-				return formID == rhs.formID && signature == rhs.signature;
+-			}
+-		};
+-
+-		struct ResolveKeyHash
+-		{
+-			std::size_t operator()(const ResolveKey& key) const
+-			{
+-				const std::uint64_t mixed = (static_cast<std::uint64_t>(key.formID) << 32) ^ key.signature;
+-				return std::hash<std::uint64_t>{}(mixed);
+-			}
+-		};
+-
+ 		I4IconSpec ResolveImpl(
+ 			RE::TESForm* object,
+ 			RE::GFxMovieView* movie,
+ 			std::uint64_t signature,
+ 			RE::ExtraDataList* extra,
+-			RE::InventoryEntryData* entryData);
++			RE::InventoryEntryData* entryData,
++			const std::string& displayName);
+ 
+ 		std::mutex _lock;
+ 		std::unordered_map<ResolveKey, I4IconSpec, ResolveKeyHash> _cache;
+diff --git a/src/bin/Integrations/I4/I4ResolveKey.h b/src/bin/Integrations/I4/I4ResolveKey.h
+new file mode 100644
+index 0000000..1b06265
+--- /dev/null
++++ b/src/bin/Integrations/I4/I4ResolveKey.h
+@@ -0,0 +1,29 @@
++#pragma once
++
++#include <cstdint>
++#include <functional>
++#include <string>
++
++namespace I4Integration
++{
++	// Different inventory names can share one AlchemyItem FormID. Keep an owned
++	// name in the key so cache entries cannot bleed across renamed batches.
++	struct ResolveKey
++	{
++		std::uint32_t formID = 0;
++		std::uint64_t signature = 0;
++		std::string displayName;
++		bool operator==(const ResolveKey&) const = default;
++	};
++
++	struct ResolveKeyHash
++	{
++		std::size_t operator()(const ResolveKey& key) const
++		{
++			const std::uint64_t mixed = (static_cast<std::uint64_t>(key.formID) << 32) ^ key.signature;
++			const auto seed = std::hash<std::uint64_t>{}(mixed);
++			return seed ^ (std::hash<std::string>{}(key.displayName) +
++				0x9e3779b9u + (seed << 6) + (seed >> 2));
++		}
++	};
++}
+diff --git a/src/bin/Integrations/I4/I4SwfIconRenderer.cpp b/src/bin/Integrations/I4/I4SwfIconRenderer.cpp
+index 2eeb265..3f42b8c 100644
+--- a/src/bin/Integrations/I4/I4SwfIconRenderer.cpp
++++ b/src/bin/Integrations/I4/I4SwfIconRenderer.cpp
+@@ -618,6 +618,15 @@ namespace I4Integration
+ 		}
+ 
+ 		GetStats().renderCalls.fetch_add(1, std::memory_order_relaxed);
++		if (ToLower(spec.iconSource) == "renamepotionsi4/icons.swf" &&
++			ToLower(spec.iconLabel) == "weapon_oil") {
++			auto image = Texture::GetImageByPath("Data/Interface/RenamePotionsI4/weapon_oil.svg");
++			if (image.texture) {
++				CacheResult(key, image, false, false);
++				GetStats().renderBuiltInHits.fetch_add(1, std::memory_order_relaxed);
++				return image;
++			}
++		}
+ 		const bool extractionEnabled = Config::I4::ExtractionMode && allowExtraction;
+ 		if (TraceEnabled()) {
+ 			I4_LOG_INFO("[I4][TRACE][renderer.req] source='{}' label='{}' size={} extractionMaster={} allowExtraction={} extractionEnabled={}",
+diff --git a/src/bin/Wheeler/WheelItems/WheelItem.cpp b/src/bin/Wheeler/WheelItems/WheelItem.cpp
+index 8ff7479..202a699 100644
+--- a/src/bin/Wheeler/WheelItems/WheelItem.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItem.cpp
+@@ -777,6 +777,7 @@ void WheelItem::drawHighlightTexture(ImVec2 a_center, DrawArgs a_drawArgs)
+ {
+ 	const float scale = Config::Styling::Item::Highlight::Texture::Scale;
+ 	const Texture::Image* iconImage = &_texture;
++	Texture::Image resolvedI4Image{};
+ 	ImU32 tint = C_SKYRIMWHITE;
+ 	bool usingI4Icon = false;
+ 	const bool tryI4 = IsInventoryBacked() || Config::I4::UseAlternativePath;
+@@ -790,9 +791,11 @@ void WheelItem::drawHighlightTexture(ImVec2 a_center, DrawArgs a_drawArgs)
+ 			_texture,
+ 			GetI4Form(),
+ 			GetI4Signature(),
+-			requestedPx);
++			requestedPx,
++			GetI4DisplayName());
+ 		if (iconResult.image.texture) {
+-			iconImage = &iconResult.image;
++			resolvedI4Image = iconResult.image;
++			iconImage = &resolvedI4Image;
+ 		}
+ 		if (iconResult.usingI4) {
+ 			tint = iconResult.tint;
+@@ -844,6 +847,7 @@ void WheelItem::drawSlotTexture(ImVec2 a_center, DrawArgs a_drawArgs)
+ {
+ 	const float scale = Config::Styling::Item::Slot::Texture::Scale;
+ 	const Texture::Image* iconImage = &_texture;
++	Texture::Image resolvedI4Image{};
+ 	ImU32 tint = C_SKYRIMWHITE;
+ 	bool usingI4Icon = false;
+ 	const bool tryI4 = IsInventoryBacked() || Config::I4::UseAlternativePath;
+@@ -857,9 +861,11 @@ void WheelItem::drawSlotTexture(ImVec2 a_center, DrawArgs a_drawArgs)
+ 			_texture,
+ 			GetI4Form(),
+ 			GetI4Signature(),
+-			requestedPx);
++			requestedPx,
++			GetI4DisplayName());
+ 		if (iconResult.image.texture) {
+-			iconImage = &iconResult.image;
++			resolvedI4Image = iconResult.image;
++			iconImage = &resolvedI4Image;
+ 		}
+ 		if (iconResult.usingI4) {
+ 			tint = iconResult.tint;
+diff --git a/src/bin/Wheeler/WheelItems/WheelItem.h b/src/bin/Wheeler/WheelItems/WheelItem.h
+index fc5468b..b5ad047 100644
+--- a/src/bin/Wheeler/WheelItems/WheelItem.h
++++ b/src/bin/Wheeler/WheelItems/WheelItem.h
+@@ -98,6 +98,7 @@ public:
+ 		return form ? form->As<RE::TESBoundObject>() : nullptr;
+ 	}
+ 	virtual std::uint64_t GetI4Signature() const { return 0; }
++	virtual std::string GetI4DisplayName() const { return {}; }
+ 	virtual bool SupportsPreciseHandIndicatorMatching(RE::TESObjectREFR::InventoryItemMap& a_inv) const { return false; }
+ 	virtual std::optional<bool> MatchesEquippedHandIndicator(
+ 		RE::TESObjectREFR::InventoryItemMap& a_inv,
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h b/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h
+index 37b59cb..7ae8884 100644
+--- a/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h
++++ b/src/bin/Wheeler/WheelItems/WheelItemAlchemy.h
+@@ -45,6 +45,11 @@ public:
+ 	virtual RE::FormID GetFormID() const override { return _formID; }
+ 	virtual const char* GetItemTypeName() const override { return ITEM_TYPE_STR; }
+ 	virtual const char* GetItemName() const override;
++	virtual std::string GetI4DisplayName() const override
++	{
++		const char* name = GetItemName();
++		return name ? name : "";
++	}
+ 
+ private:
+ 	enum class WheelItemAlchemyType

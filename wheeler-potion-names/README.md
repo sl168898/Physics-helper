@@ -1,3 +1,83 @@
+# Wheeler Refined Rename Potions + I4 patch v1.1
+
+This update builds on the supplied v1.0 potion-name patch. It retains per-batch names,
+counts, activation and saved wheel bindings. The new icon bridge passes that same
+batch name to I4 and caches icon choices separately for different names on one
+base potion form. It also keeps the selected texture descriptor alive while drawing.
+
+The combined distribution includes RenamePotions_I4.esp, its I4 configuration,
+and original sword-and-oil-drop artwork in SWF and SVG form. The plugin is an empty,
+ESL-flagged configuration loader with no gameplay records. It depends on I4IconAddon.esp.
+The SVG lets Wheeler draw this icon directly with I4's color, without enabling SWF extraction.
+
+## Requirements
+
+- Steam Skyrim SE/AE 1.6.1170 with SKSE and Address Library.
+- The existing Wheeler setup, with Wheeler Refined 1.3.3.0 installed.
+- Rename Potions SKSE 1.0.0, SkyUI, Inventory Interface Information Injector 1.1.0
+  and its I4IconAddon.esp from the supplied I4 archive.
+
+## Install
+
+1. Install the combined ZIP as a new MO2 mod after Wheeler Refined, Rename Potions,
+   I4, and the old Wheeler Rename Potions v1.0 patch. This mod must win the wheeler.dll conflict.
+   You can disable the old v1.0 patch because its changes are included.
+2. Enable RenamePotions_I4.esp after I4IconAddon.esp and after other potion icon rule plugins
+   whose name rules you want this patch to override.
+3. The included SKSE/Plugins/wheeler/I4.ini enables I4. If you already have a customized
+   I4.ini, merge Enabled=true, PreferI4Icons=true, UseForPotions=true and UseForPoisons=true
+   into your winning file. ExtractionMode is not required for the included oil icon.
+4. Fully restart Skyrim through SKSE. Existing v1.0 named wheel slots keep their bindings.
+   A slot bound to an old name will not automatically guess a new name: remove and re-add
+   the potion from its specific inventory row after renaming it again.
+
+## Names and icons
+
+| Example name | Icon | Color |
+| --- | --- | --- |
+| Weapon Oil, Weapon Oils, Blade Oil | Sword and oil drop | Amber |
+| Fire Oil, Flame Oil | Sword and oil drop | Red-orange |
+| Frost Oil, Ice Oil | Sword and oil drop | Ice blue |
+| Shock Oil, Lightning Oil | Sword and oil drop | Yellow |
+| Healing Potion, Health Potion | Health potion | Pink-red |
+| Magicka Potion, Mana Potion | Magicka potion | Blue |
+| Stamina Potion | Stamina potion | Green |
+| Poison, Venom, Toxin | Poison | Purple |
+| Fire/Frost/Shock Resistance Potion | Corresponding resistance potion | Element color |
+
+Rules apply to player-crafted dynamic potions and poisons by their inventory display name.
+They change display icons only; renaming a drinkable potion to Weapon Oil does not turn it
+into a weapon poison. Other names retain their normal icon behavior.
+
+I4 1.1 uses exact, case-sensitive matching. Common title/lower/upper/sentence-case names,
+strength prefixes (for example Strong Weapon Oil), and rank suffixes (Weapon Oil II)
+are included. Arbitrary extra words, punctuation or combined prefix-and-suffix variants
+must be added explicitly. The full list is in Documentation/RenamePotionsI4/Supported-Names.txt.
+To add a name, edit SKSE/Plugins/InventoryInjector/RenamePotions_I4.json and add the exact
+name to the desired rule's match.text.anyOf array, preserving valid JSON. Restart the game.
+Do not rename the ESP or JSON: I4 associates them by filename.
+
+## In-game check
+
+Craft two batches sharing the same recipe/base form, name one Weapon Oil and another
+Healing Potion, and put both specific inventory rows on the wheel. Check each name,
+count and icon in inventory and Wheeler, save, quit and reload. Each should keep its
+own identity. Use one batch and check only its count decreases; when depleted it must
+not switch to the other named batch. Use a crafted poison for an actual weapon oil.
+
+Validation status is recorded in BUILD-INFO.json and VALIDATION.json. Native compilation
+and automated checks do not substitute for an in-game test; Skyrim was not available here.
+
+## Source and rebuild
+
+Source/Wheeler-Refined contains the exact modified source. Source/tools/build_windows.ps1
+pins the original Refined, CommonLib and vcpkg revisions and applies rename-potions.patch
+then i4-named-icons.patch. Source/build_patch.py regenerates the I4 assets. License and
+third-party notices are included. This is a modified compatibility build, not an official
+Wheeler Refined release.
+
+## Original v1.0 behavior and build notes
+
 # Wheeler Refined — Rename Potions compatibility patch 1.0
 
 Shows the inventory name assigned by Rename Potions SKSE on Wheeler Refined.
