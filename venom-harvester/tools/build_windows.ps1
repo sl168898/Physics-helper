@@ -94,6 +94,8 @@ $Info = [ordered]@{
     rename_potions_batch_names_preserved = $true; batch_name_tests = 'passed'
     name_captured_from_inventory_delta = $true; named_source_stack_removal = $true
     older_named_bottles_reserved = $true; legacy_pending_v1_supported = $true
+    extra_list_native_constructor_ids = @(11437, 11583); extra_list_allocation_bytes = 32
+    unattached_extra_lists_use_owned_cleanup = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
 Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Huntsmans_Satchel_SKSE_v2_0_12_beta1.zip')

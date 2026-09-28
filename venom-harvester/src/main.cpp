@@ -261,11 +261,44 @@ namespace
         return names;
     }
 
+    // This pinned CommonLib declares, but does not implement, ExtraDataList's
+    // constructor/destructor. Its AE facade also has no usable sizeof.
+    // The supported 1.6.1170 native layout is 0x20 bytes; use the engine ctor
+    // (also used by Wheeler and poison-aid), which installs the real vtable.
+    struct UnattachedExtraListDeleter
+    {
+        void operator()(RE::ExtraDataList* extra) const
+        {
+            if (!extra) return;
+            // Only for our own lists before ownership passes to the engine.
+            // GetData/GetPresence account for the AE virtual-base layout.
+            auto base = reinterpret_cast<RE::BaseExtraList*>(extra);
+            while (auto data = base->GetData()) {
+                base->GetData() = data->next;
+                delete data;
+            }
+            RE::free(base->GetPresence());
+            RE::free(extra);
+        }
+    };
+    using OwnedExtraList = std::unique_ptr<RE::ExtraDataList, UnattachedExtraListDeleter>;
+
+    OwnedExtraList createExtraList()
+    {
+        auto memory = static_cast<RE::ExtraDataList*>(RE::malloc(0x20));
+        if (!memory) return {};
+        using Initialize = RE::ExtraDataList*(RE::ExtraDataList*);
+        static REL::Relocation<Initialize*> initialize{RELOCATION_ID(11437, 11583)};
+        auto initialized = initialize(memory);
+        if (!initialized) RE::free(memory);
+        return OwnedExtraList(initialized);
+    }
+
     struct SourceStackPart
     {
         RE::ExtraDataList* extra{};
         std::int32_t count{};
-        std::unique_ptr<RE::ExtraDataList> created;
+        OwnedExtraList created;
     };
     struct SourceStackPlan
     {
@@ -298,7 +331,8 @@ namespace
         // RemoveItem cannot choose a differently named older stack by default.
         while (remaining) {
             const auto take = std::min<std::uint32_t>(remaining, INT16_MAX);
-            auto extra = std::make_unique<RE::ExtraDataList>();
+            auto extra = createExtraList();
+            if (!extra) return std::nullopt;
             extra->SetCount(static_cast<std::uint16_t>(take));
             auto pointer = extra.get();
             plan.parts.push_back({pointer, static_cast<std::int32_t>(take), std::move(extra)});
@@ -538,17 +572,24 @@ namespace
             }
             // All destination names are owned data; no borrowed inventory
             // pointer or UI string survives the alchemy-menu boundary.
-            std::vector<std::pair<std::unique_ptr<RE::ExtraDataList>, std::int32_t>> destinations;
+            std::vector<std::pair<OwnedExtraList, std::int32_t>> destinations;
+            std::uint32_t preparedBottles = 0;
             for (auto left = entry.bottles; left;) {
                 const auto take = std::min<std::uint32_t>(left, INT16_MAX);
-                std::unique_ptr<RE::ExtraDataList> extra;
+                OwnedExtraList extra;
                 if (!name.empty()) {
-                    extra = std::make_unique<RE::ExtraDataList>();
+                    extra = createExtraList();
+                    if (!extra) break;
                     extra->Add(new RE::ExtraTextDisplayData(name.c_str()));
                     extra->SetCount(static_cast<std::uint16_t>(take));
                 }
                 destinations.emplace_back(std::move(extra), static_cast<std::int32_t>(take));
+                preparedBottles += take;
                 left -= take;
+            }
+            if (preparedBottles != entry.bottles) {
+                SKSE::log::warn("Batch {}: custom-name allocation failed; inventory left intact", entry.nonce);
+                continue;
             }
             auto unique = makeBatch(original, entry.nonce);
             if (!unique) continue;

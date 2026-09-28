@@ -10,7 +10,7 @@ The 2.0.11 Alchemy 50 double ingredient return, once-per-batch refund ledger,
 poison damage detection and inventory lifetime fixes are retained. HSAT v2 is
 unchanged; pending HSAP v2 records include names and the loader also reads v1.
 
-Install the updated combined traits package and keep the Wheeler/I4 v1.3.2 patch.
+Install the updated combined traits package and keep the Wheeler/I4 v1.3.3 patch.
 The file this update changes is SKSE/Plugins/VenomHarvester.dll. It does not replace
 RenamePotionsSKSE.dll, wheeler.dll or InventoryInjector.dll. Start Skyrim afresh.
 
@@ -19,6 +19,15 @@ the table normally. The name should remain on the Satchel-tracked bottles.
 Names already discarded by an older version cannot be reconstructed reliably;
 this update does not invent those lost names. Existing tracked batches keep their
 refund records. Validation is automated; no in-game test was available here.
+
+The supported 1.6.1170 extra-data list layout is 32 bytes. This build allocates
+through Skyrim's heap and initializes each list with the native constructor
+(Address Library IDs 11437/11583). The pinned CommonLib AE facade does not supply
+usable construction/destruction or allocation size. Unattached lists clean up
+only their owned data chain and bitfield; lists transferred to inventory are
+released to engine ownership. The native constructor precedent is Wheeler's
+UniqueIDHandler and poison-aid's Utility.h:
+https://github.com/NoahBoddie/poison-aid/blob/9d4b176553f08de385e08f70d95a492e7cd9a9b8/src/Utility.h
 
 Earlier documentation follows for reference:
 
