@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.24)
+project(I4NameTests LANGUAGES CXX)
+enable_testing()
+add_executable(name_contains_tests name_contains_tests.cpp)
+target_compile_features(name_contains_tests PRIVATE cxx_std_20)
+target_include_directories(name_contains_tests PRIVATE "${I4_SOURCE}/src")
+add_test(NAME name_contains COMMAND name_contains_tests)

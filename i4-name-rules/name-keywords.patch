@@ -1,0 +1,148 @@
+--- a/docs/InventoryInjector.schema.json
++++ b/docs/InventoryInjector.schema.json
+@@ -33,6 +33,7 @@
+                 ]
+               },
+               "formId": { "$ref": "#/$defs/match-formId" },
++              "text": { "$ref": "#/$defs/match-string" },
+               "keywords": { "$ref": "#/$defs/match-string-array" },
+               "value": { "$ref": "#/$defs/match-number" },
+               "weight": { "$ref": "#/$defs/match-number" },
+@@ -256,6 +257,16 @@
+       "description": "String",
+       "anyOf": [
+         { "type": "string" },
++        {
++          "type": "object",
++          "properties": {
++            "contains": { "type": "string", "minLength": 1 },
++            "ignoreCase": { "type": "boolean", "default": false },
++            "anyOf": { "type": "array", "maxItems": 0 }
++          },
++          "required": [ "contains", "anyOf" ],
++          "description": "v1.3 extension: substring match. Keep empty anyOf for stock I4 to match nothing."
++        },
+         {
+           "type": "object",
+           "properties": {
+--- /dev/null
++++ b/src/Data/Config/NameContains.h
+@@ -0,0 +1,25 @@
++#pragma once
++
++#include <algorithm>
++#include <string_view>
++
++namespace Data
++{
++	// The configured keyword is ASCII; leave non-ASCII name bytes unchanged.
++	[[nodiscard]] inline bool NameContains(
++		std::string_view a_name, std::string_view a_keyword, bool a_ignoreCase)
++	{
++		if (a_keyword.empty()) {
++			return false;
++		}
++		if (!a_ignoreCase) {
++			return a_name.find(a_keyword) != std::string_view::npos;
++		}
++		const auto fold = [](unsigned char c) -> unsigned char {
++			return c >= 'A' && c <= 'Z' ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
++		};
++		return std::search(a_name.begin(), a_name.end(), a_keyword.begin(), a_keyword.end(),
++			[fold](unsigned char left, unsigned char right) { return fold(left) == fold(right); })
++			!= a_name.end();
++	}
++}
+--- a/src/Data/Config/Property.cpp
++++ b/src/Data/Config/Property.cpp
+@@ -1,4 +1,5 @@
+ #include "Property.h"
++#include "NameContains.h"
+ 
+ #include "Data/Defines/Armor.h"
+ 
+@@ -37,6 +38,15 @@
+ 		}
+ 
+ 		return a_value == _value;
++	}
++
++	bool ContainsProperty::Match(const RE::GFxValue& a_value) const
++	{
++		if (!a_value.IsString()) {
++			return false;
++		}
++		const auto* text = a_value.GetString();
++		return text && NameContains(text, _keyword, _ignoreCase);
+ 	}
+ 
+ 	bool RangeProperty::Match(const RE::GFxValue& a_value) const
+--- a/src/Data/Config/Property.h
++++ b/src/Data/Config/Property.h
+@@ -49,6 +49,21 @@
+ 		RE::GFxValue _value;
+ 	};
+ 
++	class ContainsProperty final : public Property
++	{
++	public:
++		ContainsProperty(std::string_view a_keyword, bool a_ignoreCase)
++			: _keyword{ a_keyword }, _ignoreCase{ a_ignoreCase }
++		{
++		}
++
++		bool Match(const RE::GFxValue& a_value) const override;
++
++	private:
++		std::string _keyword;
++		bool _ignoreCase;
++	};
++
+ 	class RangeProperty final : public Property
+ 	{
+ 	public:
+--- a/src/Data/Config/PropertyParser.cpp
++++ b/src/Data/Config/PropertyParser.cpp
+@@ -23,6 +23,22 @@
+ 			}
+ 		}
+ 		else if (a_spec.isObject()) {
++			if (a_spec.isMember("contains")) {
++				const auto& keyword = a_spec["contains"];
++				const auto& ignoreCase = a_spec["ignoreCase"];
++				if (keyword.isString() && !keyword.asString().empty() &&
++					(ignoreCase.isNull() || ignoreCase.isBool())) {
++					a_properties->AddProperty(_name, std::make_shared<ContainsProperty>(
++						keyword.asString(), ignoreCase.isBool() && ignoreCase.asBool()));
++				}
++				else {
++					// Invalid keyword rules must never silently match every item.
++					a_properties->AddProperty(_name, std::make_shared<AnyOfProperty>());
++				}
++				// Stock I4 sees the config's empty anyOf fallback and matches nothing.
++				return;
++			}
++
+ 			const Json::Value& anyOf = a_spec["anyOf"];
+ 			if (anyOf.isArray()) {
+ 				auto prop = std::make_shared<AnyOfProperty>();
+--- a/src/SKSEPlugin/SKSEPlugin.cpp
++++ b/src/SKSEPlugin/SKSEPlugin.cpp
+@@ -77,6 +77,7 @@
+ {
+ 	InitializeLog();
+ 	logger::info("{} v{}"sv, Plugin::NAME, Plugin::VERSION.string());
++	logger::info("InventoryInjector name-keyword compatibility v1.3 enabled"sv);
+ 
+ 	SKSE::Init(a_skse);
+ 	SKSE::AllocTrampoline(8);
+--- /dev/null
++++ b/vcpkg-configuration.json
+@@ -0,0 +1,7 @@
++{
++  "default-registry": {
++    "kind": "git",
++    "repository": "https://github.com/microsoft/vcpkg",
++    "baseline": "a7b6122f6b6504d16d96117336a0562693579933"
++  }
++}
