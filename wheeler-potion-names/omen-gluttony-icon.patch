@@ -1,0 +1,115 @@
+diff --git a/src/bin/Wheeler/WheelItems/NamedPowerIcon.h b/src/bin/Wheeler/WheelItems/NamedPowerIcon.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Wheeler/WheelItems/NamedPowerIcon.h
+@@ -0,0 +1,25 @@
++// Omen of Gluttony icon compatibility, 2026-09-28. GPL-3.0-only.
++#pragma once
++#include <string_view>
++
++namespace NamedPowerIcon
++{
++    // Use the visible English name instead of a load-order-dependent FormID.
++    // Require an exact name and a power; ordinary spells and similarly named
++    // powers must retain their existing icon rules.
++    inline bool IsOmenOfGluttony(std::string_view name, bool isPower)
++    {
++        constexpr std::string_view expected = "omen of gluttony";
++        if (!isPower || name.size() != expected.size()) {
++            return false;
++        }
++        for (std::size_t i = 0; i < name.size(); ++i) {
++            const char c = name[i];
++            const char lower = c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;
++            if (lower != expected[i]) {
++                return false;
++            }
++        }
++        return true;
++    }
++}
+diff --git a/src/bin/Wheeler/WheelItems/WheelItem.h b/src/bin/Wheeler/WheelItems/WheelItem.h
+--- a/src/bin/Wheeler/WheelItems/WheelItem.h
++++ b/src/bin/Wheeler/WheelItems/WheelItem.h
+@@ -116,6 +116,8 @@
+ 
+ protected:
+ 	Texture::Image _texture = Texture::Image();
++	// Set only after a dedicated named-power asset loaded successfully.
++	bool _preferNativeIcon = false;
+ 	Texture::Image _stat_texture = Texture::Image();
+ 	std::string _description = "";  // buffer for description.
+ 	MissingCategory _missingCategory = MissingCategory::Unknown;
+diff --git a/src/bin/Wheeler/WheelItems/WheelItem.cpp b/src/bin/Wheeler/WheelItems/WheelItem.cpp
+--- a/src/bin/Wheeler/WheelItems/WheelItem.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItem.cpp
+@@ -780,7 +780,7 @@
+ 	Texture::Image resolvedI4Image{};
+ 	ImU32 tint = C_SKYRIMWHITE;
+ 	bool usingI4Icon = false;
+-	const bool tryI4 = IsInventoryBacked() || Config::I4::UseAlternativePath;
++	const bool tryI4 = !_preferNativeIcon && (IsInventoryBacked() || Config::I4::UseAlternativePath);
+ 	if (tryI4) {
+ 		float requestedBase = (std::max)(_texture.width * scale, _texture.height * scale);
+ 		if (requestedBase < 1.0f) {
+@@ -850,7 +850,7 @@
+ 	Texture::Image resolvedI4Image{};
+ 	ImU32 tint = C_SKYRIMWHITE;
+ 	bool usingI4Icon = false;
+-	const bool tryI4 = IsInventoryBacked() || Config::I4::UseAlternativePath;
++	const bool tryI4 = !_preferNativeIcon && (IsInventoryBacked() || Config::I4::UseAlternativePath);
+ 	if (tryI4) {
+ 		float requestedBase = (std::max)(_texture.width * scale, _texture.height * scale);
+ 		if (requestedBase < 1.0f) {
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemSpell.cpp b/src/bin/Wheeler/WheelItems/WheelItemSpell.cpp
+--- a/src/bin/Wheeler/WheelItems/WheelItemSpell.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItemSpell.cpp
+@@ -6,6 +6,7 @@
+ #include "bin/Texts.h"
+ 
+ #include "WheelItemSpell.h"
++#include "NamedPowerIcon.h"
+ #include <fmt/format.h>
+ #include <cmath>
+ #include <sstream>
+@@ -112,6 +113,28 @@
+ 		}
+ 	}
+ 	this->_texture = Texture::GetIconImage(iconType, a_spell);
++	if (a_spell) {
++		const auto type = a_spell->data.spellType;
++		const bool isPowerType = type == RE::MagicSystem::SpellType::kPower ||
++			type == RE::MagicSystem::SpellType::kLesserPower ||
++			type == RE::MagicSystem::SpellType::kVoicePower;
++		const char* name = a_spell->GetName();
++		if (NamedPowerIcon::IsOmenOfGluttony(name ? name : "", isPowerType)) {
++			auto icon = Texture::GetImageByPath("Data/SKSE/Plugins/wheeler/resources/named_powers/omen_of_gluttony.svg");
++			if (icon.texture && icon.width > 0 && icon.height > 0) {
++				// Keep the dimensions established by the user's Wheeler icon theme.
++				if (_texture.width > 0 && _texture.height > 0) {
++					icon.width = _texture.width;
++					icon.height = _texture.height;
++				}
++				_texture = icon;
++				_preferNativeIcon = true;
++				logger::info("NamedPowerIcon: Omen of Gluttony food icon applied to {:08X}", a_spell->GetFormID());
++			} else {
++				logger::warn("NamedPowerIcon: Omen of Gluttony SVG unavailable; retaining the existing icon path");
++			}
++		}
++	}
+ 	RE::BSString descriptionBuf = "";
+ 	this->_spell->GetDescription(descriptionBuf, nullptr);
+ 	this->_description = descriptionBuf.c_str();
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.2 enabled (2026-09-28)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.3 enabled (2026-09-28; Omen of Gluttony icon)");
+ 
+ 	SKSE::Init(a_skse);
+ 

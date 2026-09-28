@@ -1,3 +1,13 @@
+# Wheeler native compatibility component v1.3
+
+Adds a dedicated feast icon for the power named Omen of Gluttony (ASCII case-insensitive exact name). Applies to power, lesser power and voice-power records. It does not require a fixed FormID or plugin index. Its loaded native icon takes priority over I4 for this power in both wheel slots and the highlighted display. Missing assets retain the original fallback route. English display name required. Original vector artwork is provided under CC0-1.0.
+
+Retains all v1.2 Rename Potions batch and I4 display-name fixes and the Enchantment Swapper description bridge. Steam Skyrim 1.6.1170, Wheeler Refined 1.3.3.0. Not tested in game.
+
+This is a native build component. The installable combined v1.3.4 archive is assembled separately from the complete v1.3.3 package so its later elemental oil rules and green generic oil are preserved.
+
+## Earlier component documentation
+
 # Wheeler Refined Rename Potions + I4 patch v1.2
 
 This update preserves the v1.0 potion-name patch and the newer Wheeler changes bundled
