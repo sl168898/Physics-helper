@@ -1,3 +1,83 @@
+diff --git a/src/bin/Integrations/EnchantmentSwapperBridge.cpp b/src/bin/Integrations/EnchantmentSwapperBridge.cpp
+new file mode 100644
+index 0000000..a60aea7
+--- /dev/null
++++ b/src/bin/Integrations/EnchantmentSwapperBridge.cpp
+@@ -0,0 +1,59 @@
++#include "EnchantmentSwapperBridge.h"
++#include <Windows.h>
++#include <cstdint>
++#include <vector>
++
++namespace EnchantmentSwapperBridge {
++namespace {
++using Query = std::uint32_t (*)(std::uint32_t objectID, std::uint32_t enchantmentID,
++    std::uint32_t ownerID, std::uint16_t uniqueID, char* buffer, std::uint32_t capacity);
++struct Identity {
++    std::uint32_t object{}, enchantment{}, owner{};
++    std::uint16_t unique{};
++};
++bool ReadIdentity(RE::TESBoundObject* object, RE::ExtraDataList* extras, Identity& result) {
++    if (!object || !extras) return false;
++    // Refined's rendering snapshot borrows engine extra lists. Follow its
++    // existing guarded-read convention; do not retain the pointer afterwards.
++#if defined(_MSC_VER)
++    __try {
++#endif
++        const auto* enchantment = extras->GetByType<RE::ExtraEnchantment>();
++        if (!enchantment || !enchantment->enchantment) return false;
++        result.object = object->GetFormID();
++        result.enchantment = enchantment->enchantment->GetFormID();
++        if (const auto* uid = extras->GetByType<RE::ExtraUniqueID>()) {
++            result.owner = uid->baseID;
++            result.unique = uid->uniqueID;
++        }
++        return true;
++#if defined(_MSC_VER)
++    } __except (EXCEPTION_EXECUTE_HANDLER) {
++        return false;
++    }
++#endif
++}
++Query GetQuery() {
++    static const Query query = [] {
++        const auto module = GetModuleHandleW(L"EnchantmentSwapperDescriptions.dll");
++        const auto function = module ? reinterpret_cast<Query>(GetProcAddress(module, "ESD_GetDescriptionV1")) : nullptr;
++        if (function) logger::info("Enchantment Swapper description bridge connected (API v1)");
++        else logger::info("Enchantment Swapper description API unavailable; keeping normal Wheeler descriptions");
++        return function;
++    }();
++    return query;
++}
++}
++bool GetDescription(RE::TESBoundObject* object, RE::ExtraDataList* extras, std::string& output) {
++    const auto query = GetQuery();
++    Identity identity{};
++    if (!query || !ReadIdentity(object, extras, identity)) return false;
++    const auto required = query(identity.object, identity.enchantment, identity.owner, identity.unique, nullptr, 0);
++    if (!required || required > 65536) return false;
++    std::vector<char> buffer(required, '\0');
++    const auto written = query(identity.object, identity.enchantment, identity.owner, identity.unique, buffer.data(), required);
++    if (!written || written > required || buffer.front() == '\0' || buffer.back() != '\0') return false;
++    output.assign(buffer.data());
++    return true;
++}
++}
+diff --git a/src/bin/Integrations/EnchantmentSwapperBridge.h b/src/bin/Integrations/EnchantmentSwapperBridge.h
+new file mode 100644
+index 0000000..47981a6
+--- /dev/null
++++ b/src/bin/Integrations/EnchantmentSwapperBridge.h
+@@ -0,0 +1,9 @@
++#pragma once
++#include <RE/Skyrim.h>
++#include <string>
++
++namespace EnchantmentSwapperBridge {
++// Call only with the selected wheel item's resolved extra list. The helper
++// receives copied IDs, never a pointer into Wheeler's inventory snapshot.
++bool GetDescription(RE::TESBoundObject* object, RE::ExtraDataList* extras, std::string& output);
++}
 diff --git a/src/bin/Integrations/I4/I4IconProvider.cpp b/src/bin/Integrations/I4/I4IconProvider.cpp
 index 930f8da..6dd3d93 100644
 --- a/src/bin/Integrations/I4/I4IconProvider.cpp
@@ -302,8 +382,52 @@ index 37b59cb..7ae8884 100644
  
  private:
  	enum class WheelItemAlchemyType
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemArmor.cpp b/src/bin/Wheeler/WheelItems/WheelItemArmor.cpp
+index 25e32bd..e507448 100644
+--- a/src/bin/Wheeler/WheelItems/WheelItemArmor.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItemArmor.cpp
+@@ -1,4 +1,5 @@
+ #include "WheelItemArmor.h"
++#include "bin/Integrations/EnchantmentSwapperBridge.h"
+ #include "bin/Rendering/Drawer.h"
+ #include "bin/Utilities/Utils.h"
+ #include "bin/Wheeler/TransformWheelManager.h"
+@@ -74,6 +75,10 @@ void WheelItemArmor::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventory
+ 			Utils::Magic::GetMagicItemDescription(enchants[0], descriptionBuf);
+ 		}
+ 	}
++	const auto transferredItem = this->GetItemExtraDataAndCount(a_imap);
++	if (transferredItem.first > 0) {
++		EnchantmentSwapperBridge::GetDescription(this->_obj, transferredItem.second, descriptionBuf);
++	}
+ 	const float textShiftY = calculateHighlightTextShiftY(descriptionBuf.c_str());
+ 	this->drawHighlightText(a_center, this->GetDisplayName(a_imap).c_str(), a_drawArgs, textShiftY);
+ 	this->drawHighlightTexture(a_center, a_drawArgs);
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemWeapon.cpp b/src/bin/Wheeler/WheelItems/WheelItemWeapon.cpp
+index ffcc51e..e9064de 100644
+--- a/src/bin/Wheeler/WheelItems/WheelItemWeapon.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItemWeapon.cpp
+@@ -1,4 +1,5 @@
+ #include "WheelItemWeapon.h"
++#include "bin/Integrations/EnchantmentSwapperBridge.h"
+ #include "bin/Rendering/Drawer.h"
+ #include "bin/Utilities/Utils.h"
+ #include "bin/Config.h"
+@@ -913,6 +914,12 @@ void WheelItemWeapon::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::Inventor
+ 			}
+ 		}
+ 	}
++	// A transferred enchantment's recorded donor takes precedence over this
++	// weapon's cached base description and the generic enchantment fallback.
++	const auto transferredItem = this->GetItemExtraDataAndCount(a_imap);
++	if (transferredItem.first > 0) {
++		EnchantmentSwapperBridge::GetDescription(this->_obj, transferredItem.second, descriptionBuf);
++	}
+ 	const float textShiftY = calculateHighlightTextShiftY(descriptionBuf.c_str());
+ 	this->drawHighlightText(a_center, displayName.c_str(), a_drawArgs, textShiftY);
+ 	this->drawHighlightTexture(a_center, a_drawArgs);
 diff --git a/src/bin/main.cpp b/src/bin/main.cpp
-index 2b23569..0fffac9 100644
+index 2b23569..2456fc0 100644
 --- a/src/bin/main.cpp
 +++ b/src/bin/main.cpp
 @@ -398,7 +398,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
@@ -311,7 +435,7 @@ index 2b23569..0fffac9 100644
  	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
  	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
 -	logger::info("Wheeler - Refined Rename Potions compatibility patch v1.0 enabled (2026-09-19)");
-+	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.1 enabled (2026-09-28)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.2 enabled (2026-09-28)");
  
  	SKSE::Init(a_skse);
  

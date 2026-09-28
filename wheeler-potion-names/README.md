@@ -1,6 +1,7 @@
-# Wheeler Refined Rename Potions + I4 patch v1.1
+# Wheeler Refined Rename Potions + I4 patch v1.2
 
-This update builds on the supplied v1.0 potion-name patch. It retains per-batch names,
+This update preserves the v1.0 potion-name patch and the newer Wheeler changes bundled
+with Enchantment_Swapper_Description_Fix_v1_1_0.zip. It retains per-batch names,
 counts, activation and saved wheel bindings. The new icon bridge passes that same
 batch name to I4 and caches icon choices separately for different names on one
 base potion form. It also keeps the selected texture descriptor alive while drawing.
@@ -20,8 +21,10 @@ The SVG lets Wheeler draw this icon directly with I4's color, without enabling S
 ## Install
 
 1. Install the combined ZIP as a new MO2 mod after Wheeler Refined, Rename Potions,
-   I4, and the old Wheeler Rename Potions v1.0 patch. This mod must win the wheeler.dll conflict.
-   You can disable the old v1.0 patch because its changes are included.
+   I4, the old Wheeler Rename Potions v1.0 patch, and Enchantment Swapper Description Fix v1.1.0. This mod must win the wheeler.dll conflict.
+   You can disable the standalone v1.0 name patch because its changes are included.
+   Keep Enchantment Swapper Description Fix enabled: its helper DLL and scripts are still
+   needed for transferred enchantment descriptions. Only its wheeler.dll is superseded.
 2. Enable RenamePotions_I4.esp after I4IconAddon.esp and after other potion icon rule plugins
    whose name rules you want this patch to override.
 3. The included SKSE/Plugins/wheeler/I4.ini enables I4. If you already have a customized
@@ -76,6 +79,15 @@ then i4-named-icons.patch. Source/build_patch.py regenerates the I4 assets. Lice
 third-party notices are included. This is a modified compatibility build, not an official
 Wheeler Refined release.
 
+## Preserved Enchantment Swapper compatibility
+
+The weapon and armor donor-description bridge from Enchantment Swapper Description Fix
+v1.1.0 is included byte-for-byte. The helper remains optional and its API is discovered
+at runtime. If you use that fix, keep its EnchantmentSwapperDescriptions.dll and scripts
+installed. This archive updates Wheeler only; it does not replace the helper or scripts.
+The recorded transfer description, including numeric formatting supplied by the helper,
+continues to take precedence over the generic weapon/armor description.
+
 ## Preserved v1.0 behavior
 
 The selected inventory batch name is saved in Wheeler's existing SKSE co-save and used
@@ -87,8 +99,8 @@ Consumables is disabled. Legacy form-only slots adopt a name only if all availab
 have one unambiguous custom name; otherwise remove and re-add the intended inventory row.
 
 The startup log identifies this build as:
-`Wheeler - Refined Rename Potions + I4 compatibility patch v1.1 enabled (2026-09-28)`.
-The underlying Wheeler version remains Refined 1.3.3.0; v1.1 is this compatibility patch's version.
+`Wheeler - Refined Rename Potions + I4 compatibility patch v1.2 enabled (2026-09-28)`.
+The underlying Wheeler version remains Refined 1.3.3.0; v1.2 is this compatibility patch's version.
 
 ## Credits and license
 

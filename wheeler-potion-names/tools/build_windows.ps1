@@ -72,7 +72,7 @@ Run 'python' @((Join-Path $Root 'build_patch.py'), '--stage', $Stage)
 Run 'python' @((Join-Path $Root 'validate_assets.py'), '--stage', $Stage)
 Copy-Item (Join-Path $Root 'asset-validation.json') (Join-Path $Stage 'VALIDATION.json')
 $Info = [ordered]@{
-    patchVersion = '1.1'; builtUTC = [DateTime]::UtcNow.ToString('o')
+    patchVersion = '1.2'; builtUTC = [DateTime]::UtcNow.ToString('o')
     refinedCommit = $RefinedCommit; commonLibCommit = $CommonCommit; vcpkgCommit = $VcpkgCommit
     patchCommit = $env:GITHUB_SHA
     targetRuntime = 'Steam Skyrim SE 1.6.1170'; targetRefined = '1.3.3.0'
@@ -80,7 +80,9 @@ $Info = [ordered]@{
     patchSHA256 = (Get-FileHash (Join-Path $Root 'rename-potions.patch') -Algorithm SHA256).Hash.ToLower()
     i4PatchSHA256 = (Get-FileHash (Join-Path $Root 'i4-named-icons.patch') -Algorithm SHA256).Hash.ToLower()
     automatedTests = '16 batch identity checks and 11 name-dependent icon cache checks'
+    preservedCompatibility = 'Rename Potions v1.0 and Wheeler donor-description bridge from Enchantment Swapper Description Fix v1.1.0'
+    descriptionBridgeSourceCommit = '3f2a35c7fe83e67efda98f458488efe5173e9d83'
     inGameTested = $false
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'BUILD-INFO.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Rename_Potions_I4_Patch_v1_1.zip') -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Rename_Potions_I4_Patch_v1_2.zip') -CompressionLevel Optimal

@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-Refined-Rename-Potions-Patch-v1-1
-          path: wheeler-potion-names/_build/Wheeler_Refined_Rename_Potions_I4_Patch_v1_1.zip
+          name: Wheeler-Refined-Rename-Potions-Patch-v1-2
+          path: wheeler-potion-names/_build/Wheeler_Refined_Rename_Potions_I4_Patch_v1_2.zip
           if-no-files-found: error
