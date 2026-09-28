@@ -2,7 +2,7 @@
 
 For Skyrim Steam 1.6.1170, SKSE64 and Address Library (AE). Requires the matching updated BOOB.esp and performance scripts from the complete patch archive. This native build alone is not an installable update.
 
-The two original inn reward calls pass their reward potions to the plugin. With Standing Ovation, supported beneficial Health, Magicka, Stamina, Speech and Barter amounts become private constant abilities at three times the source potion magnitude. Repeated performances replace the reward. Other performances use the original reward.
+The two original inn reward calls pass their reward potions to the plugin. With Standing Ovation, supported beneficial Health, Magicka, Stamina, Speech and Barter amounts become private constant abilities at three times the source potion magnitude. Repeated performances replace the same instrument's stat bonus; different instrument stat bonuses coexist until the next town arrival. Other performances use the original reward.
 
 A player location event tracks the nearest town/city/settlement with an inn. It uses LocTypeHabitationHasInn and scans inn location parent chains. Leaving an inn into its own town retains the bonus. Leaving town, then returning or entering another eligible town ends it. Save loads establish a baseline and are not arrivals. No polling loop, duration extension hack, or recurring timer.
 

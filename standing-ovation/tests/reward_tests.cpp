@@ -22,6 +22,11 @@ int main()
     require(!ovation::addTriple(base, 999, 10), "unknown actor value rejected");
     require(!ovation::addTriple(base, 24, -1), "negative reward rejected");
     require(!ovation::addTriple(base, 24, std::numeric_limits<float>::infinity()), "infinity rejected");
+    ovation::Amounts flute{};
+    flute[4] = 60;
+    auto combined = ovation::mergeReward(base, flute, 1u << 4);
+    require(combined[0] == 75 && combined[4] == 60, "different instrument stat bonuses coexist");
+    require(ovation::mergeReward(combined, flute, 1u << 4) == combined, "same stat does not stack");
 
     ovation::State state;
     state.award(base, 100);

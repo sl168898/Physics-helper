@@ -32,6 +32,13 @@ namespace ovation
         return true;
     }
 
+    inline Amounts mergeReward(Amounts existing, const Amounts& awarded, std::uint32_t replaced)
+    {
+        for (std::size_t i = 0; i < existing.size(); ++i)
+            if (replaced & (1u << i)) existing[i] = awarded[i];
+        return existing;
+    }
+
     struct State
     {
         std::uint32_t active{};

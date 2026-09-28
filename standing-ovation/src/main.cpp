@@ -152,6 +152,18 @@ namespace
                 nullptr, false, false, false, true);
     }
 
+    std::uint32_t rewardSlots(RE::AlchemyItem* reward)
+    {
+        std::uint32_t mask{};
+        if (!reward) return mask;
+        for (const auto effect : reward->effects) {
+            if (!effect || !effect->baseEffect) continue;
+            if (const auto index = ovation::slot(static_cast<std::uint32_t>(effect->baseEffect->data.primaryAV)))
+                mask |= 1u << *index;
+        }
+        return mask;
+    }
+
     void grant(RE::FormID rewardID, RE::FormID alternateID)
     {
         const auto player = RE::PlayerCharacter::GetSingleton();
@@ -163,7 +175,13 @@ namespace
             return;
         }
         std::lock_guard lock(stateMutex);
-        removeReward(player);
+        const auto alternate = RE::TESForm::LookupByID<RE::AlchemyItem>(alternateID);
+        const auto replaced = rewardSlots(reward) | rewardSlots(alternate);
+        const auto combined = ovation::mergeReward(state.active ? state.amounts : ovation::Amounts{}, amounts, replaced);
+        // Replace this instrument's reward, preserving other instrument stats.
+        for (std::uint32_t i = 0; i < amounts.size(); ++i)
+            if (replaced & (1u << i))
+                player->RemoveSpell(form<RE::SpellItem>(ovation::spellStart + i));
         // Clear the original two inn rewards, including a timed pre-update
         // reward. Kyne's Peace and unrelated potions are never dispelled.
         const auto target = player->GetMagicTarget();
@@ -174,15 +192,15 @@ namespace
                 if (id == rewardID || (alternateID && id == alternateID)) effect->Dispel(true);
             }
         }
-        configureAmounts(amounts);
-        if (!restoreAbilities(player, amounts)) {
+        configureAmounts(combined);
+        if (!restoreAbilities(player, combined)) {
             removeReward(player);
             state = {};
             SKSE::log::error("Failed to add constant reward; using the original reward.");
             originalReward(player, reward);
             return;
         }
-        state.award(amounts, townOf(player->GetCurrentLocation()));
+        state.award(combined, townOf(player->GetCurrentLocation()));
         SKSE::log::info("Awarded 3x inn reward {:08X}; town={:08X}; health={} magicka={} stamina={} speech={} speechMod={} barter={}",
             rewardID, state.lastTown, amounts[0], amounts[1], amounts[2], amounts[3], amounts[4], amounts[5]);
     }
