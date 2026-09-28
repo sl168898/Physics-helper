@@ -302,3 +302,16 @@ index 37b59cb..7ae8884 100644
  
  private:
  	enum class WheelItemAlchemyType
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+index 2b23569..0fffac9 100644
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions compatibility patch v1.0 enabled (2026-09-19)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.1 enabled (2026-09-28)");
+ 
+ 	SKSE::Init(a_skse);
+ 
