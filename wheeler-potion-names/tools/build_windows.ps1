@@ -65,9 +65,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Source 'Wheeler-Refined') 
 foreach ($Name in @('src','cmake','CMakeLists.txt','CMakePresets.json','vcpkg.json','vcpkg-configuration.json','.clang-format','.editorconfig','LICENSE','LICENSES','NOTICE.md','THIRD_PARTY_NOTICES.md','BUILDING.md','README.md','tools')) {
     Copy-Item (Join-Path $Refined $Name) (Join-Path $Source 'Wheeler-Refined') -Recurse
 }
-foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','README.md')) {
+foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','README.md','build_patch.py','validate_assets.py')) {
     Copy-Item (Join-Path $Root $Name) $Source -Recurse
 }
+Run 'python' @((Join-Path $Root 'build_patch.py'), '--stage', $Stage)
+Run 'python' @((Join-Path $Root 'validate_assets.py'), '--stage', $Stage)
+Copy-Item (Join-Path $Root 'asset-validation.json') (Join-Path $Stage 'VALIDATION.json')
 $Info = [ordered]@{
     patchVersion = '1.1'; builtUTC = [DateTime]::UtcNow.ToString('o')
     refinedCommit = $RefinedCommit; commonLibCommit = $CommonCommit; vcpkgCommit = $VcpkgCommit
