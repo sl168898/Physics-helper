@@ -393,7 +393,7 @@ namespace
         static void thunk(RE::ArrowProjectile* p, RE::TESObjectREFR* target, const RE::NiPoint3& point, const RE::NiPoint3& velocity,
             RE::hkpCollidable* collidable, std::int32_t a6, std::uint32_t a7)
         {
-            prepareProjectile(p, target && target->IsActor());
+            prepareProjectile(p, target && target->As<RE::Actor>());
             original(p, target, point, velocity, collidable, a6, a7);
         }
         static inline REL::Relocation<decltype(thunk)> original;
@@ -405,7 +405,7 @@ namespace
             bool actorContact = false;
             for (auto impact : p->GetProjectileRuntimeData().impacts) if (impact) {
                 const auto ref = impact->collidee.get();
-                if (ref && ref->IsActor()) { actorContact = true; break; }
+                if (ref && ref->As<RE::Actor>()) { actorContact = true; break; }
             }
             prepareProjectile(p, actorContact);
             return original(p);
