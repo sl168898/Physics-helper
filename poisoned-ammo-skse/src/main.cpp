@@ -1,0 +1,518 @@
+#include <RE/Skyrim.h>
+#include <SKSE/SKSE.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <Windows.h>
+#include "Core.h"
+#include <array>
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+
+namespace
+{
+    constexpr std::uint32_t saveID = 0x4E415031, recordID = 0x52435031;
+    struct Settings
+    {
+        std::uint32_t key = 66, arrowsPerBottle = 0, maxBatch = 5000;
+        bool autoEquip = true, trace = false;
+        void load()
+        {
+            constexpr auto path = ".\\Data\\SKSE\\Plugins\\PoisonedAmmoNative.ini";
+            key = GetPrivateProfileIntA("General", "CraftKey", 66, path);
+            arrowsPerBottle = std::min(GetPrivateProfileIntA("General", "ArrowsPerBottle", 0, path), 10000u);
+            maxBatch = std::clamp(GetPrivateProfileIntA("General", "MaxBatchArrows", 5000, path), 1u, 100000u);
+            autoEquip = GetPrivateProfileIntA("General", "AutoEquip", 1, path) != 0;
+            trace = GetPrivateProfileIntA("General", "TraceProjectiles", 0, path) != 0;
+            if (key > 255) key = 66;
+        }
+    } settings;
+    struct Slot
+    {
+        RE::TESAmmo* form{};
+        RE::AlchemyItem* proxy{};
+        RE::TESAmmo* original{};
+        RE::AlchemyItem* poison{};
+    };
+    std::array<Slot, pa::capacity> slots;
+    std::unordered_map<RE::FormID, std::size_t> slotIDs;
+    pa::Recipes recipes;
+    std::recursive_mutex stateMutex;
+    RE::TESGlobal* marker{};
+    bool formsReady = false, saveFault = false;
+    std::atomic_bool session = false, menuPending = false;
+    std::atomic<std::uint64_t> generation = 0;
+    // Engine active effects can retain Effect pointers across load/revert callbacks.
+    // Retire them for this process instead of freeing memory still in engine use.
+    std::vector<RE::Effect*> effectArena;
+
+    void notify(std::string_view message) { RE::DebugNotification(std::string(message).c_str()); }
+    std::string displayName(RE::TESForm* form)
+    {
+        const char* name = form ? form->GetName() : nullptr;
+        return name && *name ? std::string(name).substr(0, 110) : "Unnamed";
+    }
+    std::optional<pa::Key> keyOf(RE::TESForm* form)
+    {
+        if (!form || form->IsDynamicForm()) return {};
+        const auto file = form->GetFile(0);
+        if (!file) return {};
+        pa::Key result{pa::lower(std::string(file->GetFilename())), pa::localID(form->GetFormID(), file->IsLight())};
+        if (!pa::valid(result)) return {};
+        return result;
+    }
+    template<class T> T* resolve(const pa::Key& key)
+    {
+        auto data = RE::TESDataHandler::GetSingleton();
+        if (!data || !pa::valid(key)) return nullptr;
+        const auto file = data->LookupModByName(key.file);
+        if (!file || (file->IsLight() && key.local > 0xFFF)) return nullptr;
+        return data->LookupForm<T>(key.local, key.file);
+    }
+    template<class Component> void copyComponent(RE::TESAmmo* to, RE::TESAmmo* from)
+    {
+        static_cast<Component*>(to)->CopyComponent(static_cast<Component*>(from));
+    }
+    void copyAmmo(RE::TESAmmo* to, RE::TESAmmo* from, const std::string& name)
+    {
+        // TESAmmo does not override TESForm::Copy; copy its actual components.
+        copyComponent<RE::TESModelTextureSwap>(to, from);
+        copyComponent<RE::TESIcon>(to, from);
+        copyComponent<RE::BGSMessageIcon>(to, from);
+        copyComponent<RE::TESValueForm>(to, from);
+        copyComponent<RE::TESWeightForm>(to, from);
+        copyComponent<RE::BGSDestructibleObjectForm>(to, from);
+        copyComponent<RE::BGSPickupPutdownSounds>(to, from);
+        copyComponent<RE::TESDescription>(to, from);
+        copyComponent<RE::BGSKeywordForm>(to, from);
+        to->boundData = from->boundData;
+        to->GetRuntimeData() = from->GetRuntimeData();
+        to->fullName = name;
+    }
+    void disableSlots()
+    {
+        for (auto& slot : slots) {
+            slot.original = nullptr; slot.poison = nullptr;
+            if (slot.form) {
+                slot.form->fullName = "Unavailable poisoned ammunition";
+                slot.form->GetRuntimeData().data.flags.set(RE::AMMO_DATA::Flag::kNonPlayable);
+            }
+        }
+    }
+    bool restoreSlot(std::size_t i)
+    {
+        if (i >= recipes.size() || i >= slots.size()) return false;
+        auto& slot = slots[i]; const auto& recipe = recipes[i];
+        slot.original = nullptr; slot.poison = nullptr;
+        auto base = resolve<RE::TESAmmo>(recipe.ammo);
+        if (!base || !base->GetPlayable() || !base->GetRuntimeData().data.projectile || slotIDs.contains(base->GetFormID())) return false;
+        RE::AlchemyItem* poison = nullptr;
+        if (!recipe.poison.custom()) {
+            poison = resolve<RE::AlchemyItem>(recipe.poison.source);
+            if (!poison || !poison->IsPoison()) return false;
+        } else {
+            std::vector<RE::EffectSetting*> bases;
+            std::vector<RE::BGSKeyword*> keywords;
+            for (const auto& e : recipe.poison.effects) {
+                auto effect = resolve<RE::EffectSetting>(e.base);
+                if (!effect) return false;
+                bases.push_back(effect);
+            }
+            for (const auto& k : recipe.poison.keywords) {
+                auto keyword = resolve<RE::BGSKeyword>(k);
+                if (!keyword) return false;
+                keywords.push_back(keyword);
+            }
+            poison = slot.proxy;
+            poison->effects.clear();
+            poison->hostileCount = 0; poison->avEffectSetting = nullptr;
+            poison->fullName = recipe.poison.name;
+            poison->data.costOverride = recipe.poison.value;
+            poison->data.flags = static_cast<RE::AlchemyItem::AlchemyFlag>(recipe.poison.flags);
+            for (std::size_t e = 0; e < bases.size(); ++e) {
+                const auto& value = recipe.poison.effects[e];
+                auto effect = new RE::Effect();
+                effect->baseEffect = bases[e];
+                effect->effectItem.magnitude = value.magnitude;
+                effect->effectItem.area = value.area; effect->effectItem.duration = value.duration;
+                effect->cost = value.cost; effect->conditions.head = nullptr;
+                effectArena.push_back(effect); poison->effects.push_back(effect);
+                if (bases[e]->IsHostile()) ++poison->hostileCount;
+            }
+            auto keys = static_cast<RE::BGSKeywordForm*>(poison);
+            keys->ClearDataComponent();
+            if (!keywords.empty()) keys->AddKeywords(keywords);
+        }
+        copyAmmo(slot.form, base, recipe.name);
+        slot.original = base; slot.poison = poison;
+        SKSE::log::info("Slot {}: {:08X} <- {}|{:06X}; poison={}{}", i, slot.form->GetFormID(),
+            recipe.ammo.file, recipe.ammo.local, recipe.poison.custom() ? "crafted: " : "static: ", recipe.poison.name);
+        return true;
+    }
+    void restoreAll()
+    {
+        disableSlots();
+        for (std::size_t i = 0; i < recipes.size(); ++i) if (!restoreSlot(i))
+            SKSE::log::error("Slot {} unavailable: a source plugin/form is missing or changed. Slot is reserved, never recycled.", i);
+    }
+    std::optional<pa::Poison> snapshot(RE::AlchemyItem* item)
+    {
+        if (!item || !item->IsPoison()) return {};
+        pa::Poison p; p.name = displayName(item);
+        if (auto key = keyOf(item)) { p.source = *key; return p; }
+        if (!item->IsDynamicForm() || item->HasVMAD() || item->effects.empty() || item->effects.size() > 64) return {};
+        p.value = item->data.costOverride; p.flags = item->data.flags.underlying();
+        for (auto e : item->effects) {
+            if (!e || !e->baseEffect || e->conditions.head) return {};
+            auto key = keyOf(e->baseEffect);
+            if (!key) return {};
+            p.effects.push_back({*key, e->effectItem.magnitude, e->effectItem.area, e->effectItem.duration, e->cost});
+        }
+        for (auto keyword : item->GetKeywords()) {
+            auto key = keyOf(keyword); if (!key) return {};
+            p.keywords.push_back(*key);
+        }
+        return p;
+    }
+    std::int32_t count(RE::PlayerCharacter* player, RE::TESBoundObject* item)
+    {
+        auto inventory = player->GetInventoryCounts([&](RE::TESBoundObject& obj) { return &obj == item; });
+        const auto it = inventory.find(item); return it != inventory.end() ? std::max(0, it->second) : 0;
+    }
+    bool safeInput(RE::PlayerCharacter* player, RE::TESBoundObject* item)
+    {
+        auto inventory = player->GetInventory([&](RE::TESBoundObject& obj) { return &obj == item; });
+        const auto it = inventory.find(item);
+        return it != inventory.end() && it->second.first > 0 && it->second.second &&
+            !it->second.second->IsQuestObject() && it->second.second->IsOwnedBy(player);
+    }
+    struct Request
+    {
+        std::uint64_t epoch{};
+        RE::FormID ammo{}, poison{}, weapon{};
+        std::uint32_t doses{};
+        pa::Recipe recipe;
+    };
+    void refreshInventory()
+    {
+        if (auto ui = RE::UI::GetSingleton())
+            if (auto menu = ui->GetMenu<RE::InventoryMenu>())
+                if (auto list = menu->GetRuntimeData().itemList) list->Update(RE::PlayerCharacter::GetSingleton());
+    }
+    void craft(const Request& request, std::uint32_t bottles)
+    {
+        if (!session || request.epoch != generation || !bottles) return;
+        auto player = RE::PlayerCharacter::GetSingleton();
+        auto ammo = RE::TESForm::LookupByID<RE::TESAmmo>(request.ammo);
+        auto poison = RE::TESForm::LookupByID<RE::AlchemyItem>(request.poison);
+        if (!player || !ammo || !poison || player->GetCurrentAmmo() != ammo ||
+            !player->GetEquippedObject(false) || player->GetEquippedObject(false)->GetFormID() != request.weapon) {
+            notify("Poisoned Ammo: equipment changed. Select the poison again."); return;
+        }
+        const auto current = snapshot(poison);
+        if (!current || *current != request.recipe.poison || !safeInput(player, ammo) || !safeInput(player, poison)) {
+            notify("Poisoned Ammo: inputs changed, are stolen, or are quest items."); return;
+        }
+        const auto beforeAmmo = count(player, ammo), beforePoison = count(player, poison);
+        const auto batch = pa::plan(beforeAmmo, beforePoison, request.doses, bottles, settings.maxBatch);
+        if (!batch.arrows) { notify("Poisoned Ammo: not enough ammunition or poison."); return; }
+        RE::TESAmmo* output = nullptr;
+        {
+            std::lock_guard lock(stateMutex);
+            if (!formsReady || saveFault) return;
+            auto slot = pa::existing(recipes, request.recipe);
+            const bool newlyAssigned = !slot.has_value();
+            if (!slot) {
+                if (recipes.size() == pa::capacity) { notify("Poisoned Ammo: all 512 recipe slots are reserved in this save."); return; }
+                recipes.push_back(request.recipe); slot = recipes.size() - 1;
+            }
+            if (!slots[*slot].poison && !restoreSlot(*slot)) {
+                if (newlyAssigned) recipes.pop_back(); // No item referencing this new slot has existed yet.
+                notify("Poisoned Ammo: source data unavailable; no items consumed."); return;
+            }
+            output = slots[*slot].form;
+            marker->value = pa::fingerprint(recipes);
+        }
+        const auto beforeOutput = count(player, output);
+        // No asynchronous work between validation, removal and output creation.
+        player->RemoveItem(poison, batch.bottles, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+        auto removedPoison = std::clamp(beforePoison - count(player, poison), 0, batch.bottles);
+        if (removedPoison != batch.bottles) {
+            if (removedPoison) player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
+            notify("Poisoned Ammo: poison removal failed; batch cancelled."); return;
+        }
+        player->RemoveItem(ammo, batch.arrows, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+        auto removedAmmo = std::clamp(beforeAmmo - count(player, ammo), 0, batch.arrows);
+        if (removedAmmo != batch.arrows) {
+            if (removedAmmo) player->AddObjectToContainer(ammo, nullptr, removedAmmo, nullptr);
+            player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
+            notify("Poisoned Ammo: ammunition removal failed; materials returned."); return;
+        }
+        player->AddObjectToContainer(output, nullptr, batch.arrows, nullptr);
+        const auto added = std::clamp(count(player, output) - beforeOutput, 0, batch.arrows);
+        if (added != batch.arrows) {
+            if (added) player->RemoveItem(output, added, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+            player->AddObjectToContainer(ammo, nullptr, removedAmmo, nullptr);
+            player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
+            notify("Poisoned Ammo: output creation failed; materials returned."); return;
+        }
+        if (settings.autoEquip) if (auto equip = RE::ActorEquipManager::GetSingleton())
+            equip->EquipObject(player, output, nullptr, 1, nullptr, false, true, false, true);
+        refreshInventory();
+        SKSE::log::info("Crafted {} x {} from {} bottles ({} arrows/bottle)", batch.arrows, request.recipe.name, batch.bottles, request.doses);
+        notify(fmt::format("Created {} {}", batch.arrows, request.recipe.name));
+    }
+    struct BatchCallback final : RE::IMessageBoxCallback
+    {
+        Request request;
+        std::vector<std::uint32_t> options;
+        std::atomic_bool used = false;
+        BatchCallback(Request r, std::vector<std::uint32_t> values) : request(std::move(r)), options(std::move(values)) { unk0C = 0; }
+        void Run(Message button) override
+        {
+            if (used.exchange(true)) return;
+            const auto selected = static_cast<std::uint32_t>(button);
+            const auto r = request;
+            const auto n = selected < options.size() ? options[selected] : 0;
+            SKSE::GetTaskInterface()->AddTask([r, n] {
+                if (r.epoch != generation) return;
+                menuPending = false;
+                try { craft(r, n); } catch (const std::exception& e) { SKSE::log::error("Craft error: {}", e.what()); notify("Poisoned Ammo: crafting error. See the log."); }
+            });
+        }
+    };
+    bool showBatch(Request request, std::int32_t ammo, std::int32_t poisons)
+    {
+        auto factoryManager = RE::MessageDataFactoryManager::GetSingleton();
+        auto strings = RE::InterfaceStrings::GetSingleton();
+        if (!factoryManager || !strings) return false;
+        auto factory = factoryManager->GetCreator<RE::MessageBoxData>(strings->messageBoxData);
+        if (!factory) return false;
+        auto box = factory->Create(); if (!box) return false;
+        const auto maximum = pa::plan(ammo, poisons, request.doses, UINT32_MAX, settings.maxBatch);
+        const std::string body = fmt::format("Poison ammunition\n{}\n{} arrows per bottle. Choose bottles to use.\nA partly used final bottle is consumed.", request.recipe.name, request.doses);
+        box->bodyText = body.c_str();
+        std::vector<std::uint32_t> options;
+        for (auto n : {1u, 5u, 10u, static_cast<std::uint32_t>(maximum.bottles)}) {
+            if (!n || n > static_cast<std::uint32_t>(maximum.bottles) || std::find(options.begin(), options.end(), n) != options.end()) continue;
+            const auto p = pa::plan(ammo, poisons, request.doses, n, settings.maxBatch);
+            const auto label = fmt::format("{} bottle{} / {} ammo", n, n == 1 ? "" : "s", p.arrows);
+            options.push_back(n); box->buttonText.push_back(label.c_str());
+        }
+        options.push_back(0); box->buttonText.push_back("Cancel");
+        box->callback.reset(new BatchCallback(std::move(request), std::move(options)));
+        box->QueueMessage(); return true;
+    }
+    void requestCraft()
+    {
+        if (!session || !formsReady) return;
+        { std::lock_guard lock(stateMutex); if (saveFault) { notify("Poisoned Ammo: save data mismatch. Restore the matching .skse co-save."); return; } }
+        auto ui = RE::UI::GetSingleton();
+        auto player = RE::PlayerCharacter::GetSingleton();
+        auto menu = ui ? ui->GetMenu<RE::InventoryMenu>() : nullptr;
+        if (!menu || !player || ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME) || menuPending.exchange(true)) return;
+        auto list = menu->GetRuntimeData().itemList;
+        auto selected = list ? list->GetSelectedItem() : nullptr;
+        auto entry = selected ? selected->data.objDesc : nullptr;
+        auto poison = entry && entry->object ? entry->object->As<RE::AlchemyItem>() : nullptr;
+        auto ammo = player->GetCurrentAmmo();
+        auto object = player->GetEquippedObject(false);
+        auto weapon = object ? object->As<RE::TESObjectWEAP>() : nullptr;
+        const auto fail = [](const char* text) { menuPending = false; notify(text); };
+        if (!poison || !poison->IsPoison()) { fail("Poisoned Ammo: highlight a poison in your inventory, then press the craft key."); return; }
+        if (!ammo || !weapon || (!weapon->IsBow() && !weapon->IsCrossbow()) || weapon->IsCrossbow() != ammo->IsBolt()) {
+            fail("Poisoned Ammo: equip a bow/crossbow and matching arrows/bolts first."); return;
+        }
+        if (slotIDs.contains(ammo->GetFormID()) || !ammo->GetPlayable()) { fail("Poisoned Ammo: equip ordinary ammunition first."); return; }
+        const auto weaponEntry = player->GetEquippedEntryData(false);
+        if (weaponEntry && weaponEntry->IsPoisoned()) { fail("Poisoned Ammo: use up the poison already on your bow first."); return; }
+        const auto ammoKey = keyOf(ammo); const auto poisonData = snapshot(poison);
+        if (!ammoKey || !poisonData) { fail("Poisoned Ammo: this temporary item cannot be saved safely. No items consumed."); return; }
+        if (!safeInput(player, ammo) || !safeInput(player, poison)) { fail("Poisoned Ammo: quest items and stolen inputs cannot be used."); return; }
+        float doses = 1.0f;
+        if (settings.arrowsPerBottle) doses = static_cast<float>(settings.arrowsPerBottle);
+        else {
+            // Entry point 83 has owner, weapon, poison condition tabs, then float output.
+            RE::BGSEntryPoint::HandleEntryPoint(RE::BGSEntryPoint::ENTRY_POINT::kModPoisonDoseCount,
+                player, static_cast<RE::TESForm*>(weapon), static_cast<RE::TESForm*>(poison), &doses);
+        }
+        if (!std::isfinite(doses)) doses = 1;
+        const auto perBottle = static_cast<std::uint32_t>(std::clamp(doses, 1.0f, 10000.0f));
+        Request request{generation.load(), ammo->GetFormID(), poison->GetFormID(), weapon->GetFormID(), perBottle,
+            {*ammoKey, *poisonData, fmt::format("{} [{}]", displayName(ammo), poisonData->name)}};
+        if (!pa::valid(request.recipe)) { fail("Poisoned Ammo: unsupported poison data. No items consumed."); return; }
+        const auto ammoCount = count(player, ammo), poisonCount = count(player, poison);
+        if (!pa::plan(ammoCount, poisonCount, perBottle, UINT32_MAX, settings.maxBatch).arrows ||
+            !showBatch(std::move(request), ammoCount, poisonCount)) fail("Poisoned Ammo: no available batch.");
+    }
+    struct Input final : RE::BSTEventSink<RE::InputEvent*>
+    {
+        RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* events, RE::BSTEventSource<RE::InputEvent*>*) override
+        {
+            if (events && session) for (auto e = *events; e; e = e->next) {
+                const auto button = e->AsButtonEvent();
+                if (button && button->device == RE::INPUT_DEVICE::kKeyboard && button->IsDown() && button->GetIDCode() == settings.key) {
+                    const auto epoch = generation.load();
+                    SKSE::GetTaskInterface()->AddTask([epoch] { if (epoch == generation) requestCraft(); });
+                }
+            }
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    } input;
+
+    void prepareProjectile(RE::ArrowProjectile* projectile, bool actorContact)
+    {
+        if (!session || !projectile) return;
+        auto& runtime = projectile->GetProjectileRuntimeData();
+        if (!runtime.ammoSource) return;
+        Slot slot;
+        {
+            std::lock_guard lock(stateMutex);
+            auto it = slotIDs.find(runtime.ammoSource->GetFormID());
+            if (it == slotIDs.end() || saveFault) return;
+            slot = slots[it->second];
+        }
+        if (!slot.poison || !slot.original) return;
+        auto& arrow = projectile->GetArrowRuntimeData();
+        const bool fresh = arrow.poison != slot.poison;
+        arrow.poison = slot.poison;
+        // Native impact handling applies the poison. Recovery must use the base ammo
+        // on any actor contact; world misses retain the stable poisoned ammo record.
+        if (actorContact) runtime.ammoSource = slot.original;
+        if (settings.trace && (fresh || actorContact)) SKSE::log::info("Projectile {:08X}: native poison {:08X}, actor contact={}, recover {:08X}",
+            projectile->GetFormID(), slot.poison->GetFormID(), actorContact, runtime.ammoSource->GetFormID());
+    }
+    struct LoadedHook
+    {
+        static void thunk(RE::ArrowProjectile* p) { original(p); prepareProjectile(p, false); }
+        static inline REL::Relocation<decltype(thunk)> original;
+    };
+    struct ImpactHook
+    {
+        static void thunk(RE::ArrowProjectile* p, RE::TESObjectREFR* target, const RE::NiPoint3& point, const RE::NiPoint3& velocity,
+            RE::hkpCollidable* collidable, std::int32_t a6, std::uint32_t a7)
+        {
+            prepareProjectile(p, target && target->IsActor());
+            original(p, target, point, velocity, collidable, a6, a7);
+        }
+        static inline REL::Relocation<decltype(thunk)> original;
+    };
+    struct ProcessHook
+    {
+        static bool thunk(RE::ArrowProjectile* p)
+        {
+            bool actorContact = false;
+            for (auto impact : p->GetProjectileRuntimeData().impacts) if (impact) {
+                const auto ref = impact->collidee.get();
+                if (ref && ref->IsActor()) { actorContact = true; break; }
+            }
+            prepareProjectile(p, actorContact);
+            return original(p);
+        }
+        static inline REL::Relocation<decltype(thunk)> original;
+    };
+    void installHooks()
+    {
+        REL::Relocation<std::uintptr_t> table{RE::VTABLE_ArrowProjectile[0]};
+        LoadedHook::original = table.write_vfunc(0xC0, LoadedHook::thunk);
+        ImpactHook::original = table.write_vfunc(0xBD, ImpactHook::thunk);
+        ProcessHook::original = table.write_vfunc(0xAC, ProcessHook::thunk);
+        SKSE::log::info("ArrowProjectile hooks installed; chained native loaded/impact/process functions. No poison-menu detour.");
+    }
+    void reset()
+    {
+        session = false; menuPending = false; ++generation;
+        std::lock_guard lock(stateMutex);
+        recipes.clear(); saveFault = false; disableSlots();
+    }
+    void save(SKSE::SerializationInterface* api)
+    {
+        std::lock_guard lock(stateMutex);
+        if (!formsReady || saveFault) { SKSE::log::error("Save blocked: poisoned ammo state unavailable; ESS marker retained"); return; }
+        try {
+            const auto bytes = pa::encode(recipes);
+            if (!api->WriteRecord(recordID, 1, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
+                SKSE::log::error("Could not write poison recipe co-save");
+            else SKSE::log::info("Saved {} recipe slots, {} bytes", recipes.size(), bytes.size());
+        } catch (const std::exception& e) { SKSE::log::error("Save error: {}", e.what()); }
+    }
+    void load(SKSE::SerializationInterface* api)
+    {
+        std::lock_guard lock(stateMutex);
+        recipes.clear(); disableSlots(); saveFault = false;
+        std::uint32_t type{}, version{}, length{}; bool found = false;
+        while (api->GetNextRecordInfo(type, version, length)) {
+            if (type != recordID) continue;
+            try {
+                if (found || version != 1 || length > pa::maxSaveBytes) throw std::runtime_error("duplicate/unsupported recipe record");
+                found = true;
+                std::vector<std::uint8_t> bytes(length);
+                if (api->ReadRecordData(bytes.data(), length) != length) throw std::runtime_error("short recipe record");
+                recipes = pa::decode(bytes);
+            } catch (const std::exception& e) { saveFault = true; SKSE::log::error("Co-save error: {}", e.what()); }
+        }
+        if (!saveFault && formsReady) restoreAll();
+        SKSE::log::info("Loaded {} recipe slots; record found={}, fault={}", recipes.size(), found, saveFault);
+    }
+    void onMessage(SKSE::MessagingInterface::Message* message)
+    {
+        switch (message->type) {
+        case SKSE::MessagingInterface::kDataLoaded: {
+            std::lock_guard lock(stateMutex);
+            settings.load(); auto data = RE::TESDataHandler::GetSingleton();
+            marker = data->LookupForm<RE::TESGlobal>(pa::markerID, pa::plugin);
+            formsReady = marker != nullptr;
+            for (std::size_t i = 0; i < slots.size(); ++i) {
+                auto& slot = slots[i];
+                slot.form = data->LookupForm<RE::TESAmmo>(pa::ammoStart + static_cast<std::uint32_t>(i), pa::plugin);
+                slot.proxy = data->LookupForm<RE::AlchemyItem>(pa::poisonStart + static_cast<std::uint32_t>(i), pa::plugin);
+                formsReady = formsReady && slot.form && slot.proxy;
+                if (slot.form) slotIDs.emplace(slot.form->GetFormID(), i);
+            }
+            if (!formsReady) { SKSE::log::error("Disabled: enable the matching PoisonedAmmoNative.esp"); break; }
+            disableSlots(); installHooks();
+            RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&input);
+            SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip);
+            break;
+        }
+        case SKSE::MessagingInterface::kPreLoadGame: session = false; menuPending = false; ++generation; break;
+        case SKSE::MessagingInterface::kNewGame: {
+            reset(); if (marker) marker->value = 0; session = formsReady; break;
+        }
+        case SKSE::MessagingInterface::kPostLoadGame: {
+            if (!message->data || !formsReady) break;
+            std::lock_guard lock(stateMutex);
+            if (saveFault || marker->value != pa::fingerprint(recipes)) {
+                saveFault = true; disableSlots();
+                SKSE::log::error("ESS/co-save mismatch: marker={}, recipes={}. Crafting and poison delivery disabled.", marker->value, recipes.size());
+                SKSE::GetTaskInterface()->AddTask([] { RE::DebugMessageBox("Poisoned Ammo: this save's .skse co-save is missing, damaged, or mismatched. Restore the matching ESS and SKSE files. Crafting is disabled to protect existing ammunition."); });
+            }
+            session = true;
+            break;
+        }
+        default: break;
+        }
+    }
+}
+extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
+    SKSE::PluginVersionData data{};
+    data.PluginVersion({0, 1, 0, 0}); data.PluginName("PoisonedAmmoNative");
+    data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
+    data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
+}();
+extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface* skse)
+{
+    if (skse->RuntimeVersion() != REL::Version{1, 6, 1170, 0}) return false;
+    auto path = SKSE::log::log_directory(); if (!path) return false;
+    *path /= "PoisonedAmmoNative.log";
+    spdlog::set_default_logger(std::make_shared<spdlog::logger>("global",
+        std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
+    spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
+    SKSE::Init(skse);
+    SKSE::log::info("PoisonedAmmoNative 0.1.0 beta; Skyrim Steam 1.6.1170; independent native implementation");
+    auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
+    api->SetSaveCallback(save); api->SetLoadCallback(load);
+    api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });
+    return SKSE::GetMessagingInterface()->RegisterListener(onMessage);
+}

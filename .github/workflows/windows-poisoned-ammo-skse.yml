@@ -1,0 +1,30 @@
+name: Build Poisoned Ammunition SKSE Beta
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/poisoned-ammo-skse']
+permissions:
+  contents: read
+concurrency:
+  group: poisoned-ammo-native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: wheeler-windows2022-staticmd-vcpkg-382c5b8a-v1
+      - name: Build and test PoisonedAmmoNative
+        shell: pwsh
+        run: '& .\poisoned-ammo-skse\tools\build_windows.ps1'
+      - name: Upload installable beta and source
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Poisoned-Ammunition-SKSE-v0-1-0-Beta
+          path: poisoned-ammo-skse/_build/Poisoned_Ammunition_SKSE_v0_1_0_Beta.zip
+          if-no-files-found: error

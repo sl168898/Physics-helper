@@ -1,0 +1,6 @@
+{
+  "name": "poisoned-ammo-native",
+  "version-string": "0.1.0",
+  "builtin-baseline": "382c5b8a94b3d6b6286df7a488c7efa8d37313eb",
+  "dependencies": ["spdlog", "rapidcsv"]
+}
