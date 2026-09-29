@@ -1,3 +1,15 @@
+# Wheeler 2K icon renderer — native component v1.5
+
+Extends fixed-size I4 offscreen rendering to 2048 pixels; native SVGs already
+support the 2048 metadata target. Logical draw dimensions stay independent.
+Unmodified dynamic-size extraction retains its earlier 1024-pixel cap.
+Successful HD SVG/SWF uploads are logged in normal mode, allowing the installed
+renderer and actual texture dimensions to be verified without debug.ini.
+Preserves v1.4 lazy native loading and all earlier compatibility patches.
+The end-user 2K overlay supplies 2048-marked assets and FixedRenderSize=2048.
+
+## Earlier component notes
+
 # Wheeler HD icon renderer — native component v1.4
 
 Adds opt-in 1024/2048-pixel GPU rasterization for SVG artwork carrying the

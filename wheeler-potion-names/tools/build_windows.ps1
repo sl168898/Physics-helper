@@ -33,6 +33,8 @@ Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'omen-gluttony-
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'omen-gluttony-icon.patch'))
 Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'hd-icons.patch'))
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'hd-icons.patch'))
+Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root '2k-icons.patch'))
+Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root '2k-icons.patch'))
 Run (Join-Path $Vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 $env:VCPKG_ROOT = $Vcpkg
 Run 'cmake' @('-S', $Refined, '-B', $Build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
@@ -69,7 +71,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Source 'Wheeler-Refined') 
 foreach ($Name in @('src','cmake','CMakeLists.txt','CMakePresets.json','vcpkg.json','vcpkg-configuration.json','.clang-format','.editorconfig','LICENSE','LICENSES','NOTICE.md','THIRD_PARTY_NOTICES.md','BUILDING.md','README.md','tools')) {
     Copy-Item (Join-Path $Refined $Name) (Join-Path $Source 'Wheeler-Refined') -Recurse
 }
-foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','omen-gluttony-icon.patch','hd-icons.patch','assets','README.md','build_patch.py','validate_assets.py')) {
+foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','omen-gluttony-icon.patch','hd-icons.patch','2k-icons.patch','assets','README.md','build_patch.py','validate_assets.py')) {
     Copy-Item (Join-Path $Root $Name) $Source -Recurse
 }
 Run 'python' @((Join-Path $Root 'build_patch.py'), '--stage', $Stage)
@@ -79,7 +81,7 @@ $NamedIcons = Join-Path $Stage 'SKSE/Plugins/wheeler/resources/named_powers'
 New-Item -ItemType Directory -Force -Path $NamedIcons | Out-Null
 Copy-Item (Join-Path $Root 'assets/omen_of_gluttony.svg') $NamedIcons
 $Info = [ordered]@{
-    patchVersion = '1.4'; builtUTC = [DateTime]::UtcNow.ToString('o')
+    patchVersion = '1.5'; builtUTC = [DateTime]::UtcNow.ToString('o')
     refinedCommit = $RefinedCommit; commonLibCommit = $CommonCommit; vcpkgCommit = $VcpkgCommit
     patchCommit = $env:GITHUB_SHA
     targetRuntime = 'Steam Skyrim SE 1.6.1170'; targetRefined = '1.3.3.0'
@@ -94,4 +96,4 @@ $Info = [ordered]@{
     inGameTested = $false
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'BUILD-INFO.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_HD_Icons_Component_v1_4.zip') -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_2K_Icons_Component_v1_5.zip') -CompressionLevel Optimal

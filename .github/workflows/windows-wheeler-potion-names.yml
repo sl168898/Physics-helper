@@ -1,4 +1,4 @@
-name: Build Wheeler HD Icon Renderer
+name: Build Wheeler 2K Icon Renderer
 on:
   workflow_dispatch:
   push:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-HD-Icons-Component-v1-4
-          path: wheeler-potion-names/_build/Wheeler_Refined_HD_Icons_Component_v1_4.zip
+          name: Wheeler-2K-Icons-Component-v1-5
+          path: wheeler-potion-names/_build/Wheeler_Refined_2K_Icons_Component_v1_5.zip
           if-no-files-found: error
