@@ -1,0 +1,336 @@
+diff --git a/src/bin/Rendering/IconMipmaps.h b/src/bin/Rendering/IconMipmaps.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Rendering/IconMipmaps.h
+@@ -0,0 +1,90 @@
++// Copyright (c) 2026. SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <span>
++#include <utility>
++#include <vector>
++
++namespace IconMipmaps
++{
++    struct Level
++    {
++        int width = 0;
++        int height = 0;
++        std::vector<std::uint8_t> rgba;
++    };
++
++    // Store straight-alpha pixels for ImGui's existing blend state. Transparent
++    // pixels borrow colour only; their alpha remains zero. This avoids dark
++    // fringes when bilinear sampling crosses an otherwise empty texel.
++    inline void ExtendTransparentColors(Level& level)
++    {
++        for (int y = 0; y < level.height; ++y) {
++            for (int x = 0; x < level.width; ++x) {
++                const auto at = (static_cast<std::size_t>(y) * level.width + x) * 4;
++                if (level.rgba[at + 3] != 0) continue;
++                unsigned alpha = 0, rgb[3]{};
++                for (int dy = -1; dy <= 1; ++dy) {
++                    for (int dx = -1; dx <= 1; ++dx) {
++                        const int nx = x + dx, ny = y + dy;
++                        if (nx < 0 || nx >= level.width || ny < 0 || ny >= level.height) continue;
++                        const auto n = (static_cast<std::size_t>(ny) * level.width + nx) * 4;
++                        const unsigned a = level.rgba[n + 3];
++                        alpha += a;
++                        for (int c = 0; c < 3; ++c) rgb[c] += level.rgba[n + c] * a;
++                    }
++                }
++                if (alpha != 0) {
++                    for (int c = 0; c < 3; ++c) level.rgba[at + c] = static_cast<std::uint8_t>((rgb[c] + alpha / 2) / alpha);
++                }
++            }
++        }
++    }
++
++    inline std::vector<Level> Build(std::span<const std::uint8_t> pixels, int width, int height)
++    {
++        // Native HD raster targets never exceed 2048. The extra headroom keeps
++        // the helper usable independently while bounding accidental allocations.
++        if (width < 1 || height < 1 || width > 4096 || height > 4096 ||
++            pixels.size() != static_cast<std::size_t>(width) * height * 4) return {};
++        std::vector<Level> levels;
++        levels.push_back({width, height, {pixels.begin(), pixels.end()}});
++        ExtendTransparentColors(levels.back());
++        while (levels.back().width > 1 || levels.back().height > 1) {
++            const auto& src = levels.back();
++            Level dst;
++            dst.width = (std::max)(1, src.width / 2);
++            dst.height = (std::max)(1, src.height / 2);
++            dst.rgba.resize(static_cast<std::size_t>(dst.width) * dst.height * 4);
++            for (int y = 0; y < dst.height; ++y) {
++                const double y0 = static_cast<double>(y) * src.height / dst.height;
++                const double y1 = static_cast<double>(y + 1) * src.height / dst.height;
++                for (int x = 0; x < dst.width; ++x) {
++                    const double x0 = static_cast<double>(x) * src.width / dst.width;
++                    const double x1 = static_cast<double>(x + 1) * src.width / dst.width;
++                    double alpha = 0, rgb[3]{};
++                    for (int sy = static_cast<int>(y0); sy < static_cast<int>(std::ceil(y1)); ++sy) {
++                        const double wy = (std::min)(y1, static_cast<double>(sy + 1)) - (std::max)(y0, static_cast<double>(sy));
++                        for (int sx = static_cast<int>(x0); sx < static_cast<int>(std::ceil(x1)); ++sx) {
++                            const double wx = (std::min)(x1, static_cast<double>(sx + 1)) - (std::max)(x0, static_cast<double>(sx));
++                            const auto at = (static_cast<std::size_t>(sy) * src.width + sx) * 4;
++                            const double a = src.rgba[at + 3] * wx * wy;
++                            alpha += a;
++                            for (int c = 0; c < 3; ++c) rgb[c] += src.rgba[at + c] * a;
++                        }
++                    }
++                    const auto at = (static_cast<std::size_t>(y) * dst.width + x) * 4;
++                    dst.rgba[at + 3] = static_cast<std::uint8_t>(std::lround(alpha / ((x1 - x0) * (y1 - y0))));
++                    if (alpha > 0) {
++                        for (int c = 0; c < 3; ++c) dst.rgba[at + c] = static_cast<std::uint8_t>(std::lround(rgb[c] / alpha));
++                    }
++                }
++            }
++            ExtendTransparentColors(dst);
++            levels.push_back(std::move(dst));
++        }
++        return levels;
++    }
++}
+diff --git a/src/bin/Rendering/IconTextureUpload.h b/src/bin/Rendering/IconTextureUpload.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Rendering/IconTextureUpload.h
+@@ -0,0 +1,55 @@
++// Copyright (c) 2026. SPDX-License-Identifier: GPL-3.0-or-later
++#pragma once
++#include "IconMipmaps.h"
++#include <d3d11.h>
++#include <wrl/client.h>
++#include <new>
++
++namespace IconTextureUpload
++{
++    inline D3D11_SAMPLER_DESC MipSamplerDescription()
++    {
++        D3D11_SAMPLER_DESC desc{};
++        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
++        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
++        desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
++        desc.MaxAnisotropy = 1;
++        desc.MinLOD = 0.0f;
++        // ImGui 1.91.9's default sampler clamps this to 0, disabling mip selection.
++        desc.MaxLOD = D3D11_FLOAT32_MAX;
++        return desc;
++    }
++
++    inline HRESULT Create(ID3D11Device* device, std::span<const std::uint8_t> rgba,
++        int width, int height, ID3D11ShaderResourceView** output)
++    {
++        if (!device || !output) return E_INVALIDARG;
++        *output = nullptr;
++        try {
++        auto levels = IconMipmaps::Build(rgba, width, height);
++        if (levels.empty()) return E_INVALIDARG;
++        std::vector<D3D11_SUBRESOURCE_DATA> data;
++        data.reserve(levels.size());
++        for (const auto& level : levels) data.push_back({level.rgba.data(), static_cast<UINT>(level.width * 4), 0});
++        D3D11_TEXTURE2D_DESC desc{};
++        desc.Width = static_cast<UINT>(width);
++        desc.Height = static_cast<UINT>(height);
++        desc.MipLevels = static_cast<UINT>(levels.size());
++        desc.ArraySize = 1;
++        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
++        desc.SampleDesc.Count = 1;
++        desc.Usage = D3D11_USAGE_IMMUTABLE;
++        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
++        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
++        const HRESULT created = device->CreateTexture2D(&desc, data.data(), texture.GetAddressOf());
++        if (FAILED(created)) return created;
++        D3D11_SHADER_RESOURCE_VIEW_DESC view{};
++        view.Format = desc.Format;
++        view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
++        view.Texture2D.MipLevels = desc.MipLevels;
++        return device->CreateShaderResourceView(texture.Get(), &view, output);
++        } catch (const std::bad_alloc&) {
++            return E_OUTOFMEMORY;
++        }
++    }
++}
+diff --git a/src/bin/Rendering/TextureManager.cpp b/src/bin/Rendering/TextureManager.cpp
+--- a/src/bin/Rendering/TextureManager.cpp
++++ b/src/bin/Rendering/TextureManager.cpp
+@@ -1,3 +1,4 @@
++#include "IconTextureUpload.h"
+ #include "TextureManager.h"
+ #include "IconRasterPolicy.h"
+ #include <algorithm>
+@@ -983,6 +984,7 @@
+ 	int logical_height = 0;
+ 	unsigned char* image_data = nullptr;
+ 	bool imageDataFromStbi = false;
++    bool useIconMipmaps = false;
+ 	std::string ext = std::filesystem::path(filename ? filename : "").extension().string();
+ 	std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
+ 		return static_cast<char>(std::tolower(c));
+@@ -1063,6 +1065,7 @@
+         const auto rasterPlan = IconRasterPolicy::MakePlan(logical_width, logical_height, svgInfo.rasterSize);
+         image_width = rasterPlan.width;
+         image_height = rasterPlan.height;
++        useIconMipmaps = rasterPlan.scale > 1.0f;
+         if (rasterPlan.scale > 1.0f) {
+             rast->tessTol = 0.05f;
+ 
+@@ -1082,6 +1085,26 @@
+ 		nsvgDelete(svg);
+ 		nsvgDeleteRasterizer(rast);
+ 	}
++
++    // HD icons need a mip chain as well as a large source texture. Keep the
++    // theme/background mask path and unmarked textures on their existing path.
++    if (useIconMipmaps && !out_mask_srv) {
++        const auto bytes = static_cast<std::size_t>(image_width) * image_height * 4;
++        const HRESULT result = IconTextureUpload::Create(device_, {image_data, bytes},
++            image_width, image_height, out_srv);
++        if (SUCCEEDED(result) && *out_srv) {
++            D3D11_SHADER_RESOURCE_VIEW_DESC view{};
++            (*out_srv)->GetDesc(&view);
++            free(image_data); // This branch contains only NanoSVG buffers.
++            out_width = logical_width;
++            out_height = logical_height;
++            logger::info("Texture: HD SVG loaded '{}' logical={}x{} texture={}x{} mips={}",
++                filename, out_width, out_height, image_width, image_height, view.Texture2D.MipLevels);
++            return true;
++        }
++        logger::warn("Texture: HD SVG mip upload failed for '{}' (HRESULT={}); retaining single-level fallback",
++            filename, static_cast<unsigned long>(result));
++    }
+ 
+ 	// Create texture
+ 	D3D11_TEXTURE2D_DESC desc;
+diff --git a/src/bin/Integrations/I4/I4SwfIconRenderer.cpp b/src/bin/Integrations/I4/I4SwfIconRenderer.cpp
+--- a/src/bin/Integrations/I4/I4SwfIconRenderer.cpp
++++ b/src/bin/Integrations/I4/I4SwfIconRenderer.cpp
+@@ -1,3 +1,4 @@
++#include "bin/Rendering/IconTextureUpload.h"
+ #include "bin/Rendering/IconRasterPolicy.h"
+ #include "I4SwfIconRenderer.h"
+ 
+@@ -536,6 +537,12 @@
+ 			return fail("opaque_pixels_too_low");
+ 		}
+ 
++        ID3D11ShaderResourceView* outSRV = nullptr;
++        if (sizePx > 1024) {
++            const HRESULT result = IconTextureUpload::Create(device, rgbaPixels,
++                static_cast<int>(sizePx), static_cast<int>(sizePx), &outSRV);
++            if (FAILED(result) || !outSRV) return fail("output_mip_texture_create_failed");
++        } else {
+ 		D3D11_TEXTURE2D_DESC outDesc{};
+ 		outDesc.Width = sizePx;
+ 		outDesc.Height = sizePx;
+@@ -560,18 +567,22 @@
+ 		srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+ 		srvDesc.Texture2D.MipLevels = 1;
+ 
+-		ID3D11ShaderResourceView* outSRV = nullptr;
+ 		if (FAILED(device->CreateShaderResourceView(outTexture, &srvDesc, &outSRV)) || !outSRV) {
+ 			outTexture->Release();
+ 			return fail("output_srv_create_failed");
+ 		}
+ 		outTexture->Release();
++
++        }
+ 
+ 		image.texture = outSRV;
+ 		image.width = static_cast<int>(sizePx);
+ 		image.height = static_cast<int>(sizePx);
+         if (sizePx > 1024) {
+-            logger::info("Texture: HD SWF loaded source='{}' label='{}' texture={}x{}", normalizedSource, normalizedLabel, image.width, image.height);
++            D3D11_SHADER_RESOURCE_VIEW_DESC view{};
++            outSRV->GetDesc(&view);
++            logger::info("Texture: HD SWF loaded source='{}' label='{}' texture={}x{} mips={}",
++                normalizedSource, normalizedLabel, image.width, image.height, view.Texture2D.MipLevels);
+         }
+ 		if (trace) {
+ 			I4_LOG_INFO("[I4][TRACE][renderer.offscreen.out] source='{}' label='{}' size={} decision=ok image={}x{} opaque={}",
+diff --git a/src/bin/Rendering/Drawer.cpp b/src/bin/Rendering/Drawer.cpp
+--- a/src/bin/Rendering/Drawer.cpp
++++ b/src/bin/Rendering/Drawer.cpp
+@@ -1,3 +1,4 @@
++#include "IconTextureUpload.h"
+ #include "Drawer.h"
+ 
+ 
+@@ -206,6 +207,46 @@
+ }
+ 
+ 
++
++namespace
++{
++    // Draw callbacks execute inside ImGui's DX11 render pass. Binding before
++    // RenderDrawData would be ineffective: ImGui overwrites that sampler.
++    void BeginHDIconSampling(const ImDrawList*, const ImDrawCmd*)
++    {
++        auto* state = static_cast<ImGui_ImplDX11_RenderState*>(ImGui::GetPlatformIO().Renderer_RenderState);
++        if (!state || !state->Device || !state->DeviceContext) return;
++        struct Cache
++        {
++            Microsoft::WRL::ComPtr<ID3D11Device> device;
++            Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler;
++            bool attempted = false;
++            bool logged = false;
++        };
++        static Cache cache;
++        if (cache.device.Get() != state->Device) {
++            cache.sampler.Reset();
++            cache.device = state->Device;
++            cache.attempted = cache.logged = false;
++        }
++        if (!cache.attempted) {
++            cache.attempted = true;
++            const auto desc = IconTextureUpload::MipSamplerDescription();
++            const HRESULT result = state->Device->CreateSamplerState(&desc, cache.sampler.GetAddressOf());
++            if (FAILED(result)) {
++                logger::warn("Texture: HD mip sampler creation failed (HRESULT={}); retaining default sampling",
++                    static_cast<unsigned long>(result));
++            }
++        }
++        if (!cache.sampler) return;
++        auto* sampler = cache.sampler.Get();
++        state->DeviceContext->PSSetSamplers(0, 1, &sampler);
++        if (!cache.logged) {
++            logger::info("Texture: HD mip filtering active (trilinear, full mip range; icon draws only)");
++            cache.logged = true;
++        }
++    }
++}
+ 
+ // Derived from LamasTinyHUD's texture drawing implementation at revision
+ // dd1794c46b1f87cbf04a5d60968facbed0605d02 (GNU GPL v3), inherited through
+@@ -234,8 +275,14 @@
+ 
+ 	Utils::Color::MultAlpha(a_color, a_drawArgs.alphaMult);
+ 	ImTextureID texId = static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(a_texture));
+-	ImGui::GetWindowDrawList()
+-		->AddImageQuad(texId, pos[0], pos[1], pos[2], pos[3], uvs[0], uvs[1], uvs[2], uvs[3], a_color);
++    D3D11_SHADER_RESOURCE_VIEW_DESC view{};
++    a_texture->GetDesc(&view);
++    const bool useMipSampling = view.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D && view.Texture2D.MipLevels > 1;
++    auto* drawList = ImGui::GetWindowDrawList();
++    if (useMipSampling) drawList->AddCallback(BeginHDIconSampling, nullptr);
++    drawList->AddImageQuad(texId, pos[0], pos[1], pos[2], pos[3], uvs[0], uvs[1], uvs[2], uvs[3], a_color);
++    // Restore ImGui's normal state before text, slot backgrounds or other mods.
++    if (useMipSampling) drawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+ }
+ 
+ void Drawer::draw_arc(ImVec2 center,
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.5 enabled (2026-09-29; 2K native and I4 icon textures with preserved draw size)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.6 enabled (2026-09-29; 2K icons with alpha-aware mipmaps and corrected screen sampling)");
+ 
+ 	SKSE::Init(a_skse);
+ 

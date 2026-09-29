@@ -1,4 +1,4 @@
-name: Build Wheeler 2K Icon Renderer
+name: Build Wheeler Icon Sampling Fix
 on:
   workflow_dispatch:
   push:
@@ -19,12 +19,12 @@ jobs:
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: wheeler-windows2022-staticmd-vcpkg-382c5b8a-v1
-      - name: Build and test Wheeler name compatibility
+      - name: Build and test Wheeler icon sampling
         shell: pwsh
         run: '& .\wheeler-potion-names\tools\build_windows.ps1'
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-2K-Icons-Component-v1-5
-          path: wheeler-potion-names/_build/Wheeler_Refined_2K_Icons_Component_v1_5.zip
+          name: Wheeler-Icon-Filtering-Component-v1-6
+          path: wheeler-potion-names/_build/Wheeler_Refined_Icon_Filtering_Component_v1_6.zip
           if-no-files-found: error

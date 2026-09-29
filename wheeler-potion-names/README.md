@@ -1,3 +1,25 @@
+# Wheeler icon sampling fix — native component v1.6
+
+The v1.5 runtime log confirmed successful 2048px uploads, yet an in-game
+milk-jug screenshot still showed jagged edges. Source inspection found two
+concrete limitations: icon textures had only one mip level, and the pinned
+ImGui 1.91.9 DX11 sampler restricted MaxLOD to 0. Merely increasing source
+resolution cannot provide proper screen-space coverage through this path.
+
+This patch uploads alpha-aware mip chains for marked native HD SVGs and 2K
+I4 extraction, and uses a full-range trilinear sampler only around those image
+draws. ImGui's default state is restored immediately afterwards. Logical draw
+size, SVG artwork, item mappings, theme textures, text and gameplay are unchanged.
+The native source texture remains 2048 square, with 12 mip levels down to 1px.
+Each loaded 2K RGBA texture now occupies approximately 21.33 MiB, including mips.
+
+Regression tests exercise alpha coverage, transparent edge colours, dimensions
+and a real D3D11 WARP draw that distinguishes old level-0 sampling from corrected
+mip selection. The Windows build and renderer tests are not an in-game test.
+
+Normal wheeler.log output reports component v1.6, mips=12 on HD uploads, and
+"Texture: HD mip filtering active" once the filtered draw path executes.
+
 # Wheeler 2K icon renderer — native component v1.5
 
 Extends fixed-size I4 offscreen rendering to 2048 pixels; native SVGs already

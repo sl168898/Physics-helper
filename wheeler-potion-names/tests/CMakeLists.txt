@@ -26,3 +26,17 @@ add_executable(hd_icon_tests hd_icon_tests.cpp)
 target_compile_features(hd_icon_tests PRIVATE cxx_std_20)
 target_include_directories(hd_icon_tests PRIVATE "${REFINED_SOURCE}/src")
 add_test(NAME hd_icon_sizing COMMAND hd_icon_tests)
+
+add_executable(icon_mip_tests icon_mip_tests.cpp)
+target_compile_features(icon_mip_tests PRIVATE cxx_std_20)
+target_include_directories(icon_mip_tests PRIVATE "${REFINED_SOURCE}/src")
+add_test(NAME icon_mip_transparency COMMAND icon_mip_tests)
+
+if(WIN32)
+  add_executable(icon_gpu_tests icon_gpu_tests.cpp)
+  target_compile_features(icon_gpu_tests PRIVATE cxx_std_20)
+  target_include_directories(icon_gpu_tests PRIVATE "${REFINED_SOURCE}/src")
+  target_link_libraries(icon_gpu_tests PRIVATE d3d11 d3dcompiler)
+  add_test(NAME icon_gpu_sampling COMMAND icon_gpu_tests)
+endif()
+
