@@ -37,6 +37,11 @@ Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root '2k-icons.patch
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root '2k-icons.patch'))
 Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'icon-filtering.patch'))
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'icon-filtering.patch'))
+# Run portable and WARP renderer gates before dependency and plugin compilation.
+Run 'cmake' @('-S', (Join-Path $Root 'tests'), '-B', (Join-Path $WorkDirectory 'tests'),
+    '-G', 'Visual Studio 17 2022', '-A', 'x64', "-DREFINED_SOURCE=$Refined")
+Run 'cmake' @('--build', (Join-Path $WorkDirectory 'tests'), '--config', 'Release')
+Run 'ctest' @('--test-dir', (Join-Path $WorkDirectory 'tests'), '-C', 'Release', '--output-on-failure')
 Run (Join-Path $Vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 $env:VCPKG_ROOT = $Vcpkg
 Run 'cmake' @('-S', $Refined, '-B', $Build, '-G', 'Visual Studio 17 2022', '-A', 'x64',
@@ -47,10 +52,6 @@ $MSBuild = (& $VSWhere -latest -products '*' -requires Microsoft.Component.MSBui
 if (!$MSBuild) { throw 'MSBuild was not found' }
 # Compile the modified plugin first, before spending time compiling CommonLib.
 Run $MSBuild @((Join-Path $Build 'src/wheeler.vcxproj'), '/t:ClCompile', '/p:Configuration=Release', '/p:Platform=x64', '/p:BuildProjectReferences=false', '/verbosity:minimal')
-Run 'cmake' @('-S', (Join-Path $Root 'tests'), '-B', (Join-Path $WorkDirectory 'tests'),
-    '-G', 'Visual Studio 17 2022', '-A', 'x64', "-DREFINED_SOURCE=$Refined")
-Run 'cmake' @('--build', (Join-Path $WorkDirectory 'tests'), '--config', 'Release')
-Run 'ctest' @('--test-dir', (Join-Path $WorkDirectory 'tests'), '-C', 'Release', '--output-on-failure')
 Run 'cmake' @('--build', $Build, '--config', 'Release', '--target', 'wheeler', '--parallel', '2')
 $Dll = Join-Path $Build 'src/Release/wheeler.dll'
 if (!(Test-Path $Dll) -or (Get-Item $Dll).Length -eq 0) { throw 'No DLL produced' }
