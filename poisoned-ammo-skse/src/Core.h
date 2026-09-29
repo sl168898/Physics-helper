@@ -15,7 +15,7 @@ namespace pa
 {
     inline constexpr std::size_t capacity = 512;
     inline constexpr std::uint32_t ammoStart = 0x800, poisonStart = 0xA00, markerID = 0xC00;
-    inline constexpr std::size_t maxSaveBytes = 4 * 1024 * 1024;
+    inline constexpr std::size_t maxSaveBytes = 32 * 1024 * 1024;
     inline constexpr std::string_view plugin = "PoisonedAmmoNative.esp";
 
     inline std::string lower(std::string s)

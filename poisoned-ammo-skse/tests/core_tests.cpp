@@ -34,6 +34,18 @@ int main()
     assert(pa::decode(pa::encode(rs)) == rs);
     rs.push_back(a); rejects([&] { pa::encode(rs); }); rs.pop_back();
 
+    // Every schema-valid recipe can be saved even at the extreme field bounds.
+    auto largest = crafted;
+    const pa::Key longKey{std::string(256, 'a') + ".esp", 0xFFFFFF};
+    largest.ammo = longKey; largest.name = std::string(240, 'n');
+    largest.poison.name = std::string(240, 'p');
+    largest.poison.effects.assign(64, {longKey, 1, 0, 0, 0});
+    largest.poison.keywords.assign(128, longKey);
+    assert(pa::valid(largest));
+    const auto biggest = pa::encode(pa::Recipes(pa::capacity, largest));
+    assert(biggest.size() < pa::maxSaveBytes);
+    assert(pa::decode(biggest).size() == pa::capacity);
+
     auto bytes = pa::encode(rs);
     for (std::size_t n : {0u, 1u, 8u, 15u, 100u}) rejects([&] { pa::decode(std::span(bytes).first(n)); });
     auto broken = bytes; broken[30] ^= 1; rejects([&] { pa::decode(broken); });
