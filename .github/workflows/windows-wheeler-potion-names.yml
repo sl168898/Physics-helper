@@ -1,8 +1,8 @@
-name: Build Wheeler Omen of Gluttony Icon
+name: Build Wheeler HD Icon Renderer
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/omen-gluttony-icon']
+    branches: ['codex/wheeler-hd-icons']
 permissions:
   contents: read
 concurrency:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-Omen-Gluttony-Component-v1-3
-          path: wheeler-potion-names/_build/Wheeler_Refined_Omen_Gluttony_Component_v1_3.zip
+          name: Wheeler-HD-Icons-Component-v1-4
+          path: wheeler-potion-names/_build/Wheeler_Refined_HD_Icons_Component_v1_4.zip
           if-no-files-found: error

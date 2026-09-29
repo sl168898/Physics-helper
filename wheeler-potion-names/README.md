@@ -1,3 +1,19 @@
+# Wheeler HD icon renderer — native component v1.4
+
+Adds opt-in 1024/2048-pixel GPU rasterization for SVG artwork carrying the
+`data-wheeler-raster-size` root attribute. Original SVG dimensions remain the
+logical draw dimensions, so increased resolution does not enlarge slots.
+Unmarked icons and themes follow their existing path. HD FID artwork loads
+on demand through the existing owned path cache, avoiding upload of hundreds
+of food icons at startup. Failed GPU uploads retain the fallback path.
+
+Retains all previous renamed-potion, I4 batch-name, Omen of Gluttony and
+Enchantment Swapper description fixes. The end-user HD overlay supplies the
+marked SVGs and a shared I4.ini requesting 1024-pixel SWF renders. This is the
+build component; it is not the final installable overlay. No gameplay changes.
+
+## Earlier component notes
+
 # Wheeler native compatibility component v1.3
 
 Adds a dedicated feast icon for the power named Omen of Gluttony (ASCII case-insensitive exact name). Applies to power, lesser power and voice-power records. It does not require a fixed FormID or plugin index. Its loaded native icon takes priority over I4 for this power in both wheel slots and the highlighted display. Missing assets retain the original fallback route. English display name required. Original vector artwork is provided under CC0-1.0.

@@ -21,3 +21,8 @@ add_executable(power_icon_tests power_icon_tests.cpp)
 target_compile_features(power_icon_tests PRIVATE cxx_std_20)
 target_include_directories(power_icon_tests PRIVATE "${REFINED_SOURCE}/src")
 add_test(NAME named_power_icon COMMAND power_icon_tests)
+
+add_executable(hd_icon_tests hd_icon_tests.cpp)
+target_compile_features(hd_icon_tests PRIVATE cxx_std_20)
+target_include_directories(hd_icon_tests PRIVATE "${REFINED_SOURCE}/src")
+add_test(NAME hd_icon_sizing COMMAND hd_icon_tests)

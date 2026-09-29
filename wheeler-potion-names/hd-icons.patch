@@ -1,0 +1,222 @@
+diff --git a/src/bin/Rendering/TextureManager.cpp b/src/bin/Rendering/TextureManager.cpp
+--- a/src/bin/Rendering/TextureManager.cpp
++++ b/src/bin/Rendering/TextureManager.cpp
+@@ -1,4 +1,5 @@
+ #include "TextureManager.h"
++#include "IconRasterPolicy.h"
+ #include <algorithm>
+ #include <array>
+ #include <cstring>
+@@ -24,6 +25,9 @@
+ 
+ namespace
+ {
++	// HD custom icons are uploaded only when requested by an actual wheel item.
++	// The existing dynamic-image cache owns their SRVs; this table owns paths only.
++	std::unordered_map<RE::FormID, std::string> hd_icon_paths;
+ 	bool starts_with_insensitive(std::string_view value, std::string_view prefix)
+ 	{
+ 		if (value.size() < prefix.size()) {
+@@ -123,6 +127,7 @@
+ 		float height = 0.0f;
+ 		float viewBoxW = 0.0f;
+ 		float viewBoxH = 0.0f;
++		unsigned rasterSize = 0;
+ 		bool usedViewBox = false;
+ 		bool usedFallback = false;
+ 	};
+@@ -632,7 +637,28 @@
+ 		}
+ 	}
+ 
+-	static bool NormalizeSvgText(std::string& svgText, SvgSizeInfo& info)
++	static unsigned GetHDIconRasterSize(const std::string& text)
++    {
++        const auto start = text.find("<svg");
++        const auto end = start != std::string::npos ? text.find('>', start) : std::string::npos;
++        if (end == std::string::npos) return 0;
++        std::string value;
++        if (!TryGetSvgAttribute(text.substr(start,end-start+1), "data-wheeler-raster-size", value)) return 0;
++        if (value == "1024") return 1024;
++        if (value == "2048") return 2048;
++        return 0;
++    }
++
++    static bool IsHDIconFile(const std::filesystem::path& path)
++    {
++        std::ifstream file(path, std::ios::binary);
++        if (!file) return false;
++        std::array<char,4096> header{};
++        file.read(header.data(), static_cast<std::streamsize>(header.size()));
++        return GetHDIconRasterSize(std::string(header.data(),static_cast<std::size_t>(file.gcount()))) != 0;
++    }
++
++    static bool NormalizeSvgText(std::string& svgText, SvgSizeInfo& info)
+ 	{
+ 		size_t svgPos = svgText.find("<svg");
+ 		if (svgPos == std::string::npos) {
+@@ -644,6 +670,7 @@
+ 		}
+ 		std::string header = svgText.substr(svgPos, tagEnd - svgPos + 1);
+ 		std::string rest = svgText.substr(tagEnd + 1);
++		info.rasterSize = GetHDIconRasterSize(header);
+ 
+ 		std::string widthAttr;
+ 		std::string heightAttr;
+@@ -748,6 +775,11 @@
+ 	// look for formId matches
+ 	if (a_form) {
+ 		RE::FormID formId = a_form->GetFormID();
++        if (auto hd = hd_icon_paths.find(formId); hd != hd_icon_paths.end()) {
++            const Image customImg = GetImageByPath(hd->second);
++            if (isValidImage(customImg)) return customImg;
++            // A failed upload follows the original keyword/default fallback route.
++        }
+ 		if (icon_struct_formID.contains(formId)) {
+ 			const Image& customImg = icon_struct_formID[formId];
+ 			if (isValidImage(customImg)) {
+@@ -947,6 +979,8 @@
+ 	// Load from disk into a raw RGBA buffer
+ 	int image_width = 0;
+ 	int image_height = 0;
++	int logical_width = 0;
++	int logical_height = 0;
+ 	unsigned char* image_data = nullptr;
+ 	bool imageDataFromStbi = false;
+ 	std::string ext = std::filesystem::path(filename ? filename : "").extension().string();
+@@ -1024,14 +1058,24 @@
+ 				filename, svgInfo.viewBoxW, svgInfo.viewBoxH, image_width, image_height, source);
+ 		}
+ 
+-		image_data = static_cast<unsigned char*>(malloc(image_width * image_height * 4));
++        logical_width = image_width;
++        logical_height = image_height;
++        const auto rasterPlan = IconRasterPolicy::MakePlan(logical_width, logical_height, svgInfo.rasterSize);
++        image_width = rasterPlan.width;
++        image_height = rasterPlan.height;
++        if (rasterPlan.scale > 1.0f) {
++            rast->tessTol = 0.05f;
++            logger::info("Texture: HD SVG '{}' logical={}x{} texture={}x{}", filename,
++                logical_width, logical_height, image_width, image_height);
++        }
++		image_data = static_cast<unsigned char*>(malloc(static_cast<std::size_t>(image_width) * image_height * 4));
+ 		if (!image_data) {
+ 			nsvgDelete(svg);
+ 			nsvgDeleteRasterizer(rast);
+ 			logger::error("malloc failed for '{}' ({}x{})", filename, image_width, image_height);
+ 			return false;
+ 		}
+-		nsvgRasterize(rast, svg, 0, 0, 1, image_data, image_width, image_height, image_width * 4);
++		nsvgRasterize(rast, svg, 0, 0, rasterPlan.scale, image_data, image_width, image_height, image_width * 4);
+ 
+ 		if (out_outline) {
+ 			build_slot_outline_from_svg(svg, *out_outline);
+@@ -1059,7 +1103,12 @@
+ 	sub_resource.pSysMem = image_data;
+ 	sub_resource.SysMemPitch = desc.Width * 4;
+ 	sub_resource.SysMemSlicePitch = 0;
+-	device_->CreateTexture2D(&desc, &sub_resource, &p_texture);
++	const HRESULT textureResult = device_->CreateTexture2D(&desc, &sub_resource, &p_texture);
++    if (FAILED(textureResult) || !p_texture) {
++        if (imageDataFromStbi) stbi_image_free(image_data); else free(image_data);
++        logger::error("Texture: GPU upload failed for '{}' ({}x{}), using fallback", filename,image_width,image_height);
++        return false;
++    }
+ 
+ 	// Create texture view
+ 	D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc;
+@@ -1068,8 +1117,12 @@
+ 	srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+ 	srv_desc.Texture2D.MipLevels = desc.MipLevels;
+ 	srv_desc.Texture2D.MostDetailedMip = 0;
+-	device_->CreateShaderResourceView(p_texture, &srv_desc, out_srv);
++	const HRESULT viewResult = device_->CreateShaderResourceView(p_texture, &srv_desc, out_srv);
+ 	p_texture->Release();
++    if (FAILED(viewResult) || !*out_srv) {
++        if (imageDataFromStbi) stbi_image_free(image_data); else free(image_data);
++        return false;
++    }
+ 
+ 	// Optional alpha-mask texture: keep alpha, force RGB to white so ImGui tinting behaves like a pure overlay.
+ 	if (out_mask_srv) {
+@@ -1107,8 +1160,8 @@
+ 		free(image_data);
+ 	}
+ 
+-	out_width = image_width;
+-	out_height = image_height;
++	out_width = logical_width > 0 ? logical_width : image_width;
++	out_height = logical_height > 0 ? logical_height : image_height;
+ 
+ 	return true;
+ }
+@@ -1178,6 +1231,7 @@
+ 		return;
+ 	}
+ 
++	hd_icon_paths.clear();
+ 	logger::info("Texture::load_custom_icon_images: scanning '{}'", icon_custom_directory);
+ 
+ 	std::size_t loadedFID = 0;
+@@ -1291,6 +1345,11 @@
+ 			}
+ 			
+ 			RE::FormID runtimeFormID = form->GetFormID();
++            if (IsHDIconFile(entry.path())) {
++                hd_icon_paths[runtimeFormID] = entry.path().string();
++                ++loadedFID;
++                continue;
++            }
+ 			
+ 			// Load texture - only register if successful
+ 			Image img;
+diff --git a/src/bin/Rendering/IconRasterPolicy.h b/src/bin/Rendering/IconRasterPolicy.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Rendering/IconRasterPolicy.h
+@@ -0,0 +1,33 @@
++// Optional HD artwork textures, independent of Wheeler's logical draw size.
++#pragma once
++#include <algorithm>
++#include <cmath>
++
++namespace IconRasterPolicy
++{
++    struct Plan
++    {
++        int width;
++        int height;
++        float scale;
++    };
++
++    inline Plan MakePlan(int logicalWidth, int logicalHeight, unsigned requested)
++    {
++        Plan plan{ logicalWidth, logicalHeight, 1.0f };
++        // This build opts in only artwork marked with a supported target size.
++        // Themes, backgrounds, unmarked icons and raster files remain untouched.
++        if (logicalWidth <= 0 || logicalHeight <= 0 ||
++            (requested != 1024 && requested != 2048)) {
++            return plan;
++        }
++        const int largest = (std::max)(logicalWidth, logicalHeight);
++        if (largest >= static_cast<int>(requested)) {
++            return plan;
++        }
++        plan.scale = static_cast<float>(requested) / static_cast<float>(largest);
++        plan.width = (std::max)(1, static_cast<int>(std::lround(logicalWidth * plan.scale)));
++        plan.height = (std::max)(1, static_cast<int>(std::lround(logicalHeight * plan.scale)));
++        return plan;
++    }
++}
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.3 enabled (2026-09-28; Omen of Gluttony icon)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.4 enabled (2026-09-29; HD icon textures with preserved draw size)");
+ 
+ 	SKSE::Init(a_skse);
+ 
