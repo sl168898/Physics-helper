@@ -106,7 +106,8 @@ namespace
         auto& slot = slots[i]; const auto& recipe = recipes[i];
         slot.original = nullptr; slot.poison = nullptr;
         auto base = resolve<RE::TESAmmo>(recipe.ammo);
-        if (!base || !base->GetPlayable() || !base->GetRuntimeData().data.projectile || slotIDs.contains(base->GetFormID())) return false;
+        if (!base || !base->GetPlayable() || !base->GetRuntimeData().data.projectile ||
+            !base->GetRuntimeData().data.projectile->IsArrow() || slotIDs.contains(base->GetFormID())) return false;
         RE::AlchemyItem* poison = nullptr;
         if (!recipe.poison.custom()) {
             poison = resolve<RE::AlchemyItem>(recipe.poison.source);
@@ -325,6 +326,9 @@ namespace
             fail("Poisoned Ammo: equip a bow/crossbow and matching arrows/bolts first."); return;
         }
         if (slotIDs.contains(ammo->GetFormID()) || !ammo->GetPlayable()) { fail("Poisoned Ammo: equip ordinary ammunition first."); return; }
+        if (!ammo->GetRuntimeData().data.projectile || !ammo->GetRuntimeData().data.projectile->IsArrow()) {
+            fail("Poisoned Ammo: this ammunition does not use a native arrow/bolt projectile."); return;
+        }
         const auto weaponEntry = player->GetEquippedEntryData(false);
         if (weaponEntry && weaponEntry->IsPoisoned()) { fail("Poisoned Ammo: use up the poison already on your bow first."); return; }
         const auto ammoKey = keyOf(ammo); const auto poisonData = snapshot(poison);

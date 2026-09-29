@@ -37,7 +37,8 @@ def build():
     glob = record('GLOB', OWN + 0xC00, text('EDID', 'PAN_SaveFingerprint') +
         sub('FNAM', b'f') + sub('FLTV', struct.pack('<f', 0.0)))
     header = record('TES4', 0,
-        sub('HEDR', struct.pack('<fII', 1.7, CAPACITY * 2 + 1, 0xC01)) +
+        # HEDR counts all non-header records AND the three top-level groups.
+        sub('HEDR', struct.pack('<fII', 1.7, CAPACITY * 2 + 1 + 3, 0xC01)) +
         text('CNAM', 'Physics-helper contributors') +
         text('SNAM', 'Poisoned Ammo Native 0.1.0. Static ESL form pool; requires its SKSE DLL.') +
         text('MAST', 'Skyrim.esm') + sub('DATA', bytes(8)), 0x200)
@@ -46,6 +47,7 @@ def build():
 def validate(blob):
     """Walk all records and subrecords, checking sizes, IDs, flags and group tags."""
     records = []
+    groups = []
     def walk(start, end, expected=None):
         pos = start
         while pos < end:
@@ -55,6 +57,7 @@ def validate(blob):
                 assert size >= 24 and pos + size <= end
                 label, kind = struct.unpack_from('<4sI', blob, pos + 8)
                 assert kind == 0
+                groups.append(label)
                 walk(pos + 24, pos + size, label)
                 pos += size
                 continue
@@ -79,7 +82,8 @@ def validate(blob):
     header = records[0]
     assert header[:3] == (b'TES4', 0x200, 0)
     version, count, next_id = struct.unpack('<fII', header[3][b'HEDR'])
-    assert 1.69 < version < 1.71 and count == len(records) - 1 and next_id == 0xC01
+    assert groups == [b'GLOB', b'ALCH', b'AMMO']
+    assert 1.69 < version < 1.71 and count == len(records) - 1 + len(groups) and next_id == 0xC01
     assert header[3][b'MAST'] == b'Skyrim.esm\0'
     ids = [r[2] for r in records[1:]]
     assert len(set(ids)) == len(ids) and all(OWN + 0x800 <= fid <= OWN + 0xC00 for fid in ids)
