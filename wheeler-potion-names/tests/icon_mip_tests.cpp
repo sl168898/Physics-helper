@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <string>
+#include <iterator>
 
 static int checks=0;
 static void require(bool result, const char* message)
