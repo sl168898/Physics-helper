@@ -1,3 +1,19 @@
+# Coating perk runtime checks (not yet run in Skyrim)
+
+Use a copied save and TraceProjectiles=1. Verify actual target health/effect duration as well as logs. Inventory bottle strength does not change: bonuses apply at impact.
+
+- At Marksman 24/25: Coating Mechanist I unavailable/available. At 49/50: II unavailable/available, and II also requires I. At 29/30: Measured Dose unavailable/available independently of I.
+- All three nodes visible and selectable with perk points; no overlap with the throwing-weapon branch; existing nodes unchanged.
+- Same poison, same bolt and target: no perks 1x, I 1.5x, I+II 2x (never 3x). Measured Dose alone leaves strength at 1x.
+- Base 5 bolts/bottle: no Measured Dose 5; with Measured Dose 10 at both strength ranks. One bottle is consumed; output count agrees with dialog. Repeat with native dose perks and ArrowsPerBottle override.
+- Repeat with a native weapon oil (including elemental and conditional target-specific oil), a static poison, and a player-crafted multi-effect poison. Include a last-bottle custom poison.
+- Melee and bows/arrows get no new bonus. Swap away from a crossbow while a bolt is in flight: that bolt still qualifies; an arrow fired before switching to crossbow does not.
+- Miss/pick up/re-fire: base stored coating remains unchanged; strength must not compound.
+- Save/reload with an active poison: magnitude/duration must not double again. Load another character: no carried-over coating context.
+- Test alongside VenomHarvester: its existing penalty remains, Coating Mechanist multiplies the resulting effect once.
+- Ordinary crossbow weapon-slot poison should get strength bonus too; Measured Dose only changes F8 batch crafting.
+- If Coating impact is logged but Coating applied is absent for an effect, capture the log plus ammo/poison name and target; do not claim the strength feature passed.
+
 # Required Skyrim beta checks
 
 These checks have NOT been run in Skyrim by the build system. Run on a copied save in a separate MO2 profile. Record results and attach PoisonedAmmoNative.log. Turn TraceProjectiles on while testing, then off.

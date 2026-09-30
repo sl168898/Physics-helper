@@ -1,4 +1,5 @@
 #include "Core.h"
+#include "CoatingCore.h"
 #include <cassert>
 #include <iostream>
 #include <random>
@@ -10,6 +11,30 @@ pa::Recipe example()
 template<class F> void rejects(F f) { bool rejected = false; try { f(); } catch (const std::exception&) { rejected = true; } assert(rejected); }
 int main()
 {
+    // All perk combinations: dose count and per-bolt strength remain independent.
+    for (bool r1 : {false,true}) for (bool r2 : {false,true}) for (bool md : {false,true}) {
+        const auto mult = coating::strength(r1,r2);
+        assert(mult == (r2 ? 2.0f : r1 ? 1.5f : 1.0f));
+        const auto count = coating::doseCount(5,true,md);
+        assert(count == (md ? 10u : 5u));
+        assert(coating::doseCount(5,false,md)==5u);
+        assert((pa::plan(100,1,count,1)==pa::Batch{1,static_cast<int>(count)}));
+        float magnitude=10, duration=8;
+        coating::scale(magnitude,duration,false,mult);
+        assert(magnitude==10*mult && duration==8); // no magnitude AND duration multiplication
+        magnitude=0;duration=8;
+        coating::scale(magnitude,duration,true,mult);
+        assert(magnitude==0 && duration==8*mult);
+    }
+    assert(coating::doseCount(10000,true,true)==20000);
+    assert((pa::plan(30000,1,20000,1,30000)==pa::Batch{1,20000}));
+    assert((pa::plan(30000,1,20001,1,30000)==pa::Batch{}));
+    assert((pa::plan(7,1,coating::doseCount(5,true,true),1)==pa::Batch{1,7}));
+    float markerMagnitude=0,markerDuration=0;
+    assert(!coating::scale(markerMagnitude,markerDuration,true,2));
+    float overflow=std::numeric_limits<float>::max();
+    assert(!coating::scale(overflow,markerDuration,false,2));
+
     // ESL-flagged ESPs, low-range AE ESL records, regular ESPs and load-order moves.
     assert(pa::localID(0xFE0238A1, true) == 0x8A1);
     assert(pa::localID(0xFEABC8A1, true) == 0x8A1);
@@ -82,5 +107,5 @@ int main()
         for (unsigned j = 0; j < 4; ++j) fuzz[fuzz.size() - 4 + j] = static_cast<std::uint8_t>(sum >> (j * 8));
         try { auto decoded = pa::decode(fuzz); assert(pa::decode(pa::encode(decoded)) == decoded); } catch (const std::runtime_error&) {}
     }
-    std::cout << "PASS: ESL identity, save isolation, crafted effects, full pool, corruption, 20000 batch cases and 3000 parser mutations\n";
+    std::cout << "PASS: combined perk matrix, bolt-only doses, rank precedence, finite scaling; ESL identity, save isolation, crafted effects, full pool, corruption, 20000 batch cases and 3000 parser mutations\n";
 }

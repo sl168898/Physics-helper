@@ -1,3 +1,13 @@
+# Coating perks extension
+
+Three new records in CoatingMechanist.esp (800/801/802), with a separate additive Perk Adjuster JSON. GetBaseActorValue Marksman >=25/50/30; rank II also HasPerk rank I. No base-tree or existing perk edits.
+
+Measured Dose doubles the native/fixed dose count only for bolts before planning the batch. It does not affect the recipe identity or strength. Max accepted per-bottle count expands from 10000 to 20000 to preserve exact doubling at the configuration ceiling. Per-transaction output limit remains unchanged.
+
+Strength is scoped to synchronous ArrowProjectile ProcessImpacts/AddImpact calls, after the ammunition plugin has attached the correct poison. Qualification uses the projectile's actual weaponSource, ammoSource and shooter, not the shooter's currently equipped weapon. Only ActiveEffect::AdjustForPerks calls matching this shooter and exact poison pointer are scaled; preceding native/mod adjustments are chained first. No poisoning of shared forms, added actor spells, temporary actor-value changes or dynamic form creation. No new save records needed. Scope restoration is thread-local/RAII; recursive adjustment and same-scope duplicate scaling are guarded. Effect allocation is engine-owned and no new effect pointers outlive the impact call.
+
+This design assumes the engine creates/adjusts coating ActiveEffects synchronously in an impact path. This must be tested in-game with the trace log; a mod that defers application will not receive the bonus. Script-hardcoded damage is not rewritten by this multiplier.
+
 # Native architecture and evidence
 
 The dependency removed here is dynamic item-form allocation/persistence. DPF is itself an SKSE plugin; merely porting Papyrus calls to C++ would not fix form identity. This implementation instead owns 512 ordinary AMMO records and 512 ALCH proxy records in an ESL-flagged ESP. The engine saves references to those stable forms normally. One GLOB stores a 24-bit checksum fingerprint; the recipe definitions live in this DLL's SKSE serialization section.

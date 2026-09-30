@@ -3,6 +3,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <Windows.h>
 #include "Core.h"
+#include "Coating.h"
 #include <array>
 #include <atomic>
 #include <functional>
@@ -342,7 +343,11 @@ namespace
                 player, static_cast<RE::TESForm*>(weapon), static_cast<RE::TESForm*>(poison), &doses);
         }
         if (!std::isfinite(doses)) doses = 1;
-        const auto perBottle = static_cast<std::uint32_t>(std::clamp(doses, 1.0f, 10000.0f));
+        const auto baseDoses = static_cast<std::uint32_t>(std::clamp(doses, 1.0f, 10000.0f));
+        const bool measured = coating::available && player->HasPerk(coating::measured);
+        const auto perBottle = coating::doseCount(baseDoses, ammo->IsBolt(), measured);
+        if (settings.trace) SKSE::log::info("Coating batch: base doses={}, bolts={}, Measured Dose={}, final doses={}",
+            baseDoses, ammo->IsBolt(), measured, perBottle);
         Request request{generation.load(), ammo->GetFormID(), poison->GetFormID(), weapon->GetFormID(), perBottle,
             {*ammoKey, *poisonData, fmt::format("{} [{}]", displayName(ammo), poisonData->name)}};
         if (!pa::valid(request.recipe)) { fail("Poisoned Ammo: unsupported poison data. No items consumed."); return; }
@@ -398,6 +403,7 @@ namespace
             RE::hkpCollidable* collidable, std::int32_t a6, std::uint32_t a7)
         {
             prepareProjectile(p, target && target->As<RE::Actor>());
+            coating::Scope scope(p, session.load());
             original(p, target, point, velocity, collidable, a6, a7);
         }
         static inline REL::Relocation<decltype(thunk)> original;
@@ -412,6 +418,7 @@ namespace
                 if (ref && ref->As<RE::Actor>()) { actorContact = true; break; }
             }
             prepareProjectile(p, actorContact);
+            coating::Scope scope(p, session.load());
             return original(p);
         }
         static inline REL::Relocation<decltype(thunk)> original;
@@ -475,7 +482,7 @@ namespace
                 if (slot.form) slotIDs.emplace(slot.form->GetFormID(), i);
             }
             if (!formsReady) { SKSE::log::error("Disabled: enable the matching PoisonedAmmoNative.esp"); break; }
-            disableSlots(); installHooks();
+            disableSlots(); installHooks(); coating::install(data, settings.trace);
             RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&input);
             SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip);
             break;
@@ -501,7 +508,7 @@ namespace
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 1, 0, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 0, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -514,7 +521,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.1.0 beta; Skyrim Steam 1.6.1170; independent native implementation");
+    SKSE::log::info("PoisonedAmmoNative 0.2.0 beta; Skyrim Steam 1.6.1170; independent native implementation");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

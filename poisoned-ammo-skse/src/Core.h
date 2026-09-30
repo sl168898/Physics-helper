@@ -90,7 +90,7 @@ namespace pa
     inline Batch plan(std::int32_t ammo, std::int32_t poisons, std::uint32_t doses,
         std::uint32_t requested, std::uint32_t limit = 5000)
     {
-        if (ammo <= 0 || poisons <= 0 || !doses || doses > 10000 || !requested || !limit) return {};
+        if (ammo <= 0 || poisons <= 0 || !doses || doses > 20000 || !requested || !limit) return {};
         const auto available = std::min<std::uint64_t>(static_cast<std::uint32_t>(ammo), std::min(limit, 100000u));
         const auto bottles = std::min({(available + doses - 1) / doses,
             static_cast<std::uint64_t>(poisons), static_cast<std::uint64_t>(requested)});
