@@ -119,7 +119,7 @@ namespace pa::animation
         auto form = player ? player->GetEquippedObject(false) : nullptr;
         auto weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
         result.weapon = weapon ? weapon->GetFormID() : 0;
-        result.drawnCrossbow = weapon && weapon->IsCrossbow() && player->IsWeaponDrawn();
+        result.drawnCrossbow = weapon && weapon->IsCrossbow() && player->AsActorState()->IsWeaponDrawn();
         return result;
     }
 
@@ -175,7 +175,7 @@ namespace pa::animation
         // temporarily empty ammo slot until the intended ammo first appears.
         const bool ammoValid = equipmentReady || (!request.ammoMatched &&
             (!ammoID || ammoID == context.originalAmmo));
-        const bool valid = player && !player->IsDead() && player->IsWeaponDrawn() && weapon &&
+        const bool valid = player && !player->IsDead() && player->AsActorState()->IsWeaponDrawn() && weapon &&
             weapon->GetFormID() == context.weapon && ammoValid;
         auto ui = RE::UI::GetSingleton();
         const bool paused = !ui || ui->GameIsPaused() || ui->IsItemMenuOpen() || ui->IsModalMenuOpen();
@@ -203,7 +203,7 @@ namespace pa::animation
             auto selected = actor ? actor->GetCurrentAmmo() : nullptr;
             auto menus = RE::UI::GetSingleton();
             bool reloading = false;
-            return actor && !actor->IsDead() && actor->IsWeaponDrawn() && held && selected &&
+            return actor && !actor->IsDead() && actor->AsActorState()->IsWeaponDrawn() && held && selected &&
                 held->GetFormID() == context.weapon && selected->GetFormID() == context.expectedAmmo &&
                 menus && !menus->GameIsPaused() && !menus->IsItemMenuOpen() && !menus->IsModalMenuOpen() &&
                 !(actor->GetGraphVariableBool(RE::BSFixedString("IsReloading"), reloading) && reloading);
