@@ -39,6 +39,8 @@ Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'icon-filtering
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'icon-filtering.patch'))
 Run 'git' @('-C', $Refined, 'apply', '--ignore-space-change', '--check', (Join-Path $Root 'poison-ammunition.patch'))
 Run 'git' @('-C', $Refined, 'apply', '--ignore-space-change', (Join-Path $Root 'poison-ammunition.patch'))
+Run 'git' @('-C', $Refined, 'apply', '--ignore-space-change', '--check', (Join-Path $Root 'coated-ammo-icons.patch'))
+Run 'git' @('-C', $Refined, 'apply', '--ignore-space-change', (Join-Path $Root 'coated-ammo-icons.patch'))
 # Run portable and WARP renderer gates before dependency and plugin compilation.
 Run 'cmake' @('-S', (Join-Path $Root 'tests'), '-B', (Join-Path $WorkDirectory 'tests'),
     '-G', 'Visual Studio 17 2022', '-A', 'x64', "-DREFINED_SOURCE=$Refined")
@@ -76,7 +78,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Source 'Wheeler-Refined') 
 foreach ($Name in @('src','cmake','CMakeLists.txt','CMakePresets.json','vcpkg.json','vcpkg-configuration.json','.clang-format','.editorconfig','LICENSE','LICENSES','NOTICE.md','THIRD_PARTY_NOTICES.md','BUILDING.md','README.md','tools')) {
     Copy-Item (Join-Path $Refined $Name) (Join-Path $Source 'Wheeler-Refined') -Recurse
 }
-foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','omen-gluttony-icon.patch','hd-icons.patch','2k-icons.patch','icon-filtering.patch','poison-ammunition.patch','assets','README.md','build_patch.py','validate_assets.py')) {
+foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','omen-gluttony-icon.patch','hd-icons.patch','2k-icons.patch','icon-filtering.patch','poison-ammunition.patch','coated-ammo-icons.patch','assets','README.md','build_patch.py','validate_assets.py')) {
     Copy-Item (Join-Path $Root $Name) $Source -Recurse
 }
 Run 'python' @((Join-Path $Root 'build_patch.py'), '--stage', $Stage)
@@ -85,8 +87,11 @@ Copy-Item (Join-Path $Root 'asset-validation.json') (Join-Path $Stage 'VALIDATIO
 $NamedIcons = Join-Path $Stage 'SKSE/Plugins/wheeler/resources/named_powers'
 New-Item -ItemType Directory -Force -Path $NamedIcons | Out-Null
 Copy-Item (Join-Path $Root 'assets/omen_of_gluttony.svg') $NamedIcons
+$CoatedIcons = Join-Path $Stage 'SKSE/Plugins/wheeler/resources/poisoned_ammo'
+New-Item -ItemType Directory -Force -Path $CoatedIcons | Out-Null
+Copy-Item (Join-Path $Root 'assets/poisoned_ammo/*.svg') $CoatedIcons
 $Info = [ordered]@{
-    patchVersion = '1.7'; builtUTC = [DateTime]::UtcNow.ToString('o')
+    patchVersion = '1.8'; builtUTC = [DateTime]::UtcNow.ToString('o')
     refinedCommit = $RefinedCommit; commonLibCommit = $CommonCommit; vcpkgCommit = $VcpkgCommit
     patchCommit = $env:GITHUB_SHA
     targetRuntime = 'Steam Skyrim SE 1.6.1170'; targetRefined = '1.3.3.0'
@@ -100,7 +105,11 @@ $Info = [ordered]@{
     descriptionBridgeSourceCommit = '3f2a35c7fe83e67efda98f458488efe5173e9d83'
     poisonAmmoBridge = 'PoisonedAmmoNative_CoatOneV1'; minimumPoisonAmmoVersion = '0.2.3'
     poisonAmmoPatchSHA256 = (Get-FileHash (Join-Path $Root 'poison-ammunition.patch') -Algorithm SHA256).Hash.ToLower()
+    coatedAmmoIconPatchSHA256 = (Get-FileHash (Join-Path $Root 'coated-ammo-icons.patch') -Algorithm SHA256).Hash.ToLower()
+    poisonedBoltIconSHA256 = (Get-FileHash (Join-Path $CoatedIcons 'poisoned_bolt.svg') -Algorithm SHA256).Hash.ToLower()
+    poisonedArrowIconSHA256 = (Get-FileHash (Join-Path $CoatedIcons 'poisoned_arrow.svg') -Algorithm SHA256).Hash.ToLower()
+    coatedAmmoIcons = 'native subtype-specific SVG; imported I4 bypass only for stable coated ammo; refresh on subtype change'
     inGameTested = $false
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'BUILD-INFO.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Poison_Ammo_Component_v1_7.zip') -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Poison_Ammo_Icons_Component_v1_8.zip') -CompressionLevel Optimal

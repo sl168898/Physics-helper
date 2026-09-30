@@ -1,0 +1,114 @@
+diff --git a/src/bin/Wheeler/WheelItems/PoisonedAmmoIcon.h b/src/bin/Wheeler/WheelItems/PoisonedAmmoIcon.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Wheeler/WheelItems/PoisonedAmmoIcon.h
+@@ -0,0 +1,21 @@
++// Coated-ammunition icon selection, 2026-09-30. GPL-3.0-only.
++#pragma once
++#include <cstdint>
++#include <string_view>
++
++namespace PoisonedAmmoIcon
++{
++    enum class Kind : std::uint8_t { Other, Arrow, Bolt, Unresolved };
++
++    inline Kind Select(std::string_view plugin, std::uint32_t localID, bool bolt)
++    {
++        constexpr std::string_view expected = "poisonedammonative.esp";
++        if (localID < 0x800 || localID >= 0xA00 || plugin.size() != expected.size()) return Kind::Other;
++        for (std::size_t i = 0; i < plugin.size(); ++i) {
++            const char c = plugin[i];
++            const char lower = c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c;
++            if (lower != expected[i]) return Kind::Other;
++        }
++        return bolt ? Kind::Bolt : Kind::Arrow;
++    }
++}
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp b/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp
+--- a/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp
+@@ -14,8 +14,45 @@
+ 	this->_description = std::string(descriptionBuf.c_str());
+ }
+ 
++void WheelItemAmmo::RefreshPoisonIcon()
++{
++    if (!_ammo) return;
++    const auto file = _ammo->GetFile(0);
++    const auto localID = file ? _ammo->GetFormID() & (file->IsLight() ? 0xFFFu : 0xFFFFFFu) : 0u;
++    const auto kind = PoisonedAmmoIcon::Select(file ? file->GetFilename() : "", localID, _ammo->IsBolt());
++    if (kind == _poisonIconKind) return;
++    _poisonIconKind = kind;
++    if (kind == PoisonedAmmoIcon::Kind::Other) {
++        _texture = Texture::GetIconImage(Texture::icon_image_type::arrow, _ammo);
++        _preferNativeIcon = false;
++        return;
++    }
++    // Use the ordinary ammo theme's logical footprint, while the marked SVG
++    // retains its 2K raster and mip filtering. Never inherit a keyword override
++    // or imported I4 crossbow glyph for our stable coated-ammunition slots.
++    auto fallback = Texture::GetIconImage(Texture::icon_image_type::arrow, nullptr);
++    const bool bolt = kind == PoisonedAmmoIcon::Kind::Bolt;
++    auto icon = Texture::GetImageByPath(bolt ?
++        "Data/SKSE/Plugins/wheeler/resources/poisoned_ammo/poisoned_bolt.svg" :
++        "Data/SKSE/Plugins/wheeler/resources/poisoned_ammo/poisoned_arrow.svg");
++    if (icon.texture && icon.width > 0 && icon.height > 0) {
++        if (fallback.width > 0 && fallback.height > 0) {
++            // Both glyphs have square canvases; preserve their aspect ratio.
++            const auto size = (std::max)(fallback.width, fallback.height);
++            icon.width = icon.height = size;
++        }
++        _texture = icon;
++        logger::info("PoisonedAmmoIcon: native poisoned {} icon for {:08X}", bolt ? "bolt" : "arrow", _ammo->GetFormID());
++    } else {
++        _texture = fallback;
++        logger::warn("PoisonedAmmoIcon: missing {} SVG; using plain ammo fallback", bolt ? "bolt" : "arrow");
++    }
++    _preferNativeIcon = true;
++}
++
+ void WheelItemAmmo::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
+ {
++	RefreshPoisonIcon();
+ 	int ammoCount = a_imap.contains(this->_ammo) ? a_imap.find(this->_ammo)->second.first : 0;
+ 	std::string text = fmt::format("{} ({})", _ammo->GetName(), ammoCount);
+ 	this->drawSlotText(a_center, text.data(), a_drawArgs);
+@@ -24,6 +61,7 @@
+ 
+ void WheelItemAmmo::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
+ {
++	RefreshPoisonIcon();
+ 	const float textShiftY = calculateHighlightTextShiftY(this->_description.c_str());
+ 	this->drawHighlightText(a_center, _ammo->GetName(), a_drawArgs, textShiftY);
+ 	this->drawHighlightTexture(a_center, a_drawArgs);
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemAmmo.h b/src/bin/Wheeler/WheelItems/WheelItemAmmo.h
+--- a/src/bin/Wheeler/WheelItems/WheelItemAmmo.h
++++ b/src/bin/Wheeler/WheelItems/WheelItemAmmo.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ #include "WheelItem.h"
++#include "PoisonedAmmoIcon.h"
+ class WheelItemAmmo : public WheelItem
+ {
+ public:
+@@ -24,6 +25,8 @@
+ 
+ private:
+ 	RE::TESAmmo* _ammo;
++	PoisonedAmmoIcon::Kind _poisonIconKind = PoisonedAmmoIcon::Kind::Unresolved;
++	void RefreshPoisonIcon();
+ 
+ 	void toggleEquip();
+ };
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.7 enabled (2026-09-30; one-bottle poisoned ammunition bridge; preserved 2K mip filtering)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.8 enabled (2026-09-30; dedicated poisoned bolt/arrow icons; one-bottle coating; 2K mip filtering)");
+ 
+ 	SKSE::Init(a_skse);
+ 

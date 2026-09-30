@@ -1,4 +1,4 @@
-name: Build Wheeler Poisoned Ammunition Bridge
+name: Build Wheeler Coated Ammunition Icons
 on:
   workflow_dispatch:
   push:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-Poison-Ammo-Component-v1-7
-          path: wheeler-potion-names/_build/Wheeler_Refined_Poison_Ammo_Component_v1_7.zip
+          name: Wheeler-Poison-Ammo-Icons-v1-8
+          path: wheeler-potion-names/_build/Wheeler_Refined_Poison_Ammo_Icons_Component_v1_8.zip
           if-no-files-found: error

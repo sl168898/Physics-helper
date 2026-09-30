@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" data-wheeler-raster-size="2048">
+  <g transform="rotate(45 64 64)">
+    <path fill="#A89E8C" d="M57 38h14v58H57zM57 73L37 91v18l20-12zM71 73l20 18v18L71 97zM57 95h14v18H57z"/>
+    <path fill="#A5CE92" d="M64 9l19 25-12 11H57L45 34z"/>
+  </g>
+  <path fill="#A5CE92" d="M27 17C24 24 14 35 14 43a13 13 0 0026 0c0-8-10-19-13-26z"/>
+</svg>
