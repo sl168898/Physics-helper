@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable beta and source
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Poisoned-Ammunition-Coating-Perks-v0-2-0-Beta
-          path: poisoned-ammo-skse/_build/Poisoned_Ammunition_Coating_Perks_v0_2_0_Beta.zip
+          name: Poisoned-Ammunition-Coating-Perks-v0-2-1-Beta
+          path: poisoned-ammo-skse/_build/Poisoned_Ammunition_Coating_Perks_v0_2_1_Beta.zip
           if-no-files-found: error

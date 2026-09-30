@@ -17,7 +17,7 @@ namespace
     struct Settings
     {
         std::uint32_t key = 66, arrowsPerBottle = 0, maxBatch = 5000;
-        bool autoEquip = true, trace = false;
+        bool autoEquip = true, trace = false, craftOnUse = true;
         void load()
         {
             constexpr auto path = ".\\Data\\SKSE\\Plugins\\PoisonedAmmoNative.ini";
@@ -25,6 +25,7 @@ namespace
             arrowsPerBottle = std::min(GetPrivateProfileIntA("General", "ArrowsPerBottle", 0, path), 10000u);
             maxBatch = std::clamp(GetPrivateProfileIntA("General", "MaxBatchArrows", 5000, path), 1u, 100000u);
             autoEquip = GetPrivateProfileIntA("General", "AutoEquip", 1, path) != 0;
+            craftOnUse = GetPrivateProfileIntA("General", "CraftOnPoisonUse", 1, path) != 0;
             trace = GetPrivateProfileIntA("General", "TraceProjectiles", 0, path) != 0;
             if (key > 255) key = 66;
         }
@@ -293,7 +294,9 @@ namespace
         if (!factory) return false;
         auto box = factory->Create(); if (!box) return false;
         const auto maximum = pa::plan(ammo, poisons, request.doses, UINT32_MAX, settings.maxBatch);
-        const std::string body = fmt::format("Poison ammunition\n{}\n{} arrows per bottle. Choose bottles to use.\nA partly used final bottle is consumed.", request.recipe.name, request.doses);
+        const auto ammunition = RE::TESForm::LookupByID<RE::TESAmmo>(request.ammo);
+        const auto units = ammunition && ammunition->IsBolt() ? "bolts" : "arrows";
+        const std::string body = fmt::format("Poison ammunition\n{}\n{} {} per bottle. Choose bottles to use.\nA partly used final bottle is consumed.", request.recipe.name, request.doses, units);
         box->bodyText = body.c_str();
         std::vector<std::uint32_t> options;
         for (auto n : {1u, 5u, 10u, static_cast<std::uint32_t>(maximum.bottles)}) {
@@ -306,7 +309,7 @@ namespace
         box->callback.reset(new BatchCallback(std::move(request), std::move(options)));
         box->QueueMessage(); return true;
     }
-    void requestCraft()
+    void requestCraft(RE::AlchemyItem* clickedPoison = nullptr)
     {
         if (!session || !formsReady) return;
         { std::lock_guard lock(stateMutex); if (saveFault) { notify("Poisoned Ammo: save data mismatch. Restore the matching .skse co-save."); return; } }
@@ -314,10 +317,13 @@ namespace
         auto player = RE::PlayerCharacter::GetSingleton();
         auto menu = ui ? ui->GetMenu<RE::InventoryMenu>() : nullptr;
         if (!menu || !player || ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME) || menuPending.exchange(true)) return;
-        auto list = menu->GetRuntimeData().itemList;
-        auto selected = list ? list->GetSelectedItem() : nullptr;
-        auto entry = selected ? selected->data.objDesc : nullptr;
-        auto poison = entry && entry->object ? entry->object->As<RE::AlchemyItem>() : nullptr;
+        auto poison = clickedPoison;
+        if (!poison) {
+            auto list = menu->GetRuntimeData().itemList;
+            auto selected = list ? list->GetSelectedItem() : nullptr;
+            auto entry = selected ? selected->data.objDesc : nullptr;
+            poison = entry && entry->object ? entry->object->As<RE::AlchemyItem>() : nullptr;
+        }
         auto ammo = player->GetCurrentAmmo();
         auto object = player->GetEquippedObject(false);
         auto weapon = object ? object->As<RE::TESObjectWEAP>() : nullptr;
@@ -355,6 +361,88 @@ namespace
         if (!pa::plan(ammoCount, poisonCount, perBottle, UINT32_MAX, settings.maxBatch).arrows ||
             !showBatch(std::move(request), ammoCount, poisonCount)) fail("Poisoned Ammo: no available batch.");
     }
+
+    // The inventory's ItemSelect callback runs before vanilla starts weapon
+    // poisoning or removes a bottle. SkyUI sends this for mouse use and its
+    // AttemptEquip keyboard/controller action. Forward every other item/use.
+    // No SWF replacement or native poison-function prologue patch is needed.
+    struct InventoryUseHook
+    {
+        using Callback = RE::FxDelegateHandler::CallbackFn;
+        using Processor = RE::FxDelegateHandler::CallbackProcessor;
+        inline static REL::Relocation<void (*)(RE::InventoryMenu*, Processor*)> accept;
+        inline static std::array<Callback*, 32> callbacks{};
+        inline static std::size_t count{};
+
+        static bool redirect(const RE::FxDelegateArgs& args)
+        {
+            if (!settings.craftOnUse || !session || !formsReady) return false;
+            auto ui = RE::UI::GetSingleton();
+            auto player = RE::PlayerCharacter::GetSingleton();
+            auto menu = ui ? ui->GetMenu<RE::InventoryMenu>() : nullptr;
+            if (!menu || !player || args.GetHandler() != menu.get()) return false;
+            auto list = menu->GetRuntimeData().itemList;
+            auto selected = list ? list->GetSelectedItem() : nullptr;
+            auto entry = selected ? selected->data.objDesc : nullptr;
+            auto poison = entry && entry->object ? entry->object->As<RE::AlchemyItem>() : nullptr;
+            auto object = player->GetEquippedObject(false);
+            auto weapon = object ? object->As<RE::TESObjectWEAP>() : nullptr;
+            if (!poison || !poison->IsPoison() || !weapon || (!weapon->IsBow() && !weapon->IsCrossbow())) return false;
+            // Capture this click synchronously: a later highlight change must
+            // not select a different poison. The dialog itself stores only
+            // IDs/snapshots and revalidates inventory/equipment on confirmation.
+            if (settings.trace) SKSE::log::info("Inventory poison use -> ammo crafting: poison {:08X}; weapon {:08X}",
+                poison->GetFormID(), weapon->GetFormID());
+            try { requestCraft(poison); }
+            catch (const std::exception& e) {
+                menuPending = false;
+                SKSE::log::error("Inventory coating request failed: {}", e.what());
+                notify("Poisoned Ammo: could not open the coating dialog. No items consumed.");
+            }
+            // Cancel, invalid ammo, occupied dialog, or failed input validation
+            // must never fall through into vanilla bow poisoning.
+            return true;
+        }
+        template<std::size_t I> static void Select(const RE::FxDelegateArgs& args)
+        {
+            if (!redirect(args)) callbacks[I](args);
+        }
+        template<std::size_t... I> static constexpr auto wrappers(std::index_sequence<I...>)
+        {
+            return std::array<Callback*, sizeof...(I)>{&Select<I>...};
+        }
+        class Proxy final : public Processor
+        {
+            Processor* real;
+        public:
+            explicit Proxy(Processor* value) : real(value) {}
+            void Process(const RE::GString& name, Callback* callback) override
+            {
+                if (name != "ItemSelect" || !callback) { real->Process(name, callback); return; }
+                static constexpr auto functions = wrappers(std::make_index_sequence<32>{});
+                if (std::find(functions.begin(), functions.end(), callback) != functions.end()) {
+                    real->Process(name, callback); return; // Already wrapped by a chained registrar.
+                }
+                std::size_t index = 0;
+                while (index < count && callbacks[index] != callback) ++index;
+                if (index == count && count < callbacks.size()) {
+                    callbacks[count++] = callback;
+                    SKSE::log::info("Inventory ItemSelect coating route registered (chain {})", index);
+                }
+                if (index == callbacks.size()) SKSE::log::error("Inventory callback capacity reached; this callback retains native behavior");
+                real->Process(name, index < callbacks.size() ? functions[index] : callback);
+            }
+        };
+        static void Accept(RE::InventoryMenu* menu, Processor* processor)
+        {
+            Proxy proxy(processor); accept(menu, &proxy);
+        }
+        static void install()
+        {
+            REL::Relocation<std::uintptr_t> table{RE::VTABLE_InventoryMenu[0]};
+            accept = table.write_vfunc(0x01, Accept);
+        }
+    };
     struct Input final : RE::BSTEventSink<RE::InputEvent*>
     {
         RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* events, RE::BSTEventSource<RE::InputEvent*>*) override
@@ -483,8 +571,9 @@ namespace
             }
             if (!formsReady) { SKSE::log::error("Disabled: enable the matching PoisonedAmmoNative.esp"); break; }
             disableSlots(); installHooks(); coating::install(data, settings.trace);
+            InventoryUseHook::install();
             RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&input);
-            SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip);
+            SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}; craft on inventory poison use {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip, settings.craftOnUse);
             break;
         }
         case SKSE::MessagingInterface::kPreLoadGame: session = false; menuPending = false; ++generation; break;
@@ -508,7 +597,7 @@ namespace
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 0, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 1, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -521,7 +610,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.2.0 beta; Skyrim Steam 1.6.1170; independent native implementation");
+    SKSE::log::info("PoisonedAmmoNative 0.2.1 beta; Skyrim Steam 1.6.1170; inventory poison use opens ammunition coating");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

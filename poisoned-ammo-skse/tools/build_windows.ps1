@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param([string]$WorkDirectory = (Join-Path $PSScriptRoot '..\_build'))
 $ErrorActionPreference = 'Stop'
+$env:PYTHONDONTWRITEBYTECODE = '1'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $WorkDirectory = [IO.Path]::GetFullPath($WorkDirectory)
 $CommonCommit = 'b93280e832f263dbef44e44cbe2936622a02f91a'
@@ -67,14 +68,15 @@ Get-ChildItem $Source -Recurse -File | Sort-Object FullName | ForEach-Object {
     $Sources[$Relative] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'PoisonedAmmoNative'; version = '0.2.0-beta'; runtime = 'Steam 1.6.1170'
+    plugin = 'PoisonedAmmoNative'; version = '0.2.1-beta'; runtime = 'Steam 1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     esp_sha256 = (Get-FileHash (Join-Path $Stage 'PoisonedAmmoNative.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
     perks_sha256 = (Get-FileHash (Join-Path $Stage 'CoatingMechanist.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources
     windows_build = 'passed'; portable_tests = 'passed'; esp_structure_validation = 'passed'
+    inventory_click_to_coat = $true; animation_compatibility_verified = $false
     in_game_tested = $false; recipe_capacity = 512; dynamic_form_creation = $false; papyrus_scripts = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_0_Beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_1_Beta.zip')

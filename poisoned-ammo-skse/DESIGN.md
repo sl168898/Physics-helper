@@ -1,3 +1,16 @@
+# Inventory use routing (0.2.1)
+
+Chain InventoryMenu::Accept at vtable slot 0x01. A CallbackProcessor proxy wraps only ItemSelect; every other callback is registered unchanged. Each distinct incoming callback receives a stable wrapper slot so reopening the menu does not accumulate wrappers, and already-wrapped functions are not wrapped again. The previous Accept and native item callback remain chained.
+
+SkyUI InventoryMenu.as sends ItemSelect for onItemSelect and AttemptEquip. The wrapper captures the selected ALCH synchronously, verifies it is poison and the player's current right-hand weapon is a bow/crossbow, then invokes the same requestCraft path as F8. It does not invoke the normal weapon-poisoning action on Cancel, input validation failure, or a pending dialog. Non-poison items, melee weapons, and disabled routing forward the original arguments to the original callback. No bare prologue overwrite, poisoning-menu address offset, SWF replacement or synthesized poison event is involved.
+
+The existing confirmation generation guard, poison snapshot, equipment validation, inventory counts, dose perks and transaction checks are shared. No item is consumed while opening the dialog. UI behavior and animation compatibility remain Skyrim test requirements. In particular an animation listening for native weapon-poisoning may be skipped; no guessed animation event is sent.
+
+Primary UI/API references:
+- https://github.com/schlangster/skyui/blob/master/src/ItemMenus/InventoryMenu.as
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/F/FxDelegateHandler.h
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/I/InventoryMenu.h
+
 # Coating perks extension
 
 Three new records in CoatingMechanist.esp (800/801/802), with a separate additive Perk Adjuster JSON. GetBaseActorValue Marksman >=25/50/30; rank II also HasPerk rank I. No base-tree or existing perk edits.
@@ -18,7 +31,7 @@ Form references use the originating TESFile filename and the local ID. Light-fil
 
 The plugin chains ArrowProjectile vtable entries Handle3DLoaded (0xC0), AddImpact (0xBD), and ProcessImpacts (0xAC). CommonLib's post-1.6.629 accessors locate ammoSource and poison on 1.6.1170. The poison pointer is assigned before native impact processing. Actor contact replaces ammoSource with the original ammo so body recovery is spent; environment hits keep the poisoned record. This hook ordering needs the in-game checks in TESTING.md and must not be represented as verified solely by compilation.
 
-Inventory crafting is a native messagebox reached through a configurable key while InventoryMenu highlights an ALCH. Every callback carries a load-generation token and revalidates equipment, poison snapshot and current quantities. Item removals are checked and partial failures refunded. Output is added only after both inputs were removed. Arbitrary third-party inventory event handlers can still interfere; the checks do not prove compatibility with all such handlers.
+Inventory crafting is a native messagebox reached through Inventory item use or a configurable key while InventoryMenu highlights an ALCH. Every callback carries a load-generation token and revalidates equipment, poison snapshot and current quantities. Item removals are checked and partial failures refunded. Output is added only after both inputs were removed. Arbitrary third-party inventory event handlers can still interfere; the checks do not prove compatibility with all such handlers.
 
 The perk call uses ModPoisonDoseCount with three condition tabs: actor owner, equipped weapon and poison, followed by a float output. A fixed INI ratio bypasses this entry point when desired.
 

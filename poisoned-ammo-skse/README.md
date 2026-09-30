@@ -1,6 +1,16 @@
-# Poisoned Ammunition + Coating Perks 0.2.0 beta
+# Poisoned Ammunition + Coating Perks 0.2.1 beta
 
 Skyrim SE Steam 1.6.1170 / SKSE64 2.2.6 / Address Library / Perk Adjuster (user profile has 2.1).
+
+## Click a poison to coat ammunition
+
+With a bow and ordinary arrows, or a crossbow and ordinary bolts equipped, use a poison in your own Inventory to open the bottle/batch dialog. Mouse clicks and SkyUI keyboard/controller item-use actions share this route. Choose the batch size or Cancel; opening/cancelling the dialog consumes nothing. F8 remains an alternative. Melee poisoning, potions, food and other inventory actions retain their existing behavior.
+
+Missing/wrong/already-coated ammunition, unavailable recipes, stolen or quest inputs, and an already-poisoned bow/crossbow produce the existing validation message. These failures do not fall back to applying poison to the weapon. Use up a previously applied weapon poison before crafting.
+
+CraftOnPoisonUse=1 is the default in PoisonedAmmoNative.ini. Setting it to 0 and restarting restores the previous inventory-click behavior while retaining F8 crafting. This option concerns the player's Inventory menu; external auto-poison mods, Favorites and direct Wheeler poison use are not rerouted.
+
+**Animation compatibility is not verified.** This route bypasses the normal weapon-poisoning action. An animation mod listening for that action may not play. This build does not replay a weapon-poisoning event or consume an extra bottle to trigger an animation. A verified animation bridge requires the actual installed animation mod/scripts. The two existing ESPs and the Satchel mod are not changed; no Satchel ingredient-refund bridge is included.
 
 ## Three additive Marksman perks
 
@@ -8,7 +18,7 @@ Skyrim SE Steam 1.6.1170 / SKSE64 2.2.6 / Address Library / Perk Adjuster (user 
 |---|---|---|
 | Coating Mechanist I | Marksman 25; one perk point | Crossbow-delivered poison/oil strength x1.5 |
 | Coating Mechanist II | Marksman 50 + Coating Mechanist I; one perk point | Strength x2 total; supersedes I |
-| Measured Dose | Marksman 30; one perk point; no other perk prerequisite | Twice the bolts per bottle when coating through F8 |
+| Measured Dose | Marksman 30; one perk point; no other perk prerequisite | Twice the bolts per bottle when coating through Inventory use or F8 |
 
 Measured Dose works alongside either Coating Mechanist perk. A bottle giving 5 bolts normally gives 10 with Measured Dose; with Coating Mechanist II each bolt delivers x2 strength. Existing native poison-dose perks are evaluated first. The fixed ArrowsPerBottle setting, if used, is also doubled for bolts.
 
@@ -17,7 +27,7 @@ Measured Dose works alongside either Coating Mechanist perk. A bottle giving 5 b
 1. Install this ZIP as an update replacing the prior Poisoned Ammunition beta, or give it file priority over that beta. Only this version of PoisonedAmmoNative.dll should win.
 2. Enable both PoisonedAmmoNative.esp and CoatingMechanist.esp. Keep Perk Adjuster enabled. The existing throwing-weapon patch can remain enabled; this package adds a separate JSON file.
 3. Restart Skyrim. Check the Marksman tree for the three new nodes to the right of the existing tree. Rank I and rank II are connected; Measured Dose is independently available at 30.
-4. To coat a batch, equip a crossbow and ordinary bolts, highlight the poison/oil in Inventory and press F8. The bottle/bolt dialog shows the doubled count when Measured Dose is owned.
+4. To coat a batch, equip a crossbow and ordinary bolts, click the poison/oil in Inventory (or highlight it and press F8). The bottle/bolt dialog shows the doubled count when Measured Dose is owned.
 
 The original ammo/proxy form IDs, 512 recipe slots, co-save version and companion ammo ESP are unchanged. Keep the matching ESS + SKSE co-save. Measured Dose is a crafting bonus: it does not retroactively add bolts to existing stacks. Coating Mechanist is checked on the shooter at impact and also benefits already-crafted bolts. Bows/arrows and melee coatings receive neither crossbow bonus.
 
@@ -29,7 +39,7 @@ The perk records contain purchase requirements; their mechanics run in the suppl
 
 ## Validation and limitations
 
-Automated tests cover every combination of the three perks, non-stacking rank II, doubled bolt counts (not arrows), partial batches, finite scaling and unchanged persistence. The DLL must also pass the Windows build. This beta has not been tested inside Skyrim. The previously reported NPC spell-reapplication crash remains unresolved; this update is not a crash fix. Use a copied save for the checks in TESTING.md.
+The inventory callback adapter has been built against the pinned CommonLib API but requires the in-game input/animation checks in TESTING.md. Automated tests cover every combination of the three perks, non-stacking rank II, doubled bolt counts (not arrows), partial batches, finite scaling and unchanged persistence. The DLL must also pass the Windows build. This beta has not been tested inside Skyrim. The previously reported NPC spell-reapplication crash remains unresolved; this update is not a crash fix. Use a copied save for the checks in TESTING.md.
 
 TraceProjectiles=1 in SKSE/Plugins/PoisonedAmmoNative.ini logs dose decisions, coating impact context and each adjusted effect to Documents/My Games/Skyrim Special Edition/SKSE/PoisonedAmmoNative.log. Copy the log before restarting, because each launch overwrites it.
 
@@ -48,11 +58,11 @@ This is a compiled beta, **not an in-game-validated release**. Automated tests c
 ## Use
 
 1. Equip an ordinary bow and arrows, or crossbow and bolts. Use up any poison already applied to the weapon first.
-2. Open your own inventory and highlight a poison. Press **F8** (configurable).
+2. Open your own inventory and **use/click a poison**, or highlight it and press **F8** (configurable).
 3. Choose how many bottles to use. The dialog shows exactly how many arrows/bolts that produces. Cancel consumes nothing. A partially used final bottle is consumed.
 4. The separate named ammunition stack is equipped automatically by default. You can transfer it, put it in containers, drop it, or select it in Wheeler like other ammunition.
 
-The interface deliberately uses a dedicated hotkey. Ordinary clicking a poison retains your existing poison behavior. There is no new MCM or interface framework dependency. Keyboard input is required to open the batch dialog; its buttons use the normal messagebox controls.
+Inventory poison use now opens the same batch dialog as the optional hotkey when a bow/crossbow is equipped. Melee and other item use retain their normal behavior. No new MCM, SWF replacement, or interface framework dependency is added. The dialog uses normal messagebox controls.
 
 ## Implemented behavior
 

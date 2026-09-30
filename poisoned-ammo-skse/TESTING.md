@@ -1,3 +1,16 @@
+# Inventory click-to-coat checks (not yet run in Skyrim)
+
+- Equip a bow + ordinary arrows, then click a poison: only the batch dialog opens. The bow is not poisoned; opening the dialog consumes nothing.
+- Repeat with a crossbow + ordinary bolts, both mouse buttons, keyboard use and controller use in SkyUI. Verify the dialog says arrows/bolts correctly.
+- Cancel, Escape, repeated rapid clicks and F8 while the batch dialog is open: no materials lost, no duplicate dialog or second confirmation.
+- Confirm one bottle: exactly the displayed ammo and bottle counts are consumed; one matching poisoned-ammo stack appears. Repeat with Measured Dose and each Coating Mechanist rank.
+- Click another item before confirmation / change equipment in an unpaused menu: the originally selected poison stays bound to the request; invalid equipment/inputs cancel safely.
+- No ammo, wrong ammo type, already-coated ammo, stolen/quest inputs, pre-existing weapon poison: an appropriate message appears; no normal bow-poisoning confirmation and no consumption.
+- With a melee weapon equipped, poison use still invokes the original weapon-poisoning action. With any weapon, using health potions/food and dropping/favoriting items still works normally.
+- Close/reopen Inventory repeatedly and save/reload: the click route remains present. Check the log for Inventory ItemSelect coating route registered.
+- CraftOnPoisonUse=0 + restart: original click behavior returns; F8 still crafts ammunition.
+- Test the exact installed poisoning-animation mod. Native weapon-poison events are bypassed, so animations may not trigger. No animation compatibility is claimed until checked against its installed scripts and tested in Skyrim.
+
 # Coating perk runtime checks (not yet run in Skyrim)
 
 Use a copied save and TraceProjectiles=1. Verify actual target health/effect duration as well as logs. Inventory bottle strength does not change: bonuses apply at impact.
@@ -10,8 +23,8 @@ Use a copied save and TraceProjectiles=1. Verify actual target health/effect dur
 - Melee and bows/arrows get no new bonus. Swap away from a crossbow while a bolt is in flight: that bolt still qualifies; an arrow fired before switching to crossbow does not.
 - Miss/pick up/re-fire: base stored coating remains unchanged; strength must not compound.
 - Save/reload with an active poison: magnitude/duration must not double again. Load another character: no carried-over coating context.
-- Test alongside VenomHarvester: its existing penalty remains, Coating Mechanist multiplies the resulting effect once.
-- Ordinary crossbow weapon-slot poison should get strength bonus too; Measured Dose only changes F8 batch crafting.
+- Huntsman's Satchel: outgoing poison strength is unchanged by the current trait; its drawback is -50 poison resistance. Custom poisoned-ammo proxies are not linked to its ingredient-refund ledger in this build.
+- Ordinary crossbow weapon-slot poison should get strength bonus too; Measured Dose only changes this mod's ammunition batch crafting.
 - If Coating impact is logged but Coating applied is absent for an effect, capture the log plus ammo/poison name and target; do not claim the strength feature passed.
 
 # Required Skyrim beta checks
