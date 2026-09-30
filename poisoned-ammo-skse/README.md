@@ -1,4 +1,32 @@
-# Version 0.2.4 — elemental/coating icon metadata
+# Version 0.2.5 — finish crossbow reload before poisoning
+
+Install this full package over 0.2.4 in MO2, let its PoisonedAmmoNative.dll win,
+and restart Skyrim through SKSE. Keep Wheeler Elemental Ammo 1.4.0 installed.
+Both ESPs, recipe IDs, co-save format, perks, coating quantities and elemental
+icon metadata are unchanged. No new game or animation-generator run is needed.
+
+When coating with a drawn crossbow, the bridge waits for the ammo equip and
+reload to finish, allows a short transition, then requests the installed New
+Anims poison animation. It delays the statistic trigger too, so the natural
+poison-removal event cannot use this batch's statistic increase mid-reload.
+The wait follows reload events and the IsReloading graph state, including
+reloads that begin after closing Inventory or the F8 dialog. Bows and sheathed
+weapons keep the previous animation route.
+
+Switching weapon/ammo, sheathing, death or loading a save cancels a pending
+crossbow visual. A newer craft replaces the older pending visual. If reload
+completion cannot be established within 15 seconds of active player updates,
+the visual is skipped. A cancellation does not undo crafting, refund or consume
+anything else; a cancelled wait does not send its deferred statistic/animation
+request. Existing animation settings and camera restrictions still apply.
+
+Windows compilation and automated sequencing tests must pass for this package.
+The exact in-game animation flow with your load order still needs the focused
+checks at the top of TESTING.md. TraceProjectiles=1 logs queued/settled/cancelled
+animation requests as well as the existing diagnostics.
+
+## Previous update: 0.2.4 elemental/coating icon metadata
+
 
 Use with Wheeler All Icons 2K Elemental Ammo 1.4.0. Install this full package over
 0.2.3 and restart Skyrim through SKSE. Existing saves and crafted batches keep
@@ -108,7 +136,7 @@ Inventory poison use immediately coats one bottle's batch; the hotkey opens bulk
 
 - Separate arrow/bolt stacks for each ammunition and poison combination. Original damage, projectile, model/texture swaps, weight, value, sounds and keywords are copied from the resolved source ammunition.
 - Static poisons are used directly, retaining their effects and conditions. Standard player-crafted poisons are snapshotted with effect magnitudes, areas, durations, costs and keywords; the original temporary potion form need not survive.
-- Native poison delivery through ArrowProjectile, for player and NPC shots. The engine remains responsible for applying effects and resistance. No per-frame polling and no scripted damage simulation.
+- Native poison delivery through ArrowProjectile, for player and NPC shots. The engine remains responsible for applying effects and resistance. Projectile delivery uses hooks rather than polling or scripted damage simulation.
 - World misses keep the poisoned ammo source; actor contact changes the recovery source to ordinary ammo before native impact processing. This includes blocked actor contacts. Recovery chance remains the engine's decision.
 - Native poison-dose perks determine arrows per bottle, or use a fixed INI override. No perk records are edited.
 - Static ESP/ESM, ESL, and ESL-flagged ESP sources are resolved by filename plus local FormID. The file's actual light flag determines the mask. The AE low ESL local-ID range is accepted.

@@ -1,3 +1,28 @@
+# Crossbow reload sequencing checks, v0.2.5 (not yet run in Skyrim)
+
+1. Draw your Iron Heavy Crossbow with ordinary Iron Bolts. Click a poison in
+   Inventory, wait several seconds in the menu, then close it. Expect one full
+   reload, then one poison animation, with no resumed reload afterward.
+2. Repeat through Wheeler and the F8 batch dialog; test ordinary and Dwarven
+   crossbows, standing/sneaking, Quick Shot or other reload-speed perks, and
+   your installed crossbow animation replacer.
+3. Repeat in third person and your supported first-person New Anims setup.
+   Test Skyrim Souls if installed. Inventory/dialog time must not bypass the wait.
+4. During the pending reload, switch weapons/ammo, sheathe, or load another
+   save. The old poison visual must not play later. Crafting already committed
+   once; no additional bottles or bolts may be consumed or refunded.
+5. Test the last bottle of a player-made poison, a 5-bottle F8 batch, and
+   AutoEquip=0. A valid completed batch requests at most one animation; a normal
+   completed 5-bottle animation request increments Poisons Used by five.
+6. Test bows and disabled/missing Immersive Interactions. Keep the previous
+   behavior. Confirm the Wheeler elemental icons and impact crash correction
+   still work with a newly crafted and an existing saved bolt stack.
+
+Automated coverage uses the production ReloadGate with fast/slow reloads,
+menu pauses, delayed equip, event-only and graph-only completion, restart during
+settling, cancellation, missing events/state, timeout, and exactly-once dispatch.
+The Windows build compiles the actual hooks against pinned CommonLibSSE-NG.
+
 # Elemental icon checks, v0.2.4
 
 - Use Wheeler 1.4.0 with this DLL. Check normal and fire/frost/shock ammo before coating.

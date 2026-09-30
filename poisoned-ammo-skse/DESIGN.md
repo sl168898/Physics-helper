@@ -1,3 +1,47 @@
+# Crossbow animation sequencing (0.2.5)
+
+Capture a reload-event checkpoint immediately before auto-equipping the output.
+For a drawn crossbow, hold the original poison in a Papyrus Variable and defer
+both Game.IncrementStat and the targeted OnItemRemoved call. This is necessary
+because New Anims 1.5's genuine OnItemRemoved callback can itself start the
+animation as soon as it sees a larger Poisons Used statistic.
+
+Chain PlayerCharacter Update (vtable 0, slot 0xAD) and its animation event sink
+(vtable 2, slot 0x01) on the supported 1.6.1170 runtime. The event hook forwards
+the exact event and returns the original result, then records only an atomic
+sequence/kind. It observes reload/reloadStart/ReloadFast and reloadStop/
+reloadComplete. No input blocking, animation event injection, graph-variable
+writes, forced camera switches or raw graph/sink pointers are introduced.
+
+The player's post-update callback does work only while one visual is pending.
+ReloadGate consumes actual event evidence and a readable IsReloading graph
+state. A true-to-false transition handles missing stop annotations. A stop
+annotation cannot bypass a still-true graph state. After completion it requires
+0.2 seconds of idle gameplay; a later reload start resets settling. If no reload
+occurs at all, the graph must be readable and idle for one second before settling.
+Menu pause/item/modal checks reset the startup/settle grace periods, including
+unpaused inventory. Unknown or stuck state times out after 15 seconds of active
+updates by cancelling, never by forcing the poison animation through a reload.
+The delta is finite and capped at 0.1 seconds to prevent hitches skipping guards.
+
+Expected ammo may appear after EquipObject returns. Until first matching, only
+the original/empty ammo slot is allowed, and presentation remains blocked.
+After a match, any weapon/ammo change, sheathing or death cancels. Load-generation
+and request-serial guards protect deferred VM work; a newer craft supersedes an
+older visual. The VM callback's final equipment/menu/reload recheck runs in an
+SKSE game task, not on a Papyrus worker. New Anims still owns the final animation
+and its guards; the asynchronous VM boundary and third-party scripts need in-game
+verification. A cancelled pre-dispatch wait does not increment Poisons Used.
+Crafting, inventory transaction/rollback, projectile hooks and save data remain
+independent of all visual outcomes. No third-party scripts/assets are bundled.
+
+Primary API/event references:
+- Supplied New Anims 1.5 source/scripts/AR_Ref_AliasScript.psc, OnItemRemoved.
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/A/Actor.h
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/B/BSAnimationGraphEvent.h
+- https://github.com/AugustGal/Manual-Crossbow-Reloading-SKSE/blob/f180385b324690a4ee7d9d0db95cff8191d3b00d/src/CrossbowReloadManager.cpp
+- https://github.com/AugustGal/Manual-Crossbow-Reloading-SKSE/blob/f180385b324690a4ee7d9d0db95cff8191d3b00d/src/Hooks.h
+
 # Read-only icon metadata ABI, v0.2.4
 
 PoisonedAmmoNative_GetIconInfoV1(uint32_t ammoFormID) returns zero for unavailable

@@ -310,6 +310,8 @@ namespace
                 notify("Poisoned Ammo: selected bottle unavailable; ammunition returned."); return;
             }
         }
+        // Capture before EquipObject: it can emit reload events synchronously.
+        const auto animationContext = pa::animation::capture(player, ammo, settings.autoEquip ? output : ammo);
         if (settings.autoEquip) if (auto equip = RE::ActorEquipManager::GetSingleton())
             equip->EquipObject(player, output, nullptr, 1, nullptr, false, true, false, true);
         refreshInventory();
@@ -318,7 +320,7 @@ namespace
         if (settings.immersiveAnimation) {
             try {
                 pa::animation::completed(poison, batch.bottles,
-                    [epoch = request.epoch] { return session && epoch == generation; }, settings.trace);
+                    [epoch = request.epoch] { return session && epoch == generation; }, settings.trace, animationContext);
             } catch (const std::exception& e) {
                 // Animation failure must not report a completed batch as failed
                 // or consume/refund materials a second time.
@@ -686,6 +688,7 @@ namespace
             if (!formsReady) { SKSE::log::error("Disabled: enable the matching PoisonedAmmoNative.esp"); break; }
             disableSlots(); installHooks(); coating::install(data, settings.trace);
             InventoryUseHook::install();
+            if (settings.immersiveAnimation) pa::animation::install();
             RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&input);
             SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}; craft on inventory poison use {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip, settings.craftOnUse);
             break;
@@ -729,7 +732,7 @@ extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 4, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 5, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
