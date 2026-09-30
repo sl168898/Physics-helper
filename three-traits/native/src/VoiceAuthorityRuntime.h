@@ -50,7 +50,8 @@ namespace traits
                 if (hadAbility) player->RemoveSpell(legacyAbility);
                 // Also handle a stale saved active effect after the ability was
                 // removed. Dispel the exact source spell; never edit recovery AVs.
-                target->DispelEffect(legacyAbility, player->GetHandle());
+                auto handle = player->GetHandle();
+                target->DispelEffect(legacyAbility, handle);
                 if (player->HasPerk(legacyPerk)) player->RemovePerk(legacyPerk);
                 SKSE::log::info("Voice of Authority upgrade: legacy ability={}, perk={}, effects={}; "
                     "remaining ability={}, cooldown={}; buy the Speech perk normally",

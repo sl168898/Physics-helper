@@ -13,7 +13,7 @@ namespace RE {
         std::map<SpellItem*, std::vector<EffectSetting*>> sources;
         std::vector<SpellItem*> dispelled;
         bool HasMagicEffect(EffectSetting* effect) { return effects.contains(effect); }
-        void DispelEffect(SpellItem* spell, int handle) {
+        void DispelEffect(SpellItem* spell, int& handle) {
             assert(handle == 7); dispelled.push_back(spell);
             for (auto effect : sources[spell]) effects.erase(effect);
         }
