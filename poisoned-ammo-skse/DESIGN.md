@@ -1,3 +1,14 @@
+# Read-only icon metadata ABI, v0.2.4
+
+PoisonedAmmoNative_GetIconInfoV1(uint32_t ammoFormID) returns zero for unavailable
+ammo or inactive sessions. A valid result is 0xA1010000 OR the native type in
+bits 0..3, coating type in bits 4..7 and bolt flag in bit 8. Types: 0 none,
+1 fire, 2 frost, 3 shock, 4 poison/generic coating. The coating cannot be zero
+in a valid result. All other bits are reserved. The provider computes the word
+from the original ammo and reconstructed/static poison while restoring the
+recipe. The getter copies it under the existing state mutex; it returns no
+engine pointers. Reset, missing sources and save faults invalidate metadata.
+
 # Wheeler integration and impact ABI (0.2.3)
 
 Wheeler snapshots poison form ID, optional inventory display name, right-hand weapon ID and ammo ID before closing. After the close animation it calls the optional C export PoisonedAmmoNative_CoatOneV1(uint32_t poison, const char* name, uint32_t weapon, uint32_t ammo). Return 0 restores native behavior only when CraftOnPoisonUse is disabled. Return 1 claims the ranged-poison action, including validation failures, so vanilla bow poisoning never runs as a fallback. Wheeler retains its native melee action and works normally if the ammunition DLL is absent.

@@ -5,6 +5,7 @@
 #include "Core.h"
 #include "Coating.h"
 #include "ImmersiveAnimation.h"
+#include "AmmoIconEffects.h"
 #include <array>
 #include <atomic>
 #include <functional>
@@ -39,6 +40,7 @@ namespace
         RE::AlchemyItem* proxy{};
         RE::TESAmmo* original{};
         RE::AlchemyItem* poison{};
+        std::uint32_t iconInfo{}; // Refreshed with the saved recipe, read under stateMutex.
     };
     std::array<Slot, pa::capacity> slots;
     std::unordered_map<RE::FormID, std::size_t> slotIDs;
@@ -98,7 +100,7 @@ namespace
     void disableSlots()
     {
         for (auto& slot : slots) {
-            slot.original = nullptr; slot.poison = nullptr;
+            slot.original = nullptr; slot.poison = nullptr; slot.iconInfo = 0;
             if (slot.form) {
                 slot.form->fullName = "Unavailable poisoned ammunition";
                 slot.form->GetRuntimeData().data.flags.set(RE::AMMO_DATA::Flag::kNonPlayable);
@@ -109,7 +111,7 @@ namespace
     {
         if (i >= recipes.size() || i >= slots.size()) return false;
         auto& slot = slots[i]; const auto& recipe = recipes[i];
-        slot.original = nullptr; slot.poison = nullptr;
+        slot.original = nullptr; slot.poison = nullptr; slot.iconInfo = 0;
         auto base = resolve<RE::TESAmmo>(recipe.ammo);
         if (!base || !base->GetPlayable() || !base->GetRuntimeData().data.projectile ||
             !base->GetRuntimeData().data.projectile->IsArrow() || slotIDs.contains(base->GetFormID())) return false;
@@ -152,6 +154,7 @@ namespace
         }
         copyAmmo(slot.form, base, recipe.name);
         slot.original = base; slot.poison = poison;
+        slot.iconInfo = AmmoIcon::PackCoated({base->IsBolt(), AmmoIcon::NativeType(base), AmmoIcon::MagicType(poison, true)});
         SKSE::log::info("Slot {}: {:08X} <- {}|{:06X}; poison={}{}", i, slot.form->GetFormID(),
             recipe.ammo.file, recipe.ammo.local, recipe.poison.custom() ? "crafted: " : "static: ", recipe.poison.name);
         return true;
@@ -706,6 +709,19 @@ namespace
         }
     }
 }
+// Read-only icon query. Copy only a tagged integer across the DLL boundary.
+// Never expose recipe/effect pointers or mutate inventory on Wheeler's thread.
+extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_GetIconInfoV1(std::uint32_t ammoID) noexcept
+{
+    try {
+        std::lock_guard lock(stateMutex);
+        if (!session || !formsReady || saveFault) return 0;
+        const auto found = slotIDs.find(ammoID);
+        if (found == slotIDs.end()) return 0;
+        const auto& slot = slots[found->second];
+        return slot.poison && slot.original ? slot.iconInfo : 0;
+    } catch (...) { return 0; }
+}
 extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
     std::uint32_t poison, const char* inventoryName, std::uint32_t clickedWeapon, std::uint32_t clickedAmmo)
 {
@@ -713,7 +729,7 @@ extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 3, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 4, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -726,7 +742,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.2.3 beta; Skyrim Steam 1.6.1170; impact pointer ABI fixed; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
+    SKSE::log::info("PoisonedAmmoNative 0.2.4 beta; read-only elemental/coating icon metadata; Skyrim Steam 1.6.1170; impact pointer ABI fixed; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

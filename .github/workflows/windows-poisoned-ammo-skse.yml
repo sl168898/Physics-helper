@@ -2,7 +2,7 @@ name: Build Poisoned Ammunition and Coating Perks
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/poisoned-ammo-skse']
+    branches: ['codex/ammo-icon-metadata-20260930']
 permissions:
   contents: read
 concurrency:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable beta and source
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Poisoned-Ammunition-Coating-Perks-v0-2-3-Beta
-          path: poisoned-ammo-skse/_build/Poisoned_Ammunition_Coating_Perks_v0_2_3_Beta.zip
+          name: Poisoned-Ammunition-Coating-Perks-v0-2-4-Beta
+          path: poisoned-ammo-skse/_build/Poisoned_Ammunition_Coating_Perks_v0_2_4_Beta.zip
           if-no-files-found: error

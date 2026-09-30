@@ -1,3 +1,21 @@
+# Version 0.2.4 — elemental/coating icon metadata
+
+Use with Wheeler All Icons 2K Elemental Ammo 1.4.0. Install this full package over
+0.2.3 and restart Skyrim through SKSE. Existing saves and crafted batches keep
+their recipe IDs and co-save schema. Existing ESPs, perks, impact crash fix,
+one-bottle click crafting, F8 batch crafting and animations are unchanged.
+
+A read-only API reports the original ammunition element and actual coating
+separately. Colors are calculated when recipes are crafted or restored from a
+save. No item-name matching, scripts or polling quests are added. For mixed
+recognized damage effects, color uses summed absolute magnitude x duration
+(ties: fire, frost, shock, poison). Utility/status-only or unrecognized coatings
+use the green generic coating marker; it does not imply poison health damage.
+Native elements are read from the ammunition projectile's explosion enchantment.
+Script-only elements without matching damage records may need a compatibility rule.
+
+This update changes icon metadata only. In-game validation is still required.
+
 # Poisoned Ammunition + Coating Perks 0.2.3 beta
 
 Skyrim SE Steam 1.6.1170 / SKSE64 2.2.6 / Address Library / Perk Adjuster (user profile has 2.1).

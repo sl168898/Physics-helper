@@ -1,3 +1,14 @@
+# Elemental icon checks, v0.2.4
+
+- Use Wheeler 1.4.0 with this DLL. Check normal and fire/frost/shock ammo before coating.
+- Coat normal ammo with each of the four damage types: tip and drop should match.
+- Coat a fire bolt with a health-damage poison: orange tip, green drop.
+- Coat frost ammo with fire oil: blue tip, orange drop.
+- Load existing batches, reload the save, then switch characters with different
+  recipes assigned to the same stable slot: colors must follow each recipe.
+- A weakness-to-fire poison alone remains a generic green coating, not fire damage.
+- Test impact, recovery and one-bottle/F8 crafting as in the retained checks below.
+
 # 0.2.3 impact and Wheeler checks (not yet run in Skyrim)
 
 - Reproduce the reported Iron Heavy Crossbow + poisoned Iron Bolt shot at an actor with the same load order. Test Coating Mechanist absent, rank I and rank II. Confirm no impact crash and one poison application.
