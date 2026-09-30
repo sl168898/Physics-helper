@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
@@ -45,7 +46,7 @@ namespace
     std::recursive_mutex stateMutex;
     RE::TESGlobal* marker{};
     bool formsReady = false, saveFault = false;
-    std::atomic_bool session = false, menuPending = false;
+    std::atomic_bool session = false, menuPending = false, externalPending = false;
     std::atomic<std::uint64_t> generation = 0;
     // Engine active effects can retain Effect pointers across load/revert callbacks.
     // Retire them for this process instead of freeing memory still in engine use.
@@ -192,12 +193,38 @@ namespace
         return it != inventory.end() && it->second.first > 0 && it->second.second &&
             !it->second.second->IsQuestObject() && it->second.second->IsOwnedBy(player);
     }
+    // Resolve a live renamed bottle immediately before use. A present nullptr
+    // means an ordinary copy without extra data; nullopt means no named match.
+    // Never store the returned extra-data pointer in a queued Request.
+    std::optional<RE::ExtraDataList*> namedBottle(RE::PlayerCharacter* player,
+        RE::AlchemyItem* poison, const std::string& name)
+    {
+        const auto inventory = player->GetInventory([&](RE::TESBoundObject& obj) { return &obj == poison; });
+        const auto found = inventory.find(poison);
+        if (found == inventory.end() || found->second.first <= 0 || !found->second.second) return std::nullopt;
+        const auto& entry = found->second.second;
+        std::int32_t remainder = found->second.first;
+        std::unordered_set<RE::ExtraDataList*> visited;
+        const char* base = poison->GetName();
+        if (entry->extraLists) for (auto* extra : *entry->extraLists) {
+            if (!extra || !visited.insert(extra).second || remainder <= 0) continue;
+            const auto copies = std::clamp(extra->GetCount(), 0, remainder);
+            remainder -= copies;
+            if (!copies) continue;
+            const char* label = extra->GetDisplayName(poison);
+            if (!label || !*label) label = base;
+            if (label && name == label) return extra;
+        }
+        if (remainder > 0 && base && name == base) return static_cast<RE::ExtraDataList*>(nullptr);
+        return std::nullopt;
+    }
     struct Request
     {
         std::uint64_t epoch{};
         RE::FormID ammo{}, poison{}, weapon{};
         std::uint32_t doses{};
         pa::Recipe recipe;
+        std::optional<std::string> inventoryName;
     };
     void refreshInventory()
     {
@@ -222,6 +249,9 @@ namespace
         const auto beforeAmmo = count(player, ammo), beforePoison = count(player, poison);
         const auto batch = pa::plan(beforeAmmo, beforePoison, request.doses, bottles, settings.maxBatch);
         if (!batch.arrows) { notify("Poisoned Ammo: not enough ammunition or poison."); return; }
+        if (request.inventoryName && (batch.bottles != 1 || !namedBottle(player, poison, *request.inventoryName))) {
+            notify("Poisoned Ammo: the selected named poison is no longer available."); return;
+        }
         RE::TESAmmo* output = nullptr;
         {
             std::lock_guard lock(stateMutex);
@@ -241,17 +271,20 @@ namespace
         }
         const auto beforeOutput = count(player, output);
         // No asynchronous work between validation, removal and output creation.
-        player->RemoveItem(poison, batch.bottles, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-        auto removedPoison = std::clamp(beforePoison - count(player, poison), 0, batch.bottles);
-        if (removedPoison != batch.bottles) {
-            if (removedPoison) player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
-            notify("Poisoned Ammo: poison removal failed; batch cancelled."); return;
+        std::int32_t removedPoison = 0;
+        if (!request.inventoryName) {
+            player->RemoveItem(poison, batch.bottles, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+            removedPoison = std::clamp(beforePoison - count(player, poison), 0, batch.bottles);
+            if (removedPoison != batch.bottles) {
+                if (removedPoison) player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
+                notify("Poisoned Ammo: poison removal failed; batch cancelled."); return;
+            }
         }
         player->RemoveItem(ammo, batch.arrows, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
         auto removedAmmo = std::clamp(beforeAmmo - count(player, ammo), 0, batch.arrows);
         if (removedAmmo != batch.arrows) {
             if (removedAmmo) player->AddObjectToContainer(ammo, nullptr, removedAmmo, nullptr);
-            player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
+            if (removedPoison) player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
             notify("Poisoned Ammo: ammunition removal failed; materials returned."); return;
         }
         player->AddObjectToContainer(output, nullptr, batch.arrows, nullptr);
@@ -259,8 +292,20 @@ namespace
         if (added != batch.arrows) {
             if (added) player->RemoveItem(output, added, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
             player->AddObjectToContainer(ammo, nullptr, removedAmmo, nullptr);
-            player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
+            if (removedPoison) player->AddObjectToContainer(poison, nullptr, removedPoison, nullptr);
             notify("Poisoned Ammo: output creation failed; materials returned."); return;
+        }
+        if (request.inventoryName) {
+            // A named Wheeler click always consumes exactly one bottle, last.
+            // Earlier failures can therefore roll back without losing its name.
+            const auto selected = namedBottle(player, poison, *request.inventoryName);
+            const auto beforeSelectedRemoval = count(player, poison);
+            if (selected) player->RemoveItem(poison, 1, RE::ITEM_REMOVE_REASON::kRemove, *selected, nullptr);
+            if (!selected || beforeSelectedRemoval - count(player, poison) != 1) {
+                player->RemoveItem(output, added, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+                player->AddObjectToContainer(ammo, nullptr, removedAmmo, nullptr);
+                notify("Poisoned Ammo: selected bottle unavailable; ammunition returned."); return;
+            }
         }
         if (settings.autoEquip) if (auto equip = RE::ActorEquipManager::GetSingleton())
             equip->EquipObject(player, output, nullptr, 1, nullptr, false, true, false, true);
@@ -321,14 +366,14 @@ namespace
         box->callback.reset(new BatchCallback(std::move(request), std::move(options)));
         box->QueueMessage(); return true;
     }
-    void requestCraft(RE::AlchemyItem* clickedPoison = nullptr)
+    void requestCraft(RE::AlchemyItem* clickedPoison = nullptr, std::optional<std::string> inventoryName = std::nullopt)
     {
         if (!session || !formsReady) return;
         { std::lock_guard lock(stateMutex); if (saveFault) { notify("Poisoned Ammo: save data mismatch. Restore the matching .skse co-save."); return; } }
         auto ui = RE::UI::GetSingleton();
         auto player = RE::PlayerCharacter::GetSingleton();
         auto menu = ui ? ui->GetMenu<RE::InventoryMenu>() : nullptr;
-        if (!menu || !player || ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME) || menuPending.exchange(true)) return;
+        if (!ui || !player || (!clickedPoison && !menu) || ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME) || menuPending.exchange(true)) return;
         auto poison = clickedPoison;
         if (!poison) {
             auto list = menu->GetRuntimeData().itemList;
@@ -367,7 +412,7 @@ namespace
         if (settings.trace) SKSE::log::info("Coating batch: base doses={}, bolts={}, Measured Dose={}, final doses={}",
             baseDoses, ammo->IsBolt(), measured, perBottle);
         Request request{generation.load(), ammo->GetFormID(), poison->GetFormID(), weapon->GetFormID(), perBottle,
-            {*ammoKey, *poisonData, fmt::format("{} [{}]", displayName(ammo), poisonData->name)}};
+            {*ammoKey, *poisonData, fmt::format("{} [{}]", displayName(ammo), poisonData->name)}, std::move(inventoryName)};
         if (!pa::valid(request.recipe)) { fail("Poisoned Ammo: unsupported poison data. No items consumed."); return; }
         const auto ammoCount = count(player, ammo), poisonCount = count(player, poison);
         if (!pa::plan(ammoCount, poisonCount, perBottle, 1, settings.maxBatch).arrows) {
@@ -381,6 +426,47 @@ namespace
         } else if (!showBatch(std::move(request), ammoCount, poisonCount)) {
             fail("Poisoned Ammo: could not open the batch dialog.");
         }
+    }
+
+    // Called by Wheeler after its close animation. It can be on the render
+    // thread: copy IDs/name and defer all inventory mutations to an SKSE task.
+    std::uint32_t queueExternalCraft(std::uint32_t poisonID, const char* name,
+        std::uint32_t weaponID, std::uint32_t ammoID)
+    {
+        if (!settings.craftOnUse) return 0;
+        if (!session || !formsReady || externalPending.exchange(true)) return 1;
+        const auto epoch = generation.load();
+        try {
+            std::optional<std::string> ownedName;
+            if (name) ownedName = std::string(name);
+            auto tasks = SKSE::GetTaskInterface();
+            if (!tasks) { externalPending = false; return 1; }
+            tasks->AddTask([epoch, poisonID, weaponID, ammoID, ownedName = std::move(ownedName)] {
+                if (epoch != generation) return;
+                struct Release { ~Release() { externalPending = false; } } release;
+                if (!session || !formsReady) return;
+                auto player = RE::PlayerCharacter::GetSingleton();
+                auto weapon = player ? player->GetEquippedObject(false) : nullptr;
+                auto ammo = player ? player->GetCurrentAmmo() : nullptr;
+                if (!weapon || !ammo || weapon->GetFormID() != weaponID || ammo->GetFormID() != ammoID) {
+                    notify("Poisoned Ammo: equipment changed or ammunition missing. Select the poison again."); return;
+                }
+                auto poison = RE::TESForm::LookupByID<RE::AlchemyItem>(poisonID);
+                if (!poison || !poison->IsPoison()) { notify("Poisoned Ammo: selected poison is unavailable."); return; }
+                try {
+                    if (settings.trace) SKSE::log::info("Wheeler poison use -> one-bottle crafting: poison {:08X}, weapon {:08X}, ammo {:08X}", poisonID, weaponID, ammoID);
+                    requestCraft(poison, ownedName);
+                } catch (const std::exception& e) {
+                    menuPending = false;
+                    SKSE::log::error("Wheeler coating request failed: {}", e.what());
+                    notify("Poisoned Ammo: coating error. See the log.");
+                }
+            });
+        } catch (const std::exception& e) {
+            if (epoch == generation) externalPending = false;
+            SKSE::log::error("Could not queue Wheeler coating request: {}", e.what());
+        }
+        return 1; // Claimed even on refusal: never poison the bow as a fallback.
     }
 
     // The inventory's ItemSelect callback runs before vanilla starts weapon
@@ -507,12 +593,17 @@ namespace
     };
     struct ImpactHook
     {
-        static void thunk(RE::ArrowProjectile* p, RE::TESObjectREFR* target, const RE::NiPoint3& point, const RE::NiPoint3& velocity,
-            RE::hkpCollidable* collidable, std::int32_t a6, std::uint32_t a7)
+        // Native slot 0xBD returns an ImpactData pointer. The pinned CommonLib
+        // header incorrectly declares void. Retain RAX across Scope cleanup:
+        // the collision caller writes into the returned impact at offset 0x48.
+        // See CRASH_FIX.md for the independent ABI reference and crash evidence.
+        static RE::Projectile::ImpactData* thunk(RE::ArrowProjectile* p, RE::TESObjectREFR* target,
+            const RE::NiPoint3& point, const RE::NiPoint3& velocity,
+            RE::hkpCollidable* collidable, std::uint32_t shapeKey, bool spellCollided)
         {
             prepareProjectile(p, target && target->As<RE::Actor>());
             coating::Scope scope(p, session.load());
-            original(p, target, point, velocity, collidable, a6, a7);
+            return original(p, target, point, velocity, collidable, shapeKey, spellCollided);
         }
         static inline REL::Relocation<decltype(thunk)> original;
     };
@@ -537,11 +628,11 @@ namespace
         LoadedHook::original = table.write_vfunc(0xC0, LoadedHook::thunk);
         ImpactHook::original = table.write_vfunc(0xBD, ImpactHook::thunk);
         ProcessHook::original = table.write_vfunc(0xAC, ProcessHook::thunk);
-        SKSE::log::info("ArrowProjectile hooks installed; chained native loaded/impact/process functions. No poison-menu detour.");
+        SKSE::log::info("ArrowProjectile hooks installed; AddImpact ABI returns ImpactData*. Chained loaded/impact/process functions.");
     }
     void reset()
     {
-        session = false; menuPending = false; ++generation;
+        session = false; menuPending = false; externalPending = false; ++generation;
         std::lock_guard lock(stateMutex);
         recipes.clear(); saveFault = false; disableSlots();
     }
@@ -596,7 +687,7 @@ namespace
             SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}; craft on inventory poison use {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip, settings.craftOnUse);
             break;
         }
-        case SKSE::MessagingInterface::kPreLoadGame: session = false; menuPending = false; ++generation; break;
+        case SKSE::MessagingInterface::kPreLoadGame: session = false; menuPending = false; externalPending = false; ++generation; break;
         case SKSE::MessagingInterface::kNewGame: {
             reset(); if (marker) marker->value = 0; session = formsReady; break;
         }
@@ -615,9 +706,14 @@ namespace
         }
     }
 }
+extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
+    std::uint32_t poison, const char* inventoryName, std::uint32_t clickedWeapon, std::uint32_t clickedAmmo)
+{
+    return queueExternalCraft(poison, inventoryName, clickedWeapon, clickedAmmo);
+}
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 2, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 3, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -630,7 +726,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.2.2 beta; Skyrim Steam 1.6.1170; click coats one bottle; F8 opens batch selection");
+    SKSE::log::info("PoisonedAmmoNative 0.2.3 beta; Skyrim Steam 1.6.1170; impact pointer ABI fixed; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

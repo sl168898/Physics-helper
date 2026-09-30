@@ -1,3 +1,13 @@
+# Wheeler integration and impact ABI (0.2.3)
+
+Wheeler snapshots poison form ID, optional inventory display name, right-hand weapon ID and ammo ID before closing. After the close animation it calls the optional C export PoisonedAmmoNative_CoatOneV1(uint32_t poison, const char* name, uint32_t weapon, uint32_t ammo). Return 0 restores native behavior only when CraftOnPoisonUse is disabled. Return 1 claims the ranged-poison action, including validation failures, so vanilla bow poisoning never runs as a fallback. Wheeler retains its native melee action and works normally if the ammunition DLL is absent.
+
+The export copies the display name and form IDs and queues an SKSE game task. It does not retain engine pointers or mutate inventory from Wheeler's render/update thread. A pending gate suppresses overlapping queued requests. The load-generation guard rejects stale requests. The game task resolves the inputs again and rejects an equipment change. Explicit poison requests do not require InventoryMenu; the F8 no-argument request still requires it.
+
+Only Wheeler's named one-bottle transaction consumes poison last, after ammunition removal and output verification. This avoids deleting rename metadata on rollback. The named ExtraDataList is resolved afresh immediately before RemoveItem; it is never cached across a frame. Failures before bottle consumption return the ammunition and remove the provisional output. Existing F8 bulk and unnamed transactions retain their previous checks.
+
+See CRASH_FIX.md for the corrected AddImpact ABI. Save serialization, stable IDs, the two ESPs and the perk tree data remain unchanged.
+
 # Inventory use routing (0.2.2)
 
 Chain InventoryMenu::Accept at vtable slot 0x01. A CallbackProcessor proxy wraps only ItemSelect; every other callback is registered unchanged. Each distinct incoming callback receives a stable wrapper slot so reopening the menu does not accumulate wrappers, and already-wrapped functions are not wrapped again. The previous Accept and native item callback remain chained.

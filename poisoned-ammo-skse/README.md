@@ -1,19 +1,26 @@
-# Poisoned Ammunition + Coating Perks 0.2.2 beta
+# Poisoned Ammunition + Coating Perks 0.2.3 beta
 
 Skyrim SE Steam 1.6.1170 / SKSE64 2.2.6 / Address Library / Perk Adjuster (user profile has 2.1).
+
+## Impact crash correction and Wheeler update
+
+Corrects a native impact-hook signature error: the AddImpact hook now returns the engine's ImpactData pointer intact after cleanup. The previous void hook could discard that pointer. This matches the invalid impact pointer in the September 30 poisoned-bolt crash log. See CRASH_FIX.md for evidence and remaining runtime checks. This is a targeted correction, not a claim that all possible crashes are resolved.
+
+For Wheeler poison clicks, install the companion Wheeler_All_Icons_2K_Poison_Ammo_v1_3_0.zip too and let its wheeler.dll replace the previous Wheeler build. It preserves the existing 2K filtering, artwork, food/alcohol mappings and named-potion integration.
 
 ## Click a poison to coat ammunition
 
 With a bow and ordinary arrows, or a crossbow and ordinary bolts equipped:
 
 - **Click/use a poison in your own Inventory:** immediately consume one bottle and coat one batch. No confirmation or batch dialog. Mouse clicks and SkyUI keyboard/controller use share this route.
-- **Highlight a poison and press F8:** open the bottle/batch dialog for 1, 5, 10 or the maximum available bottles. Opening it or selecting Cancel consumes nothing.
+- **Click a poison in the updated Wheeler:** Wheeler closes and requests exactly one bottle on the game thread, without a batch dialog. Renamed poison selections are re-resolved before consuming the selected bottle. Both DLL updates are required.
+- **Highlight a poison in Inventory and press F8:** open the bottle/batch dialog for 1, 5, 10 or the maximum available bottles. Opening it or selecting Cancel consumes nothing.
 
 One batch means one bottle's dose count, including existing dose perks and Measured Dose. If fewer arrows/bolts remain, the last partial batch still consumes one bottle. Output is auto-equipped by default; equip ordinary ammunition again before making another batch. Melee poisoning, potions, food and other inventory actions retain their existing behavior.
 
 Missing/wrong/already-coated ammunition, unavailable recipes, stolen or quest inputs, and an already-poisoned bow/crossbow produce a notification without applying poison to the weapon. Use up a previously applied weapon poison before crafting.
 
-CraftOnPoisonUse=1 is the default in PoisonedAmmoNative.ini. Setting it to 0 and restarting restores the previous inventory-click behavior while retaining F8 crafting. This option concerns the player's Inventory menu; external auto-poison mods, Favorites and direct Wheeler poison use are not rerouted.
+CraftOnPoisonUse=1 is the default in PoisonedAmmoNative.ini. Setting it to 0 and restarting restores the previous inventory-click behavior while retaining F8 crafting. This setting controls Inventory use and the updated Wheeler route. Favorites and external auto-poison mods remain outside these routes. F8 still requires a highlighted poison in Inventory.
 
 ## Immersive Interactions animation
 
@@ -33,7 +40,7 @@ The two existing ESPs and the Satchel mod are not changed; no Satchel ingredient
 |---|---|---|
 | Coating Mechanist I | Marksman 25; one perk point | Crossbow-delivered poison/oil strength x1.5 |
 | Coating Mechanist II | Marksman 50 + Coating Mechanist I; one perk point | Strength x2 total; supersedes I |
-| Measured Dose | Marksman 30; one perk point; no other perk prerequisite | Twice the bolts per bottle when coating through Inventory use or F8 |
+| Measured Dose | Marksman 30; one perk point; no other perk prerequisite | Twice the bolts per bottle when coating through Inventory, updated Wheeler or F8 |
 
 Measured Dose works alongside either Coating Mechanist perk. A bottle giving 5 bolts normally gives 10 with Measured Dose; with Coating Mechanist II each bolt delivers x2 strength. Existing native poison-dose perks are evaluated first. The fixed ArrowsPerBottle setting, if used, is also doubled for bolts.
 
@@ -54,7 +61,7 @@ The perk records contain purchase requirements; their mechanics run in the suppl
 
 ## Validation and limitations
 
-The inventory callback adapter has been built against the pinned CommonLib API but requires the in-game input/animation checks in TESTING.md. Automated tests cover every combination of the three perks, non-stacking rank II, doubled bolt counts (not arrows), partial batches, finite scaling and unchanged persistence. The DLL must also pass the Windows build. This beta has not been tested inside Skyrim. The previously reported NPC spell-reapplication crash remains unresolved; this update is not a crash fix. Use a copied save for the checks in TESTING.md.
+The inventory callback adapter has been built against the pinned CommonLib API but requires the in-game input/animation checks in TESTING.md. Automated tests cover every combination of the three perks, non-stacking rank II, doubled bolt counts (not arrows), partial batches, finite scaling and unchanged persistence. The DLL must also pass the Windows build. The production impact wrapper is compiled in a regression test checking pointer and null returns, all forwarded arguments and scope cleanup. This beta has not been tested inside Skyrim. The separate earlier NPC spell-reapplication crash is not established as the same fault. Use a copied save for the checks in TESTING.md.
 
 TraceProjectiles=1 in SKSE/Plugins/PoisonedAmmoNative.ini logs dose decisions, coating impact context and each adjusted effect to Documents/My Games/Skyrim Special Edition/SKSE/PoisonedAmmoNative.log. Copy the log before restarting, because each launch overwrites it.
 

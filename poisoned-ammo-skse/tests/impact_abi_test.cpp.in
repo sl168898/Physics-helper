@@ -1,0 +1,68 @@
+#include <atomic>
+#include <cassert>
+#include <cstdint>
+#include <type_traits>
+#include <utility>
+namespace RE {
+    struct Actor {};
+    struct TESObjectREFR { bool actor = true; Actor value;
+        template<class T> T* As() { return actor ? &value : nullptr; }
+    };
+    struct ArrowProjectile {};
+    struct NiPoint3 { float x{}, y{}, z{}; };
+    struct hkpCollidable {};
+    struct Projectile { struct ImpactData { std::uint64_t sentinel = 0x123456789abcdef0ull; }; };
+}
+namespace REL {
+    template<class F> struct Relocation {
+        F* function{};
+        template<class... A> decltype(auto) operator()(A&&... args) { return function(std::forward<A>(args)...); }
+    };
+}
+std::atomic_bool session = true;
+bool prepared{}, actorContact{}, scopeActive{};
+int cleaned{};
+volatile std::uintptr_t cleanupResult{};
+#ifdef _MSC_VER
+__declspec(noinline)
+#else
+__attribute__((noinline))
+#endif
+std::uintptr_t cleanupClobber() { return 0x408; }
+void prepareProjectile(RE::ArrowProjectile*, bool contact) { prepared = true; actorContact = contact; }
+namespace coating {
+    struct Scope {
+        Scope(RE::ArrowProjectile*, bool active) { scopeActive = active; }
+        ~Scope() { cleanupResult = cleanupClobber(); scopeActive = false; ++cleaned; }
+    };
+}
+@@PRODUCTION_IMPACT_HOOK@@
+using NativeImpact = RE::Projectile::ImpactData* (*)(RE::ArrowProjectile*, RE::TESObjectREFR*,
+    const RE::NiPoint3&, const RE::NiPoint3&, RE::hkpCollidable*, std::uint32_t, bool);
+static_assert(std::is_same_v<decltype(&ImpactHook::thunk), NativeImpact>);
+RE::ArrowProjectile projectile;
+RE::TESObjectREFR target;
+RE::NiPoint3 point, velocity;
+RE::hkpCollidable collidable;
+RE::Projectile::ImpactData data;
+RE::Projectile::ImpactData* expected = &data;
+bool expectedSpell = true;
+RE::Projectile::ImpactData* original(RE::ArrowProjectile* p, RE::TESObjectREFR* t,
+    const RE::NiPoint3& pos, const RE::NiPoint3& vel, RE::hkpCollidable* c,
+    std::uint32_t key, bool spell)
+{
+    assert(prepared && scopeActive);
+    assert(p == &projectile && t == &target && &pos == &point && &vel == &velocity && c == &collidable);
+    assert(key == 0xFEDCBA98u && spell == expectedSpell);
+    return expected;
+}
+int main()
+{
+    ImpactHook::original.function = original;
+    auto result = ImpactHook::thunk(&projectile, &target, point, velocity, &collidable, 0xFEDCBA98u, true);
+    assert(result == &data && result->sentinel == 0x123456789abcdef0ull);
+    assert(actorContact && cleaned == 1 && !scopeActive && cleanupResult == 0x408);
+    target.actor = false; expected = nullptr; expectedSpell = false; prepared = false;
+    result = ImpactHook::thunk(&projectile, &target, point, velocity, &collidable, 0xFEDCBA98u, false);
+    assert(!result && !actorContact && cleaned == 2 && !scopeActive);
+}

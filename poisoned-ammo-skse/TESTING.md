@@ -1,3 +1,15 @@
+# 0.2.3 impact and Wheeler checks (not yet run in Skyrim)
+
+- Reproduce the reported Iron Heavy Crossbow + poisoned Iron Bolt shot at an actor with the same load order. Test Coating Mechanist absent, rank I and rank II. Confirm no impact crash and one poison application.
+- Repeat with ordinary/unpoisoned bolts and arrows, poison arrows, actor hits, blocked hits, world hits and misses. The corrected return ABI applies to all arrows/bolts passing through the hook.
+- Keep the user's existing Core Impact Framework, Sanguine Symphony and Splashes of Skyrim enabled for this retest. The crash log alone did not establish a fault in those plugins.
+- Test an existing poisoned-bolt stack from the prior save, then a newly made stack. The static record IDs and co-save format are unchanged.
+- With both supplied DLLs winning in MO2, click a poison in Wheeler with crossbow + ordinary bolts equipped: close wheel, one bottle consumed, one batch, no dialog, no poison on the crossbow. Test both Wheeler use buttons and Measured Dose on/off.
+- Test two differently renamed poison stacks with the same base form: use the chosen name only. Remove that named stack before the queued action: refuse without consuming the other name.
+- Change weapon/ammo while the wheel closes or load another save: refuse the stale request. Missing/wrong/coated ammo must not fall back to weapon poisoning.
+- Wheeler melee poison use stays native. Disabling CraftOnPoisonUse restores Wheeler's original action. Inventory F8 still opens the bulk dialog.
+- Verify the existing food/alcohol/rune/potion icon appearance and named-potion entries remain unchanged with the companion Wheeler update.
+
 # Inventory and animation checks (not yet run in Skyrim)
 
 - Equip a bow + ordinary arrows, then click a poison: one bottle's dose count is coated immediately, with NO confirmation or batch dialog and no poison on the bow.
