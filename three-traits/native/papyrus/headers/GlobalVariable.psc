@@ -1,0 +1,1 @@
+Scriptname GlobalVariable extends Form

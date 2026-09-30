@@ -11,6 +11,7 @@
 #include "IronLungsRuntime.h"
 #include "RunicOverdriveRuntime.h"
 #include "ArcaneDynamoRuntime.h"
+#include "VoiceAuthorityRuntime.h"
 
 namespace {
 constexpr auto pluginFile = "Biggie Traits - Combined.esp";
@@ -27,6 +28,7 @@ traits::SkaldRuntime skald;
 traits::IronLungsRuntime ironLungs;
 traits::RunicOverdriveRuntime runicOverdrive;
 traits::ArcaneDynamoRuntime arcaneDynamo;
+traits::VoiceAuthorityRuntime voiceAuthority;
 EchoDiagnostics echoDiagnostics;
 RE::ATTACK_STATE_ENUM lastState = RE::ATTACK_STATE_ENUM::kNone;
 RE::BGSAttackData* lastData = nullptr;
@@ -288,6 +290,7 @@ Actions actions;
 void message(SKSE::MessagingInterface::Message* msg) {
     if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
         auto data = RE::TESDataHandler::GetSingleton();
+        voiceAuthority.init(data, pluginFile);
         skald.init(data, pluginFile);
         burden = data->LookupForm<RE::SpellItem>(0xF00, pluginFile);
         guard = data->LookupForm<RE::SpellItem>(0xF10, pluginFile);
@@ -321,13 +324,13 @@ void message(SKSE::MessagingInterface::Message* msg) {
         arcaneDynamo.init(data, pluginFile, [] { return ready.load() && session.load(); });
         ready = true;
         SKSE::log::info("Ready: Burden of Devotion, Unbroken Guard, Echoing Steel");
-    } else if (msg->type == SKSE::MessagingInterface::kPreLoadGame) { session = false; reset(); skald.clear(); }
-    else if (msg->type == SKSE::MessagingInterface::kNewGame) { reset(); skald.clear(); session = true; skald.resetTransient(true); }
-    else if (msg->type == SKSE::MessagingInterface::kPostLoadGame) { reset(); session = msg->data != nullptr; skald.resetTransient(session); }
+    } else if (msg->type == SKSE::MessagingInterface::kPreLoadGame) { voiceAuthority.cancel(); session = false; reset(); skald.clear(); }
+    else if (msg->type == SKSE::MessagingInterface::kNewGame) { reset(); skald.clear(); session = true; skald.resetTransient(true); voiceAuthority.loaded(true); }
+    else if (msg->type == SKSE::MessagingInterface::kPostLoadGame) { reset(); session = msg->data != nullptr; skald.resetTransient(session); voiceAuthority.loaded(session); }
 }
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
-    SKSE::PluginVersionData d{}; d.PluginVersion({1,6,1,0}); d.PluginName("BiggieTraitMechanics");
+    SKSE::PluginVersionData d{}; d.PluginVersion({1,7,0,0}); d.PluginName("BiggieTraitMechanics");
     d.AuthorName("Physics-helper contributors"); d.UsesAddressLibrary(true); d.UsesStructsPost629(true);
     d.CompatibleVersions({REL::Version{1,6,1170,0}}); return d;
 }();
@@ -337,12 +340,12 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
     spdlog::set_default_logger(std::make_shared<spdlog::logger>("global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(),true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("BiggieTraitMechanics 1.6.1; Skyrim 1.6.1170");
+    SKSE::log::info("BiggieTraitMechanics 1.7.0; Voice of Authority Speech perk; Skyrim 1.6.1170");
     echoDiagnostics.configure();
     auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(0x42544D33); // BTM3, separate from Venom Harvester
     serialization->SetSaveCallback([](SKSE::SerializationInterface* api) { skald.save(api); });
     serialization->SetLoadCallback([](SKSE::SerializationInterface* api) { skald.load(api); });
-    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { skald.clear(); });
+    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { voiceAuthority.cancel(); skald.clear(); });
     return SKSE::GetMessagingInterface()->RegisterListener(message);
 }

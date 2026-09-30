@@ -1,3 +1,33 @@
+# Biggie Trait Mechanics 1.7.0 / Combined 2.11.0-beta1
+
+Voice of Authority is now a normal one-rank Speech perk. It requires base
+Speech 10, costs one perk point and has no other prerequisite. Its existing
+native multiplier remains 1 + current Speech / 100, including temporary
+Speech bonuses, with no cap. It grants no shout and has no drawback.
+
+Perk Adjuster adds the perk to the existing Speech tree from the included JSON.
+There is no AVIF override. This uses the same installed framework as the
+Coating Mechanist perks. Existing perk-tree mods remain in control of their nodes.
+
+On loading or starting a game, one queued native task removes the old Voice
+ability and its exact-source active effects, then removes the old hidden perk
+if still present. It never changes actor values directly, spends/refunds points,
+adds the new perk or changes known shouts. Pending tasks are invalidated on
+load/revert. The new tree perk has a separate FormID so later loads cannot
+remove a purchased perk. Cleanup is disabled if the matching new ESP is missing.
+
+The old Papyrus script retains its properties and variable for saved instances,
+but OnEffectStart and OnUpdate are inert. OnEffectFinish unregisters updates.
+Its PEX is rebuilt with a pinned, checksum-verified Papyrus compiler. The old
+cooldown effect definition remains intact so existing active effects can be
+reversed by the engine when the old source ability is dispelled.
+
+Eleven native suites include the actual upgrade adapter against engine doubles.
+The ESP and Perk Adjuster configuration are checked separately by the package
+builder. This is not an in-game test of Skyrim or the complete LoreRim setup.
+
+Previous implementation notes below describe the earlier releases.
+
 # Biggie Trait Mechanics 1.6.1 — Arcane Dynamo charge correction
 
 For Skyrim 1.6.1170 and Combined 2.10.10-beta1. The user's 1.6.0 log shows
