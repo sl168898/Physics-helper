@@ -1,4 +1,31 @@
-# Version 0.2.7 — runtime keyword support for crafted poisons
+# Version 0.2.8 — Dynamic Tooltips runtime keyword correction
+
+Addresses the logged refusal for `LoreBox_quantDTWhoseQuest` on a crafted
+Weakness to Fire poison. Dynamic Tooltips creates its named keywords through
+the engine form factory, without registering them in the keyword array that
+0.2.7 searched. The resolver now merges that array with the global form registry
+under its read lock. The original keyword is preserved by name, with the same
+duplicate-name checks, and resolved again after loading. No poison effects or
+tooltip keywords are discarded, and no provider-specific exception is used.
+
+Install this full package over 0.2.7 in MO2, let its PoisonedAmmoNative.dll win,
+and restart Skyrim through SKSE. No new game or animation regeneration is
+needed. Keep Wheeler 1.4.0 and the existing animation setup. The reload sequence,
+renamed-bottle selection, White Phial protected-bottle route, perks, and elemental
+icons remain unchanged. Existing v1/v2 recipe bytes and fingerprints are unchanged.
+
+The regression test covers the exact keyword name absent from the keyword array,
+a 178% / 120-second weakness effect, mixed effects, loss of the original bottle,
+and a recreated keyword with another FormID after loading. Windows compilation
+and automated tests are required for this package; the user's Skyrim load order
+has not been run here. Retest the same bottle, then save, restart and fire a
+saved coated bolt. See TESTING.md for the focused check.
+
+Runtime keyword providers must still be present when loading. Unnamed, missing
+or ambiguous keywords, custom item scripts, dynamic magic-effect records and
+per-effect conditions retain their existing checks. Rejection consumes nothing.
+
+# Previous version 0.2.7 — runtime keyword support for crafted poisons
 
 Fixes the remaining refusal shown as "this poison uses a temporary or unresolved
 keyword" for crafted poisons carrying named runtime keywords. Keywords created

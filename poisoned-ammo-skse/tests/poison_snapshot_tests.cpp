@@ -17,6 +17,7 @@ struct Fixture
     RE::BSScript::IObjectHandlePolicy policy;
     RE::BSScript::Internal::VirtualMachine vm;
     RE::TESDataHandler data;
+    RE::TESForm::FormMap allForms;
     RE::AlchemyItem poison;
     RE::EffectSetting weakness, damage;
     RE::BGSKeyword keyword;
@@ -25,6 +26,7 @@ struct Fixture
     Fixture() {
         vm.policy = &policy; RE::BSScript::Internal::VirtualMachine::instance = &vm;
         RE::TESDataHandler::instance = &data;
+        RE::TESForm::allForms = &allForms;
         poison.id = 0xFF000321; poison.name = "Poison of Weakness to Fire";
         weakness.id = 0x73F2E; weakness.name = "Weakness to Fire";
         damage.id = 0x3EB42; damage.name = "Damage Health";
@@ -84,8 +86,7 @@ int main()
         RE::BSScript::ObjectTypeInfo custom{"StaticScript"}; f.attach(&custom);
         const auto p = f.capture(); assert(p && !p->custom() && p->effects.empty() && p->source.local == 0x12345);
     }
-    // Screenshot regression: a crafted fire-weakness oil has a runtime keyword
-    // from a provider, in addition to normal plugin-backed keywords.
+    // Array-registered providers remain supported alongside global-map providers.
     {
         Fixture f; RE::BGSKeyword generated;
         generated.id = 0xFF000200; generated.editorID = "RuntimeFireWeaknessTag";
@@ -113,6 +114,62 @@ int main()
         // No global pointer cache: a later load gets its own registry.
         f.data.keywords = {&f.keyword}; pa::RuntimeKeywords missing;
         assert(!missing.resolve(restored[0].poison.namedKeywords[0], error) && error == "named keyword is not registered");
+    }
+    // Dynamic Tooltips creates LoreBox keywords with the engine form factory
+    // and directly sets formEditorID. They need not appear in the keyword array
+    // or EditorID map. Reproduce the reported name and 178% / 120s effect.
+    {
+        Fixture f; RE::BGSKeyword generated;
+        generated.id = 0xFF000901; generated.editorID = "LoreBox_quantDTWhoseQuest";
+        f.poison.keywords.push_back(&generated);
+        f.effect.effectItem = {178, 0, 120};
+        f.data.keywords = {&f.keyword};
+        RE::TESForm unrelated; unrelated.id = 0x42;
+        unrelated.editorID = generated.editorID; // Other form types do not conflict.
+        f.allForms = {{generated.id, &generated}, {unrelated.id, &unrelated}, {0x43, nullptr}};
+        const auto p = f.capture();
+        assert(p && p->namedKeywords == std::vector<std::string>{"lorebox_quantdtwhosequest"});
+        assert(p->effects[0].magnitude == 178 && p->effects[0].duration == 120);
+        assert(p->effects[1].magnitude == 7 && p->keywords.size() == 1 && RE::formLockDepth == 0);
+        pa::Recipes recipes{{{"dawnguard.esm", 0xD099}, *p, "Bolt [Fire Weakness]"}};
+        const auto saved = pa::encode(recipes);
+        f.poison.effects.clear(); f.poison.keywords.clear(); f.allForms.clear();
+        RE::BGSKeyword recreated; recreated.id = 0xFF009999;
+        recreated.editorID = "LOREBOX_QUANTDTWHOSEQUEST";
+        f.allForms[recreated.id] = &recreated;
+        const auto restored = pa::decode(saved);
+        pa::RuntimeKeywords resolver; std::string error;
+        assert(restored == recipes && pa::fingerprint(restored) == pa::fingerprint(recipes));
+        assert(resolver.resolve(restored[0].poison.namedKeywords[0], error) == &recreated && error.empty());
+        assert(RE::formLockDepth == 0);
+        f.allForms.clear(); pa::RuntimeKeywords missing;
+        assert(!missing.resolve(p->namedKeywords[0], error) && error == "named keyword is not registered");
+    }
+    // The union has no precedence rule: duplicate pointers are harmless, but
+    // distinct keywords with the same name across either registry are ambiguous.
+    {
+        Fixture f; f.keyword.id = 0xFF000200; f.keyword.editorID = "SharedProviderTag";
+        f.data.keywords = {&f.keyword, &f.keyword}; f.allForms[f.keyword.id] = &f.keyword;
+        assert(f.capture());
+        RE::BGSKeyword duplicate; duplicate.id = 0xFF000201; duplicate.editorID = "sharedprovidertag";
+        f.allForms[duplicate.id] = &duplicate;
+        assert(!f.capture() && f.issue.detail.find("ambiguous") != std::string::npos);
+        f.data.keywords.clear();
+        assert(!f.capture() && f.issue.detail.find("ambiguous") != std::string::npos);
+        f.allForms.erase(f.keyword.id);
+        assert(!f.capture() && f.issue.detail.find("different object") != std::string::npos);
+        assert(RE::formLockDepth == 0);
+    }
+    {
+        Fixture f; f.keyword.id = 0xFF000200; f.keyword.editorID = "RuntimeTag";
+        f.data.keywords = {&f.keyword}; RE::TESForm::allForms = nullptr;
+        assert(!f.capture() && f.issue.detail.find("global form registry is unavailable") != std::string::npos);
+        assert(RE::formLockDepth == 0);
+        RE::TESForm::allForms = &f.allForms;
+        pa::RuntimeKeywords resolver; std::string error;
+        RE::TESForm::allForms = nullptr; assert(!resolver.resolve("RuntimeTag", error));
+        RE::TESForm::allForms = &f.allForms;
+        assert(resolver.resolve("RuntimeTag", error) == &f.keyword && error.empty());
     }
     {
         Fixture f; f.keyword.id = 0xFF000200; f.keyword.editorID = "OilTag";
@@ -155,5 +212,5 @@ int main()
     { Fixture f; f.keyword.id = 0xFF000200; assert(!f.capture() && f.issue.reason == Reason::keywordIdentity && f.issue.related == 0xFF000200); }
     { Fixture f; f.poison.keywords[0] = nullptr; assert(!f.capture() && f.issue.reason == Reason::keywordSource); }
     { Fixture f; f.poison.effects.clear(); assert(!f.capture()); f.poison.effects = {&f.effect}; assert(f.capture() && f.issue.reason == Reason::none); }
-    std::cout << "PASS: production capture and runtime-keyword resolver preserve crafted fire-weakness oils across changed FF IDs, retain VM/script safeguards, and accept White Phial records\n";
+    std::cout << "PASS: production capture resolves factory-created LoreBox and array-registered keywords, preserves crafted fire-weakness oils across changed FF IDs, retains VM/script safeguards, and accepts White Phial records\n";
 }

@@ -1,4 +1,28 @@
-# Runtime keyword checks, v0.2.7 (not yet run in Skyrim)
+# Global form keyword checks, v0.2.8 (not yet run in Skyrim)
+
+1. Confirm the startup log says 0.2.8. Keep Dynamic Tooltips enabled. Use the
+   same renamed Weapon Oil of Fire Weakness (178% for 120 seconds) that failed
+   with `LoreBox_quantDTWhoseQuest`. Coat ordinary bolts in Inventory, then test
+   Wheeler and F8. A successful one-bottle click consumes exactly one bottle.
+2. Verify the original weakness effect on impact, subject to existing resistance
+   and coating perks. Test both a remaining stack and its last bottle.
+3. Save with coated bolts, quit Skyrim, restart and load the matching ESS/SKSE
+   pair. Fire a saved bolt and verify the effect again. Loading must not report
+   an unavailable runtime keyword or an ESS/co-save mismatch.
+4. Check a renamed poison and a White Phial Decanting 2.1.0 protected bottle.
+   Repeat the drawn-crossbow sequence in first and third person: reload, then
+   the installed poison animation. These routes are unchanged by this update.
+
+The production resolver test includes a factory-created keyword in the global
+FormID map but absent from TESDataHandler's array. It verifies the reported
+EditorID, original effects, changed pointer/FormID after loading, case folding,
+irrelevant non-keyword forms, null entries, duplicate pointers across registries,
+ambiguous names both within and across registries, unavailable global map,
+released read locks, and retry after a temporarily unavailable registry.
+Running the new regression against the delivered 0.2.7 resolver fails; it passes
+with the corrected resolver. Engine doubles do not replace the in-game check.
+
+# Previous runtime keyword checks, v0.2.7 (not yet run in Skyrim)
 
 1. Use the exact Weapon Oil of Fire Weakness from the screenshot (139% for
    120 seconds), then the separate 178% stack. With matching ranged equipment,

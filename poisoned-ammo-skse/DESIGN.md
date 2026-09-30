@@ -1,4 +1,36 @@
-# Runtime keyword persistence (0.2.7)
+# Factory-created keywords outside TESDataHandler (0.2.8)
+
+The reported rejection identified `LoreBox_quantDTWhoseQuest` with a valid
+EditorID but no entry in TESDataHandler's keyword array. Dynamic Tooltips builds
+that name from `LoreBox_`, `quantDT`, and the `WhoseQuest` module. Its factory
+helper creates a BGSKeyword and assigns formEditorID directly. Neither an array
+entry nor a general EditorID-map entry can be assumed for such keywords.
+
+RuntimeKeywords now merges the keyword array with BGSKeyword forms from
+TESForm::GetAllForms(). The global map is inspected under BSReadLockGuard; only
+keyword forms are included, and no nested engine lookup takes the same lock.
+The per-operation index is discarded after capture/restore, not cached across
+loads. The same object appearing in both sources is accepted; different objects
+with the same case-insensitive EditorID remain ambiguous. Capture still verifies
+pointer identity. Missing registries fail before consuming inputs or publishing
+a restored proxy. No keyword is recreated, renamed, omitted, or special-cased.
+
+The recipe representation, v1/v2 serialization and fingerprints are unchanged.
+The existing array-only providers remain supported. Factory-created provider
+keywords must be recreated before the recipe load callback; Dynamic Tooltips
+constructs its modules during kDataLoaded. The corrected resolution path also
+handles subsequent sessions where the keyword's temporary FormID differs.
+
+Primary source references inspected for this correction:
+- https://github.com/QTR-Modding/DynamicTooltipsSE/blob/472887e9489025e72cc009cf2aea858604205f0d/src/Settings.cpp
+- https://github.com/QTR-Modding/DynamicTooltipsSE/blob/472887e9489025e72cc009cf2aea858604205f0d/src/Modules.cpp
+- https://github.com/QTR-Modding/DynamicTooltipsSE/blob/472887e9489025e72cc009cf2aea858604205f0d/src/Utils.cpp
+- https://github.com/QTR-Modding/DynamicTooltipsSE/blob/472887e9489025e72cc009cf2aea858604205f0d/src/plugin.cpp
+- https://github.com/eddoursul/CommonLibSSE-GG/blob/2053e94fd1c147b36eae2b4338118552fba407e2/src/RE/B/BGSKeyword.cpp
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/T/TESForm.h
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/B/BSAtomic.h
+
+# Previous runtime keyword persistence (0.2.7)
 
 The screenshot's keywordSource error comes from dynamic poison snapshots when
 keyOf(keyword) has no plugin-backed key. IsDynamicForm is not proof that a

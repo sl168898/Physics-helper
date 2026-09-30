@@ -2,6 +2,7 @@
 #pragma once
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -12,25 +13,39 @@ namespace RE
     using FormID = std::uint32_t;
     using VMHandle = std::uint64_t;
     inline int scriptLockDepth = 0;
+    inline int formLockDepth = 0;
+    enum class FormType { Keyword, Other };
+    struct BSReadWriteLock {};
+    struct BSReadLockGuard {
+        explicit BSReadLockGuard(BSReadWriteLock&) { assert(formLockDepth == 0); ++formLockDepth; }
+        ~BSReadLockGuard() { --formLockDepth; }
+    };
     struct BSSpinLock {};
     struct BSSpinLockGuard {
         explicit BSSpinLockGuard(BSSpinLock&) { ++scriptLockDepth; }
         ~BSSpinLockGuard() { --scriptLockDepth; }
     };
     struct TESForm {
+        using FormMap = std::map<FormID, TESForm*>;
+        static inline FormMap* allForms{};
+        static inline BSReadWriteLock allFormsLock;
+        static auto GetAllForms() { return std::pair(allForms, std::ref(allFormsLock)); }
         FormID id{};
+        FormType formType = FormType::Other;
         std::string file = "Skyrim.esm", name, editorID;
         VMHandle handle = 123;
         mutable int misleadingHelperCalls = 0;
         FormID GetFormID() const { return id; }
         bool IsDynamicForm() const { return id >= 0xFF000000; }
         int GetFormType() const { return 46; }
+        bool Is(FormType type) const { assert(formLockDepth > 0); return formType == type; }
+        template<class T> T* As() { assert(formLockDepth > 0); return static_cast<T*>(this); }
         const char* GetFormEditorID() const { return editorID.c_str(); }
         // Same distinction as the pinned helper: handle existence != scripts.
         bool HasVMAD() const { ++misleadingHelperCalls; return handle != 0; }
     };
     struct EffectSetting : TESForm {};
-    struct BGSKeyword : TESForm {};
+    struct BGSKeyword : TESForm { BGSKeyword() { formType = FormType::Keyword; } };
     struct TESDataHandler {
         static inline TESDataHandler* instance{};
         std::vector<BGSKeyword*> keywords;
