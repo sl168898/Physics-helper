@@ -4,6 +4,7 @@
 #include <Windows.h>
 #include "Core.h"
 #include "Coating.h"
+#include "ImmersiveAnimation.h"
 #include <array>
 #include <atomic>
 #include <functional>
@@ -17,7 +18,7 @@ namespace
     struct Settings
     {
         std::uint32_t key = 66, arrowsPerBottle = 0, maxBatch = 5000;
-        bool autoEquip = true, trace = false, craftOnUse = true;
+        bool autoEquip = true, trace = false, craftOnUse = true, immersiveAnimation = true;
         void load()
         {
             constexpr auto path = ".\\Data\\SKSE\\Plugins\\PoisonedAmmoNative.ini";
@@ -26,6 +27,7 @@ namespace
             maxBatch = std::clamp(GetPrivateProfileIntA("General", "MaxBatchArrows", 5000, path), 1u, 100000u);
             autoEquip = GetPrivateProfileIntA("General", "AutoEquip", 1, path) != 0;
             craftOnUse = GetPrivateProfileIntA("General", "CraftOnPoisonUse", 1, path) != 0;
+            immersiveAnimation = GetPrivateProfileIntA("General", "ImmersiveInteractionsBridge", 1, path) != 0;
             trace = GetPrivateProfileIntA("General", "TraceProjectiles", 0, path) != 0;
             if (key > 255) key = 66;
         }
@@ -265,6 +267,16 @@ namespace
         refreshInventory();
         SKSE::log::info("Crafted {} x {} from {} bottles ({} arrows/bottle)", batch.arrows, request.recipe.name, batch.bottles, request.doses);
         notify(fmt::format("Created {} {}", batch.arrows, request.recipe.name));
+        if (settings.immersiveAnimation) {
+            try {
+                pa::animation::completed(poison, batch.bottles,
+                    [epoch = request.epoch] { return session && epoch == generation; }, settings.trace);
+            } catch (const std::exception& e) {
+                // Animation failure must not report a completed batch as failed
+                // or consume/refund materials a second time.
+                SKSE::log::error("Completed batch; animation bridge failed: {}", e.what());
+            }
+        }
     }
     struct BatchCallback final : RE::IMessageBoxCallback
     {
@@ -358,8 +370,17 @@ namespace
             {*ammoKey, *poisonData, fmt::format("{} [{}]", displayName(ammo), poisonData->name)}};
         if (!pa::valid(request.recipe)) { fail("Poisoned Ammo: unsupported poison data. No items consumed."); return; }
         const auto ammoCount = count(player, ammo), poisonCount = count(player, poison);
-        if (!pa::plan(ammoCount, poisonCount, perBottle, UINT32_MAX, settings.maxBatch).arrows ||
-            !showBatch(std::move(request), ammoCount, poisonCount)) fail("Poisoned Ammo: no available batch.");
+        if (!pa::plan(ammoCount, poisonCount, perBottle, 1, settings.maxBatch).arrows) {
+            fail("Poisoned Ammo: no available batch."); return;
+        }
+        if (clickedPoison) {
+            // Emergency coating: exactly one bottle, no message box or second
+            // confirmation. Keep the gate held through the synchronous commit.
+            struct Release { ~Release() { menuPending = false; } } release;
+            craft(request, 1);
+        } else if (!showBatch(std::move(request), ammoCount, poisonCount)) {
+            fail("Poisoned Ammo: could not open the batch dialog.");
+        }
     }
 
     // The inventory's ItemSelect callback runs before vanilla starts weapon
@@ -388,18 +409,17 @@ namespace
             auto object = player->GetEquippedObject(false);
             auto weapon = object ? object->As<RE::TESObjectWEAP>() : nullptr;
             if (!poison || !poison->IsPoison() || !weapon || (!weapon->IsBow() && !weapon->IsCrossbow())) return false;
-            // Capture this click synchronously: a later highlight change must
-            // not select a different poison. The dialog itself stores only
-            // IDs/snapshots and revalidates inventory/equipment on confirmation.
+            // Capture and commit this click synchronously so a highlight change
+            // cannot select another poison. F8 alone opens batch selection.
             if (settings.trace) SKSE::log::info("Inventory poison use -> ammo crafting: poison {:08X}; weapon {:08X}",
                 poison->GetFormID(), weapon->GetFormID());
             try { requestCraft(poison); }
             catch (const std::exception& e) {
                 menuPending = false;
                 SKSE::log::error("Inventory coating request failed: {}", e.what());
-                notify("Poisoned Ammo: could not open the coating dialog. No items consumed.");
+                notify("Poisoned Ammo: coating error. See the log.");
             }
-            // Cancel, invalid ammo, occupied dialog, or failed input validation
+            // Invalid ammo, occupied dialog, or failed input validation
             // must never fall through into vanilla bow poisoning.
             return true;
         }
@@ -597,7 +617,7 @@ namespace
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 1, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 2, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -610,7 +630,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.2.1 beta; Skyrim Steam 1.6.1170; inventory poison use opens ammunition coating");
+    SKSE::log::info("PoisonedAmmoNative 0.2.2 beta; Skyrim Steam 1.6.1170; click coats one bottle; F8 opens batch selection");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

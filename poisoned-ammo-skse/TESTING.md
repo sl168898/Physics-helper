@@ -1,15 +1,20 @@
-# Inventory click-to-coat checks (not yet run in Skyrim)
+# Inventory and animation checks (not yet run in Skyrim)
 
-- Equip a bow + ordinary arrows, then click a poison: only the batch dialog opens. The bow is not poisoned; opening the dialog consumes nothing.
-- Repeat with a crossbow + ordinary bolts, both mouse buttons, keyboard use and controller use in SkyUI. Verify the dialog says arrows/bolts correctly.
-- Cancel, Escape, repeated rapid clicks and F8 while the batch dialog is open: no materials lost, no duplicate dialog or second confirmation.
-- Confirm one bottle: exactly the displayed ammo and bottle counts are consumed; one matching poisoned-ammo stack appears. Repeat with Measured Dose and each Coating Mechanist rank.
-- Click another item before confirmation / change equipment in an unpaused menu: the originally selected poison stays bound to the request; invalid equipment/inputs cancel safely.
-- No ammo, wrong ammo type, already-coated ammo, stolen/quest inputs, pre-existing weapon poison: an appropriate message appears; no normal bow-poisoning confirmation and no consumption.
-- With a melee weapon equipped, poison use still invokes the original weapon-poisoning action. With any weapon, using health potions/food and dropping/favoriting items still works normally.
-- Close/reopen Inventory repeatedly and save/reload: the click route remains present. Check the log for Inventory ItemSelect coating route registered.
-- CraftOnPoisonUse=0 + restart: original click behavior returns; F8 still crafts ammunition.
-- Test the exact installed poisoning-animation mod. Native weapon-poison events are bypassed, so animations may not trigger. No animation compatibility is claimed until checked against its installed scripts and tested in Skyrim.
+- Equip a bow + ordinary arrows, then click a poison: one bottle's dose count is coated immediately, with NO confirmation or batch dialog and no poison on the bow.
+- Repeat with a crossbow + ordinary bolts, both mouse buttons, keyboard use and controller use in SkyUI. Measured Dose doubles the one-bottle bolt output; strength perks do not change the amount consumed.
+- With abundant poison/ammo, a click still consumes only ONE bottle. With less than one full batch's ammo, consume one bottle and coat only the available count.
+- Highlight a poison and press F8: the multi-bottle dialog appears with the correct arrow/bolt counts. Check 1, 5, 10, maximum, Cancel and Escape. Cancel/opening consume nothing.
+- Repeated clicks/F8 while a batch dialog is open must not consume another bottle or open another dialog. AutoEquip=1 selects coated ammo; equip ordinary ammo again before a new batch. AutoEquip=0 allows successive deliberate one-bottle clicks.
+- Change equipment in an unpaused menu before F8 confirmation: invalid equipment/inputs cancel safely. Selection changes must not change the poison captured by the original request.
+- No ammo, wrong ammo type, already-coated ammo, stolen/quest inputs, pre-existing weapon poison: notification only, no normal bow-poisoning confirmation and no consumption.
+- Melee poison use still invokes the original weapon-poisoning action. Health potions, food, drop and favorite actions behave normally.
+- Close/reopen Inventory and save/reload: routing remains present. CraftOnPoisonUse=0 + restart restores original use; F8 still opens bulk coating.
+- Keep Immersive Interactions + supplied New Anims 1.5 and dependencies installed, enable its poison animations and draw the weapon. Click once, then close Inventory: expect one arrow/bolt poisoning animation and only one consumed bottle.
+- Repeat F8 with 5 bottles: one animation for the completed transaction, not five. Poisons Used increases by five, not by ammo count. Cancel/failure must not increase the statistic or request an animation.
+- Check static poison, native weapon oil, and the last bottle of a player-created poison. Verify displayed poison/ammo models and restored weapon/shield visibility after animation.
+- Test first person with the addon's supported camera/offset setup and third person, both ordinary paused Inventory and Skyrim Souls. Check no duplicate animation from natural and targeted event delivery; trace logs report dispatch acceptance, not proof of animation completion.
+- Test sheathed weapon, disabled poison animations, AR_IgnoreObject items, another active interaction, rapid crafting, and save/load during a queued animation. Retain addon's skips; no new-session callbacks or persistent hidden weapon.
+- ImmersiveInteractionsBridge=0 + restart disables this bridge. Without Immersive Interactions installed, crafting must still work.
 
 # Coating perk runtime checks (not yet run in Skyrim)
 
