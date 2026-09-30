@@ -175,7 +175,7 @@ namespace pa::animation
         // temporarily empty ammo slot until the intended ammo first appears.
         const bool ammoValid = equipmentReady || (!request.ammoMatched &&
             (!ammoID || ammoID == context.originalAmmo));
-        const bool valid = player && !player->IsDead() && player->AsActorState()->IsWeaponDrawn() && weapon &&
+        const bool valid = player && !player->IsDead() && player->AsActorState()->GetWeaponState() == RE::WEAPON_STATE::kDrawn && weapon &&
             weapon->GetFormID() == context.weapon && ammoValid;
         auto ui = RE::UI::GetSingleton();
         const bool paused = !ui || ui->GameIsPaused() || ui->IsItemMenuOpen() || ui->IsModalMenuOpen();
@@ -203,7 +203,7 @@ namespace pa::animation
             auto selected = actor ? actor->GetCurrentAmmo() : nullptr;
             auto menus = RE::UI::GetSingleton();
             bool reloading = false;
-            return actor && !actor->IsDead() && actor->AsActorState()->IsWeaponDrawn() && held && selected &&
+            return actor && !actor->IsDead() && actor->AsActorState()->GetWeaponState() == RE::WEAPON_STATE::kDrawn && held && selected &&
                 held->GetFormID() == context.weapon && selected->GetFormID() == context.expectedAmmo &&
                 menus && !menus->GameIsPaused() && !menus->IsItemMenuOpen() && !menus->IsModalMenuOpen() &&
                 !(actor->GetGraphVariableBool(RE::BSFixedString("IsReloading"), reloading) && reloading);
