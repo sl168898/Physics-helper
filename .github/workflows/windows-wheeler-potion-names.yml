@@ -1,8 +1,8 @@
-name: Build Wheeler Coated Ammunition Icons
+name: Build Wheeler Elemental Ammunition Icons
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/wheeler-hd-icons']
+    branches: ['codex/wheeler-elemental-ammo-20260930']
 permissions:
   contents: read
 concurrency:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-Poison-Ammo-Icons-v1-8
-          path: wheeler-potion-names/_build/Wheeler_Refined_Poison_Ammo_Icons_Component_v1_8.zip
+          name: Wheeler-Elemental-Ammo-Icons-v1-9
+          path: wheeler-potion-names/_build/Wheeler_Refined_Elemental_Ammo_Icons_Component_v1_9.zip
           if-no-files-found: error

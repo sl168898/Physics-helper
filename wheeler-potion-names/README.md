@@ -1,3 +1,29 @@
+# Wheeler elemental ammunition icons — native component v1.9
+
+The complete 1.4.0 overlay uses the approved pale silhouettes and 2K SVGs.
+Normal bolts have their own short, thick projectile silhouette. The original
+ordinary-arrow route is retained. Fire is orange-red, frost cyan-blue, shock
+violet and poison/generic coating green. Native elemental ammunition uses a
+colored tip without a drop. Added coating adds a drop in its own color. On
+ordinary ammunition, the tip matches its coating. On elemental ammo the tip
+retains the original element independently of the drop.
+
+Use Poisoned Ammunition 0.2.4 for effect-based coating colors. Its read-only
+GetIconInfoV1 API provides the actual reconstructed recipe, including existing
+batches and character/save changes. Older versions show a generic green
+coating. No English item-name matching is used. Uncoated elemental ammunition
+is detected through its active projectile explosion enchantment and loaded
+damage effect records; this handles that record structure in DLC, Creation
+and mod-added ammo. Script-only elements lacking damage records may need a
+compatibility rule. Mixed effects use the greatest summed magnitude x duration;
+non-damage/unknown coatings retain the generic green coating mark.
+
+Native icons take priority over imported crossbow glyphs only for normal bolts,
+elemental ammo and this coating mod's stable slots. Existing normal arrows,
+food/drinks, inventory menus, potion icons and wheel bindings retain their
+current behavior. Click crafting, F8 and the impact ABI fix are unchanged.
+In-game verification is still required with the user's complete load order.
+
 # Wheeler icon sampling fix — native component v1.6
 
 The v1.5 runtime log confirmed successful 2048px uploads, yet an in-game

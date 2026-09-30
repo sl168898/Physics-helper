@@ -1,0 +1,261 @@
+diff --git a/src/bin/Wheeler/WheelItems/AmmoIconTypes.h b/src/bin/Wheeler/WheelItems/AmmoIconTypes.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Wheeler/WheelItems/AmmoIconTypes.h
+@@ -0,0 +1,78 @@
++// MIT; Physics-helper contributors, 2026-09-30.
++// Shared, pointer-free icon metadata contract. No gameplay or save-format data.
++#pragma once
++#include <array>
++#include <cmath>
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <string_view>
++
++namespace AmmoIcon
++{
++    enum class Damage : std::uint8_t { None, Fire, Frost, Shock, Poison };
++    constexpr bool Valid(Damage value) { return static_cast<unsigned>(value) <= 4; }
++    constexpr std::string_view Name(Damage value)
++    {
++        constexpr std::array<std::string_view, 5> names{ "none", "fire", "frost", "shock", "poison" };
++        return Valid(value) ? names[static_cast<unsigned>(value)] : names[0];
++    }
++    struct State
++    {
++        bool bolt{};
++        Damage native = Damage::None;
++        Damage coating = Damage::None;
++        constexpr Damage Head() const { return native == Damage::None ? coating : native; }
++        constexpr bool NeedsNativeIcon() const { return bolt || native != Damage::None || coating != Damage::None; }
++        constexpr std::uint32_t Key() const
++        {
++            return (bolt ? 0x100u : 0u) | static_cast<std::uint32_t>(native) |
++                (static_cast<std::uint32_t>(coating) << 4);
++        }
++        std::string Filename() const
++        {
++            return std::string(bolt ? "bolt_" : "arrow_") + std::string(Name(Head())) + "_" +
++                std::string(Name(coating)) + ".svg";
++        }
++    };
++    // GetIconInfoV1 returns zero for unavailable/not-owned ammo; otherwise this
++    // tagged word. Bits 0..3: native type, 4..7: coating, 8: bolt. No pointers.
++    constexpr std::uint32_t apiTag = 0xA1010000u;
++    constexpr std::uint32_t PackCoated(State state)
++    {
++        return Valid(state.native) && Valid(state.coating) && state.coating != Damage::None ?
++            apiTag | state.Key() : 0u;
++    }
++    constexpr std::optional<State> UnpackCoated(std::uint32_t word)
++    {
++        if ((word & ~0x1FFu) != apiTag) return std::nullopt;
++        State state{ (word & 0x100u) != 0, static_cast<Damage>(word & 15u),
++            static_cast<Damage>((word >> 4) & 15u) };
++        if (!Valid(state.native) || !Valid(state.coating) || state.coating == Damage::None) return std::nullopt;
++        return state;
++    }
++    struct Scores
++    {
++        std::array<double, 5> values{};
++        void Add(Damage type, float magnitude, std::uint32_t duration, bool noMagnitude, bool noDuration)
++        {
++            if (!Valid(type) || type == Damage::None || !std::isfinite(magnitude)) return;
++            const double strength = noMagnitude ? 1.0 : std::fabs(static_cast<double>(magnitude));
++            if (strength <= 0) return;
++            const double time = noDuration || duration == 0 ? 1.0 : static_cast<double>(duration);
++            values[static_cast<unsigned>(type)] += strength * time;
++        }
++        Damage Dominant(Damage fallback = Damage::None) const
++        {
++            double best = 0;
++            Damage result = fallback;
++            // Equal scores use a stable Fire/Frost/Shock/Poison order.
++            for (unsigned i = 1; i < values.size(); ++i) {
++                if (std::isfinite(values[i]) && values[i] > best) {
++                    best = values[i]; result = static_cast<Damage>(i);
++                }
++            }
++            return result;
++        }
++    };
++}
+diff --git a/src/bin/Wheeler/WheelItems/AmmoIconEffects.h b/src/bin/Wheeler/WheelItems/AmmoIconEffects.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Wheeler/WheelItems/AmmoIconEffects.h
+@@ -0,0 +1,52 @@
++// MIT; Physics-helper contributors, 2026-09-30.
++// Classify loaded effects, never localized item names or the equipped weapon.
++#pragma once
++#include <RE/Skyrim.h>
++#include "AmmoIconTypes.h"
++
++namespace AmmoIcon
++{
++    inline Damage EffectType(RE::EffectSetting* effect, bool poisonSource)
++    {
++        if (!effect || (!effect->IsHostile() && !effect->IsDetrimental())) return Damage::None;
++        const auto& data = effect->data;
++        const bool health = data.primaryAV == RE::ActorValue::kHealth ||
++            (data.archetype == RE::EffectArchetype::kDualValueModifier && data.secondaryAV == RE::ActorValue::kHealth);
++        // Explicit damage keywords cover elemental effects with nonstandard
++        // archetypes. Resistance/weakness effects have no such damage keyword.
++        if (effect->HasKeywordString("MagicDamageFire")) return Damage::Fire;
++        if (effect->HasKeywordString("MagicDamageFrost")) return Damage::Frost;
++        if (effect->HasKeywordString("MagicDamageShock")) return Damage::Shock;
++        if (effect->HasKeywordString("MagicDamagePoison")) return Damage::Poison;
++        if (!health) return Damage::None;
++        switch (data.resistVariable) {
++        case RE::ActorValue::kResistFire: return Damage::Fire;
++        case RE::ActorValue::kResistFrost: return Damage::Frost;
++        case RE::ActorValue::kResistShock: return Damage::Shock;
++        case RE::ActorValue::kPoisonResist: return Damage::Poison;
++        default: return poisonSource ? Damage::Poison : Damage::None;
++        }
++    }
++    inline Damage MagicType(RE::MagicItem* item, bool poisonSource = false)
++    {
++        Scores scores;
++        if (item) for (auto effect : item->effects) {
++            if (!effect || !effect->baseEffect) continue;
++            const auto base = effect->baseEffect;
++            using Flag = RE::EffectSetting::EffectSettingData::Flag;
++            scores.Add(EffectType(base, poisonSource), effect->effectItem.magnitude, effect->effectItem.duration,
++                base->data.flags.all(Flag::kNoMagnitude), base->data.flags.all(Flag::kNoDuration));
++        }
++        // Utility/status poisons keep the generic green coating indicator.
++        return scores.Dominant(poisonSource ? Damage::Poison : Damage::None);
++    }
++    inline Damage NativeType(RE::TESAmmo* ammo)
++    {
++        if (!ammo) return Damage::None;
++        const auto projectile = ammo->GetRuntimeData().data.projectile;
++        if (!projectile || !projectile->data.flags.all(RE::BGSProjectileData::BGSProjectileFlags::kExplosion))
++            return Damage::None;
++        const auto explosion = projectile->data.explosionType;
++        return explosion ? MagicType(explosion->formEnchanting) : Damage::None;
++    }
++}
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp b/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp
+--- a/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp
++++ b/src/bin/Wheeler/WheelItems/WheelItemAmmo.cpp
+@@ -1,4 +1,6 @@
+ #include "WheelItemAmmo.h"
++#include "AmmoIconEffects.h"
++#include <Windows.h>
+ #include "bin/Rendering/Drawer.h"
+ #include "bin/Rendering/TextureManager.h"
+ #include "bin/Utilities/ItemCapabilities.h"
+@@ -14,45 +16,59 @@
+ 	this->_description = std::string(descriptionBuf.c_str());
+ }
+ 
+-void WheelItemAmmo::RefreshPoisonIcon()
++void WheelItemAmmo::RefreshAmmoIcon()
+ {
+     if (!_ammo) return;
++    AmmoIcon::State state{_ammo->IsBolt(), AmmoIcon::NativeType(_ammo), AmmoIcon::Damage::None};
+     const auto file = _ammo->GetFile(0);
+     const auto localID = file ? _ammo->GetFormID() & (file->IsLight() ? 0xFFFu : 0xFFFFFFu) : 0u;
+-    const auto kind = PoisonedAmmoIcon::Select(file ? file->GetFilename() : "", localID, _ammo->IsBolt());
+-    if (kind == _poisonIconKind) return;
+-    _poisonIconKind = kind;
+-    if (kind == PoisonedAmmoIcon::Kind::Other) {
++    const auto kind = PoisonedAmmoIcon::Select(file ? file->GetFilename() : "", localID, state.bolt);
++    if (kind != PoisonedAmmoIcon::Kind::Other) {
++        // Old/missing metadata provider retains a generic green coating.
++        // Query on draw so a stable slot reused in another save refreshes even
++        // when it still represents the same arrow/bolt subtype.
++        state.coating = AmmoIcon::Damage::Poison;
++        using Query = std::uint32_t (*)(std::uint32_t);
++        static HMODULE cachedModule = nullptr;
++        static Query query = nullptr;
++        const auto module = GetModuleHandleW(L"PoisonedAmmoNative.dll");
++        if (module != cachedModule) {
++            cachedModule = module;
++            query = module ? reinterpret_cast<Query>(GetProcAddress(module, "PoisonedAmmoNative_GetIconInfoV1")) : nullptr;
++        }
++        if (query) if (const auto current = AmmoIcon::UnpackCoated(query(_ammo->GetFormID()))) state = *current;
++    }
++    const auto key = state.Key();
++    if (key == _ammoIconKey) return;
++    _ammoIconKey = key;
++    if (!state.NeedsNativeIcon()) {
+         _texture = Texture::GetIconImage(Texture::icon_image_type::arrow, _ammo);
+         _preferNativeIcon = false;
+         return;
+     }
+-    // Use the ordinary ammo theme's logical footprint, while the marked SVG
+-    // retains its 2K raster and mip filtering. Never inherit a keyword override
+-    // or imported I4 crossbow glyph for our stable coated-ammunition slots.
++    // Preserve the current theme's logical footprint and the existing 2K/mip
++    // renderer. Native bolt/elemental/coated icons must not become I4 crossbows.
+     auto fallback = Texture::GetIconImage(Texture::icon_image_type::arrow, nullptr);
+-    const bool bolt = kind == PoisonedAmmoIcon::Kind::Bolt;
+-    auto icon = Texture::GetImageByPath(bolt ?
+-        "Data/SKSE/Plugins/wheeler/resources/poisoned_ammo/poisoned_bolt.svg" :
+-        "Data/SKSE/Plugins/wheeler/resources/poisoned_ammo/poisoned_arrow.svg");
++    const auto path = std::string("Data/SKSE/Plugins/wheeler/resources/ammo_silhouettes/") + state.Filename();
++    auto icon = Texture::GetImageByPath(path);
+     if (icon.texture && icon.width > 0 && icon.height > 0) {
+         if (fallback.width > 0 && fallback.height > 0) {
+-            // Both glyphs have square canvases; preserve their aspect ratio.
+             const auto size = (std::max)(fallback.width, fallback.height);
+             icon.width = icon.height = size;
+         }
+         _texture = icon;
+-        logger::info("PoisonedAmmoIcon: native poisoned {} icon for {:08X}", bolt ? "bolt" : "arrow", _ammo->GetFormID());
++        logger::info("AmmoIcon: {} native={} coating={} form={:08X}", state.bolt ? "bolt" : "arrow",
++            AmmoIcon::Name(state.native), AmmoIcon::Name(state.coating), _ammo->GetFormID());
+     } else {
+         _texture = fallback;
+-        logger::warn("PoisonedAmmoIcon: missing {} SVG; using plain ammo fallback", bolt ? "bolt" : "arrow");
++        logger::warn("AmmoIcon: missing {}; using plain ammo fallback", path);
+     }
+     _preferNativeIcon = true;
+ }
+ 
+ void WheelItemAmmo::DrawSlot(ImVec2 a_center, bool a_hovered, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
+ {
+-	RefreshPoisonIcon();
++	RefreshAmmoIcon();
+ 	int ammoCount = a_imap.contains(this->_ammo) ? a_imap.find(this->_ammo)->second.first : 0;
+ 	std::string text = fmt::format("{} ({})", _ammo->GetName(), ammoCount);
+ 	this->drawSlotText(a_center, text.data(), a_drawArgs);
+@@ -61,7 +77,7 @@
+ 
+ void WheelItemAmmo::DrawHighlight(ImVec2 a_center, RE::TESObjectREFR::InventoryItemMap& a_imap, DrawArgs a_drawArgs)
+ {
+-	RefreshPoisonIcon();
++	RefreshAmmoIcon();
+ 	const float textShiftY = calculateHighlightTextShiftY(this->_description.c_str());
+ 	this->drawHighlightText(a_center, _ammo->GetName(), a_drawArgs, textShiftY);
+ 	this->drawHighlightTexture(a_center, a_drawArgs);
+diff --git a/src/bin/Wheeler/WheelItems/WheelItemAmmo.h b/src/bin/Wheeler/WheelItems/WheelItemAmmo.h
+--- a/src/bin/Wheeler/WheelItems/WheelItemAmmo.h
++++ b/src/bin/Wheeler/WheelItems/WheelItemAmmo.h
+@@ -25,8 +25,8 @@
+ 
+ private:
+ 	RE::TESAmmo* _ammo;
+-	PoisonedAmmoIcon::Kind _poisonIconKind = PoisonedAmmoIcon::Kind::Unresolved;
+-	void RefreshPoisonIcon();
++	std::uint32_t _ammoIconKey = 0xFFFFFFFFu;
++	void RefreshAmmoIcon();
+ 
+ 	void toggleEquip();
+ };
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.8 enabled (2026-09-30; dedicated poisoned bolt/arrow icons; one-bottle coating; 2K mip filtering)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.9 enabled (2026-09-30; elemental ammo silhouettes and independent coating colors; one-bottle coating; 2K mip filtering)");
+ 
+ 	SKSE::Init(a_skse);
+ 

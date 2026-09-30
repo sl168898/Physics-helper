@@ -40,3 +40,13 @@ if(WIN32)
   add_test(NAME icon_gpu_sampling COMMAND icon_gpu_tests)
 endif()
 
+
+add_executable(ammo_icon_tests ammo_icon_tests.cpp)
+target_compile_features(ammo_icon_tests PRIVATE cxx_std_20)
+target_include_directories(ammo_icon_tests PRIVATE mock "${REFINED_SOURCE}/src/bin/Wheeler/WheelItems")
+if(MSVC)
+  target_compile_options(ammo_icon_tests PRIVATE /UNDEBUG)
+else()
+  target_compile_options(ammo_icon_tests PRIVATE -UNDEBUG)
+endif()
+add_test(NAME elemental_ammo_and_coating_icons COMMAND ammo_icon_tests)
