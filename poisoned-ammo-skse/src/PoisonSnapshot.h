@@ -2,11 +2,12 @@
 
 #include <RE/Skyrim.h>
 #include "Core.h"
+#include "PoisonKeywords.h"
 
 namespace pa::crafted
 {
     enum class Reason { none, notPoison, noSource, scriptInspection, customScript,
-        effectCount, missingEffect, effectConditions, effectSource, keywordSource };
+        effectCount, missingEffect, effectConditions, effectSource, keywordSource, keywordIdentity };
     struct Issue
     {
         Reason reason = Reason::none;
@@ -26,6 +27,7 @@ namespace pa::crafted
         case Reason::effectConditions: return "this crafted poison has unsupported effect conditions";
         case Reason::effectSource: return "this poison uses a temporary or unresolved magic effect";
         case Reason::keywordSource: return "this poison uses a temporary or unresolved keyword";
+        case Reason::keywordIdentity: return "a runtime keyword cannot be identified safely; see PoisonedAmmoNative.log";
         default: return "unsupported poison data";
         }
     }
@@ -90,10 +92,20 @@ namespace pa::crafted
             ++index;
         }
         index = 0;
+        pa::RuntimeKeywords runtimeKeywords;
         for (const auto keyword : item->GetKeywords()) {
             const auto key = keyOf(keyword);
-            if (!key) return reject(Reason::keywordSource, keyword, index);
-            result.keywords.push_back(*key);
+            if (key) result.keywords.push_back(*key);
+            else if (keyword && keyword->IsDynamicForm()) {
+                std::string error;
+                const auto name = runtimeKeywords.capture(keyword, error);
+                if (!name) {
+                    const auto editorID = keyword->GetFormEditorID();
+                    return reject(Reason::keywordIdentity, keyword, index,
+                        "EditorID='" + std::string(editorID ? editorID : "") + "': " + error);
+                }
+                result.namedKeywords.push_back(*name);
+            } else return reject(Reason::keywordSource, keyword, index);
             ++index;
         }
         return result;

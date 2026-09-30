@@ -16,6 +16,7 @@ namespace pa
     inline constexpr std::size_t capacity = 512;
     inline constexpr std::uint32_t ammoStart = 0x800, poisonStart = 0xA00, markerID = 0xC00;
     inline constexpr std::size_t maxSaveBytes = 32 * 1024 * 1024;
+    inline constexpr std::size_t maxKeywordNameBytes = 260;
     inline constexpr std::string_view plugin = "PoisonedAmmoNative.esp";
 
     inline std::string lower(std::string s)
@@ -58,6 +59,9 @@ namespace pa
         std::uint32_t flags{};
         std::vector<Effect> effects;
         std::vector<Key> keywords;
+        // Runtime keyword IDs change between launches. Keep their unique,
+        // case-insensitive EditorIDs instead of serializing an FF FormID.
+        std::vector<std::string> namedKeywords;
         bool operator==(const Poison&) const = default;
         bool custom() const { return source.file.empty(); }
     };
@@ -69,16 +73,23 @@ namespace pa
         bool operator==(const Recipe&) const = default;
     };
     using Recipes = std::vector<Recipe>;
+    inline bool validKeywordName(const std::string& name)
+    {
+        return !name.empty() && name.size() <= maxKeywordNameBytes &&
+            name.find('\0') == std::string::npos;
+    }
     inline bool valid(const Recipe& r)
     {
         if (!valid(r.ammo) || r.name.empty() || r.name.size() > 240 || r.name.find('\0') != std::string::npos ||
             r.poison.name.empty() || r.poison.name.size() > 240 || r.poison.name.find('\0') != std::string::npos) return false;
-        if (!r.poison.custom()) return valid(r.poison.source) && r.poison.effects.empty() && r.poison.keywords.empty();
+        if (!r.poison.custom()) return valid(r.poison.source) && r.poison.effects.empty() &&
+            r.poison.keywords.empty() && r.poison.namedKeywords.empty();
         if (r.poison.source.local || r.poison.effects.empty() || r.poison.effects.size() > 64 ||
-            r.poison.keywords.size() > 128 || !(r.poison.flags & (1u << 17))) return false;
+            r.poison.keywords.size() + r.poison.namedKeywords.size() > 128 || !(r.poison.flags & (1u << 17))) return false;
         for (const auto& e : r.poison.effects)
             if (!valid(e.base) || !std::isfinite(e.magnitude) || !std::isfinite(e.cost)) return false;
-        return std::all_of(r.poison.keywords.begin(), r.poison.keywords.end(), [](const Key& k) { return valid(k); });
+        return std::all_of(r.poison.keywords.begin(), r.poison.keywords.end(), [](const Key& k) { return valid(k); }) &&
+            std::all_of(r.poison.namedKeywords.begin(), r.poison.namedKeywords.end(), validKeywordName);
     }
     inline std::optional<std::size_t> existing(const Recipes& recipes, const Recipe& r)
     {
@@ -113,8 +124,13 @@ namespace pa
     inline std::vector<std::uint8_t> encode(const Recipes& recipes)
     {
         if (recipes.size() > capacity) throw std::runtime_error("too many recipes");
+        // Preserve byte-for-byte v1 saves and their ESS fingerprints until a
+        // recipe actually needs runtime keywords. The SKSE record envelope
+        // remains version 1; the bounded payload has its own schema version.
+        const std::uint32_t version = std::any_of(recipes.begin(), recipes.end(),
+            [](const Recipe& r) { return !r.poison.namedKeywords.empty(); }) ? 2 : 1;
         Writer w;
-        w.u32(0x3150414E); w.u32(1); w.u32(static_cast<std::uint32_t>(recipes.size()));
+        w.u32(0x3150414E); w.u32(version); w.u32(static_cast<std::uint32_t>(recipes.size()));
         for (const auto& r : recipes) {
             if (!valid(r)) throw std::runtime_error("invalid recipe");
             w.key(r.ammo); w.str(r.name); w.key(r.poison.source); w.str(r.poison.name);
@@ -123,6 +139,10 @@ namespace pa
             for (const auto& e : r.poison.effects) { w.key(e.base); w.f32(e.magnitude); w.u32(e.area); w.u32(e.duration); w.f32(e.cost); }
             w.u32(static_cast<std::uint32_t>(r.poison.keywords.size()));
             for (const auto& k : r.poison.keywords) w.key(k);
+            if (version >= 2) {
+                w.u32(static_cast<std::uint32_t>(r.poison.namedKeywords.size()));
+                for (const auto& name : r.poison.namedKeywords) w.str(name);
+            }
         }
         w.u32(checksum(w.bytes));
         if (w.bytes.size() > maxSaveBytes) throw std::runtime_error("save too large");
@@ -157,7 +177,9 @@ namespace pa
         Reader tail(bytes.last(4));
         if (tail.u32() != checksum(bytes.first(bytes.size() - 4))) throw std::runtime_error("save checksum mismatch");
         Reader r(bytes.first(bytes.size() - 4));
-        if (r.u32() != 0x3150414E || r.u32() != 1) throw std::runtime_error("unsupported save format");
+        if (r.u32() != 0x3150414E) throw std::runtime_error("unsupported save format");
+        const auto version = r.u32();
+        if (version != 1 && version != 2) throw std::runtime_error("unsupported save format");
         const auto n = r.u32();
         if (n > capacity) throw std::runtime_error("invalid slot count");
         Recipes recipes; recipes.reserve(n);
@@ -170,6 +192,11 @@ namespace pa
             const auto keys = r.u32();
             if (keys > 128) throw std::runtime_error("too many keywords");
             for (std::uint32_t j = 0; j < keys; ++j) v.poison.keywords.push_back(r.key());
+            if (version >= 2) {
+                const auto named = r.u32();
+                if (named > 128 - keys) throw std::runtime_error("too many named keywords");
+                for (std::uint32_t j = 0; j < named; ++j) v.poison.namedKeywords.push_back(r.str());
+            }
             if (!valid(v)) throw std::runtime_error("invalid saved recipe");
             recipes.push_back(std::move(v));
         }

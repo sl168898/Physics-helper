@@ -1,3 +1,36 @@
+# Runtime keyword persistence (0.2.7)
+
+The screenshot's keywordSource error comes from dynamic poison snapshots when
+keyOf(keyword) has no plugin-backed key. IsDynamicForm is not proof that a
+keyword cannot be restored: a provider may recreate a stable named keyword.
+PoisonKeywords.h lazily indexes TESDataHandler::GetFormArray<BGSKeyword>() by
+case-insensitive EditorID for one capture/restore operation. It does not depend
+on the general EditorID lookup map or retain an index across saves.
+
+Capture retains ordinary keyword plugin/local keys. For a dynamic keyword it
+requires a nonempty EditorID (maximum 260 bytes), a unique registry entry, and
+identity with the actual keyword pointer. It stores the lowercase EditorID.
+A repeated registration of the same pointer is allowed; distinct objects with
+the same name are ambiguous. Names are resolved again before publishing any
+proxy effects/keywords on restoration. restoreAll shares one local index across
+its recipes, while crafting creates its own. Missing dependencies leave the
+assigned ammunition slot unavailable and reserved, never silently uncoated.
+
+Core::Poison adds namedKeywords. Total static + named keywords remains bounded
+to 128. Payload version 1 is emitted byte-for-byte when no recipe has named
+keywords, retaining existing ESS fingerprints. Otherwise payload v2 appends a
+bounded name list to EVERY recipe after its static keys (empty where unused).
+Decode accepts both versions and validates the complete recipe. The SKSE record
+envelope remains version 1. The 32 MiB bound covers a full bank at all field
+limits. Saves with named keywords require this reader or a newer compatible one.
+
+The original effects, magnitudes, areas, durations, costs and flags are preserved.
+There is no damage-type or item-name whitelist. The static poison fast path,
+including White Phial Decanting's protected records, remains a direct reference.
+Actual custom item scripts, dynamic MGEFs and per-effect conditions still need
+separate support. The exact user's keyword EditorID was not supplied; regression
+fixtures reproduce the supported runtime-keyword category, not a captured save.
+
 # Crafted poison script detection and diagnostics (0.2.6)
 
 The pinned CommonLibSSE-NG TESForm::HasVMAD implementation obtains a VM handle

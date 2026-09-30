@@ -108,7 +108,7 @@ namespace
             }
         }
     }
-    bool restoreSlot(std::size_t i)
+    bool restoreSlot(std::size_t i, pa::RuntimeKeywords* sharedKeywords = nullptr)
     {
         if (i >= recipes.size() || i >= slots.size()) return false;
         auto& slot = slots[i]; const auto& recipe = recipes[i];
@@ -131,6 +131,17 @@ namespace
             for (const auto& k : recipe.poison.keywords) {
                 auto keyword = resolve<RE::BGSKeyword>(k);
                 if (!keyword) return false;
+                keywords.push_back(keyword);
+            }
+            pa::RuntimeKeywords localKeywords;
+            auto& runtimeKeywords = sharedKeywords ? *sharedKeywords : localKeywords;
+            for (const auto& name : recipe.poison.namedKeywords) {
+                std::string error;
+                auto keyword = runtimeKeywords.resolve(name, error);
+                if (!keyword) {
+                    SKSE::log::error("Slot {} unavailable: runtime keyword '{}' could not be restored: {}", i, name, error);
+                    return false;
+                }
                 keywords.push_back(keyword);
             }
             poison = slot.proxy;
@@ -163,7 +174,8 @@ namespace
     void restoreAll()
     {
         disableSlots();
-        for (std::size_t i = 0; i < recipes.size(); ++i) if (!restoreSlot(i))
+        pa::RuntimeKeywords runtimeKeywords;
+        for (std::size_t i = 0; i < recipes.size(); ++i) if (!restoreSlot(i, &runtimeKeywords))
             SKSE::log::error("Slot {} unavailable: a source plugin/form is missing or changed. Slot is reserved, never recycled.", i);
     }
     std::optional<pa::Poison> snapshot(RE::AlchemyItem* item, pa::crafted::Issue* issue = nullptr)
@@ -740,7 +752,7 @@ extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 6, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 7, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -753,7 +765,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.2.4 beta; read-only elemental/coating icon metadata; Skyrim Steam 1.6.1170; impact pointer ABI fixed; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
+    SKSE::log::info("PoisonedAmmoNative 0.2.7 beta; runtime keyword persistence; Skyrim Steam 1.6.1170; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

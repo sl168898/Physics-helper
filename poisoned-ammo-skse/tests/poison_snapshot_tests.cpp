@@ -16,6 +16,7 @@ struct Fixture
 {
     RE::BSScript::IObjectHandlePolicy policy;
     RE::BSScript::Internal::VirtualMachine vm;
+    RE::TESDataHandler data;
     RE::AlchemyItem poison;
     RE::EffectSetting weakness, damage;
     RE::BGSKeyword keyword;
@@ -23,6 +24,7 @@ struct Fixture
     pa::crafted::Issue issue;
     Fixture() {
         vm.policy = &policy; RE::BSScript::Internal::VirtualMachine::instance = &vm;
+        RE::TESDataHandler::instance = &data;
         poison.id = 0xFF000321; poison.name = "Poison of Weakness to Fire";
         weakness.id = 0x73F2E; weakness.name = "Weakness to Fire";
         damage.id = 0x3EB42; damage.name = "Damage Health";
@@ -82,6 +84,64 @@ int main()
         RE::BSScript::ObjectTypeInfo custom{"StaticScript"}; f.attach(&custom);
         const auto p = f.capture(); assert(p && !p->custom() && p->effects.empty() && p->source.local == 0x12345);
     }
+    // Screenshot regression: a crafted fire-weakness oil has a runtime keyword
+    // from a provider, in addition to normal plugin-backed keywords.
+    {
+        Fixture f; RE::BGSKeyword generated;
+        generated.id = 0xFF000200; generated.editorID = "RuntimeFireWeaknessTag";
+        f.data.keywords = {&f.keyword, &generated, &generated}; // Same pointer twice is not ambiguous.
+        f.poison.keywords.push_back(&generated);
+        f.poison.name = "Weapon Oil of Fire Weakness";
+        f.effect.effectItem = {139, 0, 120};
+        const auto p = f.capture();
+        assert(p && p->custom() && f.issue.reason == Reason::none);
+        assert(p->keywords.size() == 1 && p->namedKeywords == std::vector<std::string>{"runtimefireweaknesstag"});
+        assert(p->effects[0].magnitude == 139 && p->effects[0].duration == 120);
+        pa::Recipes recipes{{{"dawnguard.esm", 0xD099}, *p, "Bolt [Fire Weakness]"}};
+        const auto saved = pa::encode(recipes);
+        assert(saved[4] == 2);
+        // Original sample disappears. The provider recreates the same keyword
+        // with another FF ID and address on the next launch.
+        f.poison.effects.clear(); f.poison.keywords.clear();
+        RE::BGSKeyword recreated; recreated.id = 0xFFABCDEF; recreated.editorID = "RUNTIMEFIREWEAKNESSTAG";
+        f.data.keywords = {&f.keyword, &recreated};
+        const auto restored = pa::decode(saved);
+        assert(restored == recipes && pa::fingerprint(restored) == pa::fingerprint(recipes));
+        pa::RuntimeKeywords resolver; std::string error;
+        assert(resolver.resolve(restored[0].poison.namedKeywords[0], error) == &recreated && error.empty());
+        assert(restored[0].poison.effects == p->effects);
+        // No global pointer cache: a later load gets its own registry.
+        f.data.keywords = {&f.keyword}; pa::RuntimeKeywords missing;
+        assert(!missing.resolve(restored[0].poison.namedKeywords[0], error) && error == "named keyword is not registered");
+    }
+    {
+        Fixture f; f.keyword.id = 0xFF000200; f.keyword.editorID = "OilTag";
+        assert(!f.capture() && f.issue.reason == Reason::keywordIdentity);
+        assert(f.issue.detail.find("OilTag") != std::string::npos && f.issue.detail.find("not registered") != std::string::npos);
+        f.data.keywords = {&f.keyword}; assert(f.capture());
+        RE::BGSKeyword duplicate; duplicate.id = 0xFF000201; duplicate.editorID = "oiltag";
+        f.data.keywords.push_back(&duplicate);
+        assert(!f.capture() && f.issue.reason == Reason::keywordIdentity && f.issue.detail.find("ambiguous") != std::string::npos);
+        f.data.keywords = {&duplicate};
+        assert(!f.capture() && f.issue.detail.find("different object") != std::string::npos);
+        f.data.keywords = {&f.keyword}; RE::TESDataHandler::instance = nullptr;
+        assert(!f.capture() && f.issue.detail.find("registry is unavailable") != std::string::npos);
+    }
+    {
+        Fixture f; f.keyword.id = 0xFF000200;
+        f.keyword.editorID.assign(pa::maxKeywordNameBytes + 1, 'x'); f.data.keywords = {&f.keyword};
+        assert(!f.capture() && f.issue.reason == Reason::keywordIdentity);
+        f.keyword.editorID.assign(pa::maxKeywordNameBytes, 'x'); assert(f.capture());
+    }
+    // White Phial protected bottles are plugin records. Even with generated
+    // keywords they keep the original record, bypassing dynamic snapshots.
+    {
+        Fixture f; f.poison.id = 0xFE012900; f.poison.file = "White Phial - Decanting.esp";
+        f.keyword.id = 0xFF000200; RE::TESDataHandler::instance = nullptr;
+        RE::BSScript::Internal::VirtualMachine::instance = nullptr;
+        const auto p = f.capture();
+        assert(p && !p->custom() && p->source.file == "white phial - decanting.esp" && p->namedKeywords.empty());
+    }
     // Distinct diagnostics, all rejected before the inventory transaction.
     { Fixture f; f.poison.poison = false; assert(!f.capture() && f.issue.reason == Reason::notPoison); }
     { Fixture f; f.poison.id = 0x12345; f.poison.file.clear(); assert(!f.capture() && f.issue.reason == Reason::noSource); }
@@ -92,8 +152,8 @@ int main()
     { Fixture f; f.effect.conditions.head = &f; assert(!f.capture() && f.issue.reason == Reason::effectConditions && f.issue.related == f.weakness.id); }
     { Fixture f; f.weakness.id = 0xFF000100; assert(!f.capture() && f.issue.reason == Reason::effectSource && f.issue.related == 0xFF000100); }
     { Fixture f; f.weakness.file.clear(); assert(!f.capture() && f.issue.reason == Reason::effectSource); }
-    { Fixture f; f.keyword.id = 0xFF000200; assert(!f.capture() && f.issue.reason == Reason::keywordSource && f.issue.related == 0xFF000200); }
+    { Fixture f; f.keyword.id = 0xFF000200; assert(!f.capture() && f.issue.reason == Reason::keywordIdentity && f.issue.related == 0xFF000200); }
     { Fixture f; f.poison.keywords[0] = nullptr; assert(!f.capture() && f.issue.reason == Reason::keywordSource); }
     { Fixture f; f.poison.effects.clear(); assert(!f.capture()); f.poison.effects = {&f.effect}; assert(f.capture() && f.issue.reason == Reason::none); }
-    std::cout << "PASS: production crafted-poison capture accepts ordinary VM handles/native wrappers, preserves weakness and mixed effects across save/load, and identifies retained rejection cases\n";
+    std::cout << "PASS: production capture and runtime-keyword resolver preserve crafted fire-weakness oils across changed FF IDs, retain VM/script safeguards, and accept White Phial records\n";
 }

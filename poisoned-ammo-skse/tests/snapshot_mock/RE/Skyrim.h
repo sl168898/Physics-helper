@@ -19,17 +19,24 @@ namespace RE
     };
     struct TESForm {
         FormID id{};
-        std::string file = "Skyrim.esm", name;
+        std::string file = "Skyrim.esm", name, editorID;
         VMHandle handle = 123;
         mutable int misleadingHelperCalls = 0;
         FormID GetFormID() const { return id; }
         bool IsDynamicForm() const { return id >= 0xFF000000; }
         int GetFormType() const { return 46; }
+        const char* GetFormEditorID() const { return editorID.c_str(); }
         // Same distinction as the pinned helper: handle existence != scripts.
         bool HasVMAD() const { ++misleadingHelperCalls; return handle != 0; }
     };
     struct EffectSetting : TESForm {};
     struct BGSKeyword : TESForm {};
+    struct TESDataHandler {
+        static inline TESDataHandler* instance{};
+        std::vector<BGSKeyword*> keywords;
+        static TESDataHandler* GetSingleton() { return instance; }
+        template<class T> const auto& GetFormArray() const { return keywords; }
+    };
     struct Effect {
         EffectSetting* baseEffect{};
         struct { float magnitude{}; std::uint32_t area{}, duration{}; } effectItem;

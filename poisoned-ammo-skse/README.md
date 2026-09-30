@@ -1,3 +1,34 @@
+# Version 0.2.7 — runtime keyword support for crafted poisons
+
+Fixes the remaining refusal shown as "this poison uses a temporary or unresolved
+keyword" for crafted poisons carrying named runtime keywords. Keywords created
+by a provider can now be saved by their unique registered EditorID and resolved
+again after loading, even when their temporary FormID changes. No keyword or
+poison effect is discarded. Fire-resistance reduction remains a status effect,
+with its original magnitude and duration, subject to the existing coating perks.
+
+Install this full package over 0.2.6 in MO2 and restart Skyrim through SKSE.
+Keep Wheeler Elemental Ammo 1.4.0 and the existing New Anims setup. Both the
+crossbow reload sequence and the crafted-poison Papyrus-handle fix are included.
+No new game is needed. Existing v1 saves retain their exact data/fingerprints.
+A save containing runtime-keyword coatings uses the new v2 recipe payload and
+must subsequently be loaded with 0.2.7 or newer; keep the matching ESS/SKSE pair.
+
+Inventory/Wheeler clicks still coat one bottle, and F8 opens batch selection.
+Renaming a poison does not change this route. White Phial Decanting 2.1.0's
+protected bottles continue to use their original persistent poison records.
+
+A runtime keyword must have a unique EditorID, at most 260 bytes, registered in
+the game's keyword array. Unnamed, missing or ambiguous keywords are refused
+with the exact EditorID and reason in PoisonedAmmoNative.log. Their provider
+must remain installed and recreate them before saves load. Dynamic magic-effect
+records, custom item scripts and per-effect conditions remain unsupported for
+crafted snapshots. Rejection consumes nothing.
+
+The screenshot identifies the rejection category, but not the exact keyword.
+This release adds the missing persistence support; it does not claim the user's
+full load order has been tested in Skyrim. See TESTING.md for the targeted check.
+
 # Version 0.2.6 — player-crafted poison correction
 
 Fixes a false rejection of normal player-crafted poisons, including Weakness to
@@ -176,7 +207,7 @@ Inventory poison use immediately coats one bottle's batch; the hotkey opens bulk
 - Keep the matching `.ess` and `.skse` save files together. Do not remove/rename the companion ESP, compact its FormIDs, or uninstall it from a save containing these items.
 - Start testing on a profile without the original Poisoned Arrows and Bolts mod. This beta does not migrate its DPF-generated ammunition. Existing mods can retain DPF if they independently need it; this mod neither loads nor edits DPF data.
 - Missing source plugins leave their recipe slots reserved and unavailable; restore those plugins to recover functionality. Existing form IDs must not be compacted or reassigned mid-save.
-- Quest items and inputs reported stolen by the engine are refused. Temporary ammo and ammunition using non-arrow projectile types are refused. Bound arrows are not a supported feature. Player-created dynamic poisons with custom per-effect CTDA conditions, attached custom item scripts, or dynamic MGEF/keyword records are refused rather than losing that data. Normal alchemy-created poisons do not need those features.
+- Quest items and inputs reported stolen by the engine are refused. Temporary ammo and ammunition using non-arrow projectile types are refused. Bound arrows are not a supported feature. Player-created dynamic poisons with custom per-effect CTDA conditions, attached custom item scripts, dynamic MGEF records, or runtime keywords without a unique registered EditorID are refused rather than losing that data. Normal alchemy-created poisons do not need those features.
 - Poisoning a bow already holding another poison is refused during crafting. If another mod later puts weapon poison on a bow firing this ammo, the ammo's poison takes precedence; the engine may still consume the weapon's charge. Avoid combining both.
 - NPC ammunition consumption follows Skyrim and your installed mods, including vanilla infinite follower ammunition behavior. This mod does not change AI consumption rules.
 - Requiem/LoreRim compatibility is a design target, **not a tested certification**. Original keywords and native perk calculations are retained, but mods that match exact ammo FormIDs, replace projectile hooks without chaining, consume items in event callbacks, or cache base-form data may need a patch.

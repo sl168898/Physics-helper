@@ -1,12 +1,13 @@
 #include "Core.h"
 #include "CoatingCore.h"
+#include "legacy_v1_save.h"
 #include <cassert>
 #include <iostream>
 #include <random>
 
 pa::Recipe example()
 {
-    return {{"arrows.esl", 0xF31}, {{"poison.esp", 0x8A1}, "Damage Health", 0, 0, {}, {}}, "Arrow [Damage Health]"};
+    return {{"arrows.esl", 0xF31}, {{"poison.esp", 0x8A1}, "Damage Health", 0, 0, {}, {}, {}}, "Arrow [Damage Health]"};
 }
 template<class F> void rejects(F f) { bool rejected = false; try { f(); } catch (const std::exception&) { rejected = true; } assert(rejected); }
 int main()
@@ -52,6 +53,23 @@ int main()
     auto crafted = a; crafted.poison.source = {}; crafted.poison.flags = 1u << 17;
     crafted.poison.effects = {{{"effects.esp", 0xD00}, 37.25f, 0, 10, 12.5f}, {{"effects.esl", 0xFFF}, 0.5f, 4, 300, 90.0f}};
     crafted.poison.keywords = {{"keywords.esp", 0x801}};
+    const pa::Recipes legacyRecipes{a, crafted};
+    assert(pa::encode(legacyRecipes) == std::vector<std::uint8_t>(legacyV1Bytes.begin(), legacyV1Bytes.end()));
+    assert(pa::decode(legacyV1Bytes) == legacyRecipes);
+    assert(pa::fingerprint(legacyRecipes) == legacyV1Fingerprint);
+
+    auto named = crafted; named.poison.namedKeywords = {"runtime_fire_weakness", "provider_oil_tag"};
+    const pa::Recipes mixedRecipes{a, crafted, named};
+    const auto mixedBytes = pa::encode(mixedRecipes);
+    assert(mixedBytes[4] == 2 && pa::decode(mixedBytes) == mixedRecipes);
+    assert(pa::fingerprint(mixedRecipes) == pa::fingerprint(pa::decode(mixedBytes)));
+    assert(pa::fingerprint({named}) != pa::fingerprint({crafted}));
+    auto invalid = named; invalid.poison.namedKeywords = {""}; assert(!pa::valid(invalid));
+    invalid = named; invalid.poison.namedKeywords = {std::string("bad\0name", 8)}; assert(!pa::valid(invalid));
+    invalid = named; invalid.poison.namedKeywords = {std::string(pa::maxKeywordNameBytes + 1, 'x')}; assert(!pa::valid(invalid));
+    invalid = named; invalid.poison.namedKeywords.assign(128, "x"); assert(!pa::valid(invalid));
+    invalid = a; invalid.poison.namedKeywords = {"x"}; assert(!pa::valid(invalid));
+    rejects([&] { pa::encode({invalid}); });
     rs.push_back(crafted); assert(pa::decode(pa::encode(rs)) == rs);
     auto stronger = crafted; stronger.poison.effects[0].magnitude += 1;
     assert(!pa::existing(rs, stronger));
@@ -70,6 +88,12 @@ int main()
     const auto biggest = pa::encode(pa::Recipes(pa::capacity, largest));
     assert(biggest.size() < pa::maxSaveBytes);
     assert(pa::decode(biggest).size() == pa::capacity);
+    largest.poison.keywords.clear();
+    largest.poison.namedKeywords.assign(128, std::string(pa::maxKeywordNameBytes, 'k'));
+    assert(pa::valid(largest));
+    const auto biggestNamed = pa::encode(pa::Recipes(pa::capacity, largest));
+    assert(biggestNamed.size() < pa::maxSaveBytes);
+    assert(pa::decode(biggestNamed) == pa::Recipes(pa::capacity, largest));
 
     auto bytes = pa::encode(rs);
     for (std::size_t n : {0u, 1u, 8u, 15u, 100u}) rejects([&] { pa::decode(std::span(bytes).first(n)); });
@@ -97,15 +121,15 @@ int main()
         assert(p.arrows <= ammo && p.bottles <= poisons && static_cast<unsigned>(p.bottles) <= requested);
         assert(p.arrows >= 0 && p.bottles >= 0 && p.arrows <= 5000);
         assert(static_cast<std::uint64_t>(p.bottles) * dose >= static_cast<unsigned>(p.arrows));
-        if (p.arrows) assert(p.bottles == (p.arrows + dose - 1) / dose);
+        if (p.arrows) assert(static_cast<std::uint64_t>(p.bottles) == (p.arrows + dose - 1) / dose);
     }
     // Bounds-check hostile but checksum-valid inputs, not only checksum failures.
-    for (int i = 0; i < 3000; ++i) {
-        auto fuzz = pa::encode({example()}); const auto pos = 4 + rng() % (fuzz.size() - 8);
+    for (int i = 0; i < 6000; ++i) {
+        auto fuzz = i % 2 ? mixedBytes : pa::encode({example()}); const auto pos = 4 + rng() % (fuzz.size() - 8);
         fuzz[pos] ^= static_cast<std::uint8_t>(1 + rng() % 255);
         auto sum = pa::checksum(std::span(fuzz).first(fuzz.size() - 4));
         for (unsigned j = 0; j < 4; ++j) fuzz[fuzz.size() - 4 + j] = static_cast<std::uint8_t>(sum >> (j * 8));
         try { auto decoded = pa::decode(fuzz); assert(pa::decode(pa::encode(decoded)) == decoded); } catch (const std::runtime_error&) {}
     }
-    std::cout << "PASS: combined perk matrix, bolt-only doses, rank precedence, finite scaling; ESL identity, save isolation, crafted effects, full pool, corruption, 20000 batch cases and 3000 parser mutations\n";
+    std::cout << "PASS: perk matrix, ESL identity, v1 golden bytes/fingerprint, v2 runtime keywords, full pool bounds, 20000 batch cases and 6000 v1/v2 parser mutations\n";
 }
