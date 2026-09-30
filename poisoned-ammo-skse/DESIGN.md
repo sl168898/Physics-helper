@@ -1,3 +1,39 @@
+# Crafted poison script detection and diagnostics (0.2.6)
+
+The pinned CommonLibSSE-NG TESForm::HasVMAD implementation obtains a VM handle
+and returns whether it differs from EmptyHandle. It does not enumerate attached
+script instances. Using it as a reason to reject a dynamic ALCH falsely treats
+ordinary Papyrus-addressable crafted poisons as unsupported scripted items.
+
+PoisonSnapshot.h now inspects the handle's actual attachedScripts entry while
+holding attachedScriptsLock. It permits an absent/empty entry and native
+Potion/Form wrappers, matching Papyrus names case-insensitively. Any other script
+class (including subclasses of Potion), or missing type metadata, is rejected.
+VM/policy unavailability fails closed. The lock covers script/type inspection;
+no VM object pointers escape the scope. Static plugin poisons still use their
+original record directly, preserving their own scripts and conditions.
+
+Snapshot capture is shared by initial request validation and the pre-consumption
+transaction recheck. It captures every effect with the same stable MGEF key and
+all magnitude/area/duration/cost values, plus the original stable keywords and
+alchemy flags/value. Dynamic effect records, per-Effect conditions and dynamic
+keywords still require explicit persistence support; none are silently dropped.
+No actor-value/damage-type filter is used to decide whether a poison is allowed.
+The existing v1 serialization and ESS fingerprint algorithm are unchanged.
+
+Each failed snapshot returns a specific reason and, when applicable, a component
+FormID/index or attached script name. Request notifications distinguish poison
+and ammunition failures. Warnings log details regardless of TraceProjectiles.
+The code defect is confirmed from source and regression tests; the user's exact
+in-game poison record has not been captured, so this does not claim that every
+possible rejection in the user's load order is resolved.
+
+Primary API references (pinned interfaces used by this build):
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/src/RE/T/TESForm.cpp
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/V/VirtualMachine.h
+- https://github.com/CharmedBaryon/CommonLibSSE-NG/blob/b93280e832f263dbef44e44cbe2936622a02f91a/include/RE/A/AttachedScript.h
+- https://github.com/powerof3/PapyrusExtenderSSE/blob/master/src/Papyrus/Util/Script.cpp (independent attachment-check API reference)
+
 # Crossbow animation sequencing (0.2.5)
 
 Capture a reload-event checkpoint immediately before auto-equipping the output.

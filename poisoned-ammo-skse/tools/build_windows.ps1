@@ -68,7 +68,7 @@ Get-ChildItem $Source -Recurse -File | Sort-Object FullName | ForEach-Object {
     $Sources[$Relative] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'PoisonedAmmoNative'; version = '0.2.5-beta'; runtime = 'Steam 1.6.1170'
+    plugin = 'PoisonedAmmoNative'; version = '0.2.6-beta'; runtime = 'Steam 1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     esp_sha256 = (Get-FileHash (Join-Path $Stage 'PoisonedAmmoNative.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -81,7 +81,8 @@ $Info = [ordered]@{
     inventory_click_to_coat = $true; click_bottles = 1; click_dialog = $false; hotkey_batch_dialog = $true
     immersive_interactions_bridge = $true; animation_compatibility_verified = $false
     crossbow_reload_before_poison = $true; reload_sequence_tests = 'passed'
+    crafted_poison_handle_check_fixed = $true; production_poison_snapshot_tests = 'passed'
     in_game_tested = $false; recipe_capacity = 512; dynamic_form_creation = $false; papyrus_scripts = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_5_Beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_6_Beta.zip')

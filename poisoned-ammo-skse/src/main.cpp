@@ -6,6 +6,7 @@
 #include "Coating.h"
 #include "ImmersiveAnimation.h"
 #include "AmmoIconEffects.h"
+#include "PoisonSnapshot.h"
 #include <array>
 #include <atomic>
 #include <functional>
@@ -165,24 +166,15 @@ namespace
         for (std::size_t i = 0; i < recipes.size(); ++i) if (!restoreSlot(i))
             SKSE::log::error("Slot {} unavailable: a source plugin/form is missing or changed. Slot is reserved, never recycled.", i);
     }
-    std::optional<pa::Poison> snapshot(RE::AlchemyItem* item)
+    std::optional<pa::Poison> snapshot(RE::AlchemyItem* item, pa::crafted::Issue* issue = nullptr)
     {
-        if (!item || !item->IsPoison()) return {};
-        pa::Poison p; p.name = displayName(item);
-        if (auto key = keyOf(item)) { p.source = *key; return p; }
-        if (!item->IsDynamicForm() || item->HasVMAD() || item->effects.empty() || item->effects.size() > 64) return {};
-        p.value = item->data.costOverride; p.flags = item->data.flags.underlying();
-        for (auto e : item->effects) {
-            if (!e || !e->baseEffect || e->conditions.head) return {};
-            auto key = keyOf(e->baseEffect);
-            if (!key) return {};
-            p.effects.push_back({*key, e->effectItem.magnitude, e->effectItem.area, e->effectItem.duration, e->cost});
-        }
-        for (auto keyword : item->GetKeywords()) {
-            auto key = keyOf(keyword); if (!key) return {};
-            p.keywords.push_back(*key);
-        }
-        return p;
+        return pa::crafted::capture(item, keyOf, displayName, issue);
+    }
+    void logSnapshotFailure(RE::AlchemyItem* item, const pa::crafted::Issue& issue)
+    {
+        SKSE::log::warn("Poison snapshot rejected: item={:08X} name='{}'; {}; component={} form={:08X}; detail='{}'",
+            item ? item->GetFormID() : 0, displayName(item), pa::crafted::description(issue.reason),
+            issue.index, issue.related, issue.detail);
     }
     std::int32_t count(RE::PlayerCharacter* player, RE::TESBoundObject* item)
     {
@@ -245,8 +237,14 @@ namespace
             !player->GetEquippedObject(false) || player->GetEquippedObject(false)->GetFormID() != request.weapon) {
             notify("Poisoned Ammo: equipment changed. Select the poison again."); return;
         }
-        const auto current = snapshot(poison);
-        if (!current || *current != request.recipe.poison || !safeInput(player, ammo) || !safeInput(player, poison)) {
+        pa::crafted::Issue snapshotIssue;
+        const auto current = snapshot(poison, &snapshotIssue);
+        if (!current) {
+            logSnapshotFailure(poison, snapshotIssue);
+            notify(fmt::format("Poisoned Ammo: {}. No items consumed.", pa::crafted::description(snapshotIssue.reason)));
+            return;
+        }
+        if (*current != request.recipe.poison || !safeInput(player, ammo) || !safeInput(player, poison)) {
             notify("Poisoned Ammo: inputs changed, are stolen, or are quest items."); return;
         }
         const auto beforeAmmo = count(player, ammo), beforePoison = count(player, poison);
@@ -400,8 +398,18 @@ namespace
         }
         const auto weaponEntry = player->GetEquippedEntryData(false);
         if (weaponEntry && weaponEntry->IsPoisoned()) { fail("Poisoned Ammo: use up the poison already on your bow first."); return; }
-        const auto ammoKey = keyOf(ammo); const auto poisonData = snapshot(poison);
-        if (!ammoKey || !poisonData) { fail("Poisoned Ammo: this temporary item cannot be saved safely. No items consumed."); return; }
+        const auto ammoKey = keyOf(ammo);
+        if (!ammoKey) {
+            SKSE::log::warn("Ammo snapshot rejected: {:08X} '{}'; no stable source record", ammo->GetFormID(), displayName(ammo));
+            fail("Poisoned Ammo: this ammunition has no stable source record. No items consumed."); return;
+        }
+        pa::crafted::Issue snapshotIssue;
+        const auto poisonData = snapshot(poison, &snapshotIssue);
+        if (!poisonData) {
+            logSnapshotFailure(poison, snapshotIssue);
+            const auto text = fmt::format("Poisoned Ammo: {}. No items consumed.", pa::crafted::description(snapshotIssue.reason));
+            fail(text.c_str()); return;
+        }
         if (!safeInput(player, ammo) || !safeInput(player, poison)) { fail("Poisoned Ammo: quest items and stolen inputs cannot be used."); return; }
         float doses = 1.0f;
         if (settings.arrowsPerBottle) doses = static_cast<float>(settings.arrowsPerBottle);
@@ -732,7 +740,7 @@ extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 5, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 6, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();

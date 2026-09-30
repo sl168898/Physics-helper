@@ -1,3 +1,31 @@
+# Version 0.2.6 — player-crafted poison correction
+
+Fixes a false rejection of normal player-crafted poisons, including Weakness to
+Fire. The previous script check used a helper which only reports whether the
+item has a Papyrus handle. A handle alone does not mean the poison has attached
+custom scripts or cannot be saved. The new check inspects the actual bound
+script objects, allowing ordinary Potion/Form wrappers and rejecting real custom
+item scripts whose state this mod cannot preserve.
+
+Install this full package over 0.2.5 in MO2 and restart Skyrim through SKSE.
+Keep Wheeler Elemental Ammo 1.4.0 and your existing New Anims setup. The 0.2.5
+reload-before-poison sequence is included. Existing records, perks, recipe IDs
+and co-save format are unchanged; no new game or animation regeneration is needed.
+
+The poison's effects, magnitudes, durations, areas, costs and stable keywords are
+still copied into its saved recipe. Reducing fire resistance is a supported
+status effect; it is not converted into direct fire damage. Existing crafted
+batches are unaffected.
+
+If a different restriction is encountered, the notification now identifies it:
+custom attached script, unsupported per-effect conditions, temporary magic effect,
+temporary keyword, invalid effect list, or unstable ammunition. Rejection details
+are always written to Documents/My Games/Skyrim Special Edition/SKSE/
+PoisonedAmmoNative.log; TraceProjectiles need not be enabled. Reproduce once and
+copy that log before restarting Skyrim if the item is still refused. The exact
+user-reported bottle has not been inspected in-game, so another restriction may
+still need a targeted compatibility change. Rejected requests consume nothing.
+
 # Version 0.2.5 — finish crossbow reload before poisoning
 
 Install this full package over 0.2.4 in MO2, let its PoisonedAmmoNative.dll win,
@@ -148,7 +176,7 @@ Inventory poison use immediately coats one bottle's batch; the hotkey opens bulk
 - Keep the matching `.ess` and `.skse` save files together. Do not remove/rename the companion ESP, compact its FormIDs, or uninstall it from a save containing these items.
 - Start testing on a profile without the original Poisoned Arrows and Bolts mod. This beta does not migrate its DPF-generated ammunition. Existing mods can retain DPF if they independently need it; this mod neither loads nor edits DPF data.
 - Missing source plugins leave their recipe slots reserved and unavailable; restore those plugins to recover functionality. Existing form IDs must not be compacted or reassigned mid-save.
-- Quest items and inputs reported stolen by the engine are refused. Temporary ammo and ammunition using non-arrow projectile types are refused. Bound arrows are not a supported feature. Player-created dynamic poisons with custom per-effect CTDA conditions, VMAD data, or dynamic MGEF/keyword records are refused rather than losing that data. Normal alchemy-created poisons do not need those features.
+- Quest items and inputs reported stolen by the engine are refused. Temporary ammo and ammunition using non-arrow projectile types are refused. Bound arrows are not a supported feature. Player-created dynamic poisons with custom per-effect CTDA conditions, attached custom item scripts, or dynamic MGEF/keyword records are refused rather than losing that data. Normal alchemy-created poisons do not need those features.
 - Poisoning a bow already holding another poison is refused during crafting. If another mod later puts weapon poison on a bow firing this ammo, the ammo's poison takes precedence; the engine may still consume the weapon's charge. Avoid combining both.
 - NPC ammunition consumption follows Skyrim and your installed mods, including vanilla infinite follower ammunition behavior. This mod does not change AI consumption rules.
 - Requiem/LoreRim compatibility is a design target, **not a tested certification**. Original keywords and native perk calculations are retained, but mods that match exact ammo FormIDs, replace projectile hooks without chaining, consume items in event callbacks, or cache base-form data may need a patch.

@@ -1,3 +1,27 @@
+# Player-crafted poison checks, v0.2.6 (not yet run in Skyrim)
+
+1. Use the same player-crafted Weakness to Fire poison that was rejected.
+   With a crossbow and ordinary bolts, click it in Inventory: consume one bottle,
+   create one batch with its original effects, then reload before poisoning.
+2. Repeat with F8 and Wheeler, then a bow/arrows. Test a mixed-effect crafted
+   poison and the LAST bottle of a crafted poison. The output must preserve all
+   original effect magnitudes/durations, subject to the existing coating perks.
+3. Save, quit to desktop, restart and load with the matching co-save. Fire a
+   saved coated bolt and verify the target's fire-resistance reduction/duration.
+   Native resistance/immunity remains in effect; this is not direct fire damage.
+4. Confirm bought/found poisons, elemental icons, dose perks, and first/third
+   person reload sequencing still work. Old stable recipe records are unchanged.
+5. If refused, capture the new exact notification and PoisonedAmmoNative.log
+   from that session. The log identifies the rejected poison and component;
+   its component index is zero-based. No items may be consumed on rejection.
+
+The production snapshot adapter is compiled into tests using engine doubles.
+Tests cover a nonempty VM handle without scripts (the original failure), native
+Potion/Form wrappers, actual custom scripts, unknown script metadata, missing
+VM/policy, unrelated script handles, static scripted records, mixed effects,
+last-bottle independence, byte-format-compatible save/load, and every retained
+component rejection. Windows compilation validates the real pinned VM API.
+
 # Crossbow reload sequencing checks, v0.2.5 (not yet run in Skyrim)
 
 1. Draw your Iron Heavy Crossbow with ordinary Iron Bolts. Click a poison in
