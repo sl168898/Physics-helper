@@ -15,6 +15,7 @@ struct Simulation
     bool valid = true, paused = false, equipped = true;
     std::optional<bool> reloading = false;
     int deliveries = 0, cancellations = 0;
+    explicit Simulation(bool expected = true) : gate(signal, expected) {}
     void event(std::string_view tag) {
         const auto kind = reloadEventType(tag);
         if (kind != ReloadEvent::none) signal = nextReloadSignal(signal, kind);
@@ -69,9 +70,12 @@ int main()
         assert(s.deliveries == 0 && s.cancellations == 1);
     }
     // No new reload: known idle still needs a post-menu startup grace period.
-    { Simulation s; s.frames(19); assert(!s.deliveries); s.frames(8); assert(s.deliveries == 1); }
+    { Simulation s(false); s.frames(19); assert(!s.deliveries); s.frames(8); assert(s.deliveries == 1); }
+    // An ammo swap MUST produce completion evidence. An idle-looking first-
+    // person graph or missing event cannot become an arbitrary timed fallback.
+    { Simulation s; s.frames(400); assert(s.deliveries == 0 && s.cancellations == 1); }
     // An unpaused item menu resets the idle grace period as well.
-    { Simulation s; s.frames(15); s.paused = true; s.frames(500); s.paused = false;
+    { Simulation s(false); s.frames(15); s.paused = true; s.frames(500); s.paused = false;
       s.frames(10); assert(!s.deliveries); s.event("reload"); s.reloading = true; s.frames(40);
       s.event("reloadStop"); s.reloading = false; s.frames(5); assert(s.deliveries == 1); }
     // Another reload begins during the blend-out: wait for the newer one.

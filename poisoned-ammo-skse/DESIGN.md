@@ -17,8 +17,10 @@ The player's post-update callback does work only while one visual is pending.
 ReloadGate consumes actual event evidence and a readable IsReloading graph
 state. A true-to-false transition handles missing stop annotations. A stop
 annotation cannot bypass a still-true graph state. After completion it requires
-0.2 seconds of idle gameplay; a later reload start resets settling. If no reload
-occurs at all, the graph must be readable and idle for one second before settling.
+0.2 seconds of idle gameplay; a later reload start resets settling. When auto-equip swaps ammunition, positive completion evidence is required;
+there is no fixed-time release for an idle-looking first-person graph. With
+AutoEquip=0, if no reload occurs, the graph must be readable and idle for one
+second before settling.
 Menu pause/item/modal checks reset the startup/settle grace periods, including
 unpaused inventory. Unknown or stuck state times out after 15 seconds of active
 updates by cancelling, never by forcing the poison animation through a reload.

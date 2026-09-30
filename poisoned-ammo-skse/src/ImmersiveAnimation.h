@@ -132,7 +132,8 @@ namespace pa::animation
         ReloadGate gate;
         bool trace, ammoMatched = false;
         Pending(RE::AlchemyItem* poison, std::int32_t count, Guard valid, bool tracing, EquipmentContext context) :
-            bottles(count), current(std::move(valid)), equipment(context), gate(context.reloadCheckpoint), trace(tracing)
+            bottles(count), current(std::move(valid)), equipment(context),
+            gate(context.reloadCheckpoint, context.expectedAmmo != context.originalAmmo), trace(tracing)
         {
             poisonForm.Pack(static_cast<RE::TESForm*>(poison));
         }

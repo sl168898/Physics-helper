@@ -32,8 +32,9 @@ namespace pa::animation
         float activeTime = 0, quietTime = 0, settledTime = 0;
         bool eventReloading = false, graphWasReloading = false;
         bool sawReload = false, completedReload = false, terminal = false;
+        bool requireReload;
     public:
-        explicit ReloadGate(std::uint64_t checkpoint) : signal(checkpoint) {}
+        explicit ReloadGate(std::uint64_t checkpoint, bool expected = true) : signal(checkpoint), requireReload(expected) {}
 
         ReloadResult advance(float delta, bool valid, bool paused, bool equipmentReady,
             std::optional<bool> graphReloading, std::uint64_t latestSignal)
@@ -71,7 +72,7 @@ namespace pa::animation
             // If equip causes no reload (e.g. AutoEquip=0), require a readable,
             // idle graph for a full second after the menu closes. Unknown state
             // never falls through to a fixed-delay animation.
-            if (completedReload || (!sawReload && graphReloading.has_value() && quietTime >= 1.0f)) {
+            if (completedReload || (!requireReload && !sawReload && graphReloading.has_value() && quietTime >= 1.0f)) {
                 settledTime += dt;
                 if (settledTime >= 0.2f) { terminal = true; return ReloadResult::ready; }
             } else settledTime = 0;
