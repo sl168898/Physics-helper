@@ -1,0 +1,119 @@
+diff --git a/src/bin/Integrations/PoisonedAmmoBridge.h b/src/bin/Integrations/PoisonedAmmoBridge.h
+new file mode 100644
+--- /dev/null
++++ b/src/bin/Integrations/PoisonedAmmoBridge.h
+@@ -0,0 +1,37 @@
++// Optional Poisoned Ammunition integration. MIT, 2026 Physics-helper contributors.
++#pragma once
++#include <Windows.h>
++#include <cstdint>
++#include <optional>
++#include <string>
++
++namespace PoisonedAmmoBridge
++{
++    // Stable C ABI: 0 allows normal weapon poisoning; any other result claims
++    // the click, including a refused/failed coating request. The callee copies
++    // the optional name and enqueues game work before returning.
++    using CoatOneV1 = std::uint32_t (*)(std::uint32_t, const char*, std::uint32_t, std::uint32_t);
++
++    inline bool TryCoat(RE::AlchemyItem* poison, const std::optional<std::string>& name,
++        RE::FormID clickedWeapon, RE::FormID clickedAmmo)
++    {
++        const auto weapon = RE::TESForm::LookupByID<RE::TESObjectWEAP>(clickedWeapon);
++        const auto player = RE::PlayerCharacter::GetSingleton();
++        const auto equipped = player ? player->GetEquippedObject(false) : nullptr;
++        const auto now = equipped ? equipped->As<RE::TESObjectWEAP>() : nullptr;
++        const auto ranged = [](const RE::TESObjectWEAP* item) { return item && (item->IsBow() || item->IsCrossbow()); };
++        if (!poison || !poison->IsPoison() || (!ranged(weapon) && !ranged(now))) return false;
++        const auto module = GetModuleHandleW(L"PoisonedAmmoNative.dll");
++        if (!module) return false;
++        const auto coat = reinterpret_cast<CoatOneV1>(GetProcAddress(module, "PoisonedAmmoNative_CoatOneV1"));
++        if (!coat) {
++            RE::DebugNotification("Wheeler: update Poisoned Ammunition to 0.2.3 or newer for ammunition coating.");
++            logger::warn("PoisonedAmmoNative is loaded but its CoatOneV1 interface is absent; ranged poison use blocked");
++            return true;
++        }
++        const auto handled = coat(poison->GetFormID(), name ? name->c_str() : nullptr, clickedWeapon, clickedAmmo);
++        logger::info("Poisoned ammunition bridge: poison {:08X}; weapon {:08X}; ammo {:08X}; handled {}",
++            poison->GetFormID(), clickedWeapon, clickedAmmo, handled);
++        return handled != 0;
++    }
++}
+diff --git a/src/bin/Wheeler/Wheeler.h b/src/bin/Wheeler/Wheeler.h
+--- a/src/bin/Wheeler/Wheeler.h
++++ b/src/bin/Wheeler/Wheeler.h
+@@ -635,6 +635,8 @@
+ 
+ 	static inline std::optional<RE::FormID> _pendingPoisonApplyFormID = std::nullopt;
+ 	static inline std::optional<std::string> _pendingPoisonInventoryName;
++	static inline RE::FormID _pendingPoisonWeaponID = 0;
++	static inline RE::FormID _pendingPoisonAmmoID = 0;
+ 	static inline std::optional<PendingMiscItemUse> _pendingMiscItemUse = std::nullopt;
+ 	static inline double _lastMiscDispatchTime = 0.0;
+ 	static inline RE::FormID _lastMiscDispatchFormID = 0;
+diff --git a/src/bin/Wheeler/Wheeler.cpp b/src/bin/Wheeler/Wheeler.cpp
+--- a/src/bin/Wheeler/Wheeler.cpp
++++ b/src/bin/Wheeler/Wheeler.cpp
+@@ -25,6 +25,7 @@
+ 
+ #include "bin/API/WheelerAPI.h"
+ #include "bin/Integrations/OStimIntegration.h"
++#include "bin/Integrations/PoisonedAmmoBridge.h"
+ #include "bin/Rendering/Drawer.h"
+ #include "bin/Rendering/ResolutionScaleContext.h"
+ #include "bin/Rendering/TextureManager.h"
+@@ -4001,6 +4002,11 @@
+ 	}
+ 	_pendingPoisonApplyFormID = a_poisonFormID;
+ 	_pendingPoisonInventoryName = std::move(a_inventoryName);
++	const auto player = RE::PlayerCharacter::GetSingleton();
++	const auto weapon = player ? player->GetEquippedObject(false) : nullptr;
++	const auto ammo = player ? player->GetCurrentAmmo() : nullptr;
++	_pendingPoisonWeaponID = weapon ? weapon->GetFormID() : 0;
++	_pendingPoisonAmmoID = ammo ? ammo->GetFormID() : 0;
+ 
+ 	// Ensure the wheel closes without re-triggering RTU activation on close.
+ 	_activateOnCloseFired = true;
+@@ -6854,6 +6860,9 @@
+ 		_pendingPoisonApplyFormID.reset();
+ 		const auto inventoryName = std::move(_pendingPoisonInventoryName);
+ 		_pendingPoisonInventoryName.reset();
++		const auto clickedWeapon = _pendingPoisonWeaponID;
++		const auto clickedAmmo = _pendingPoisonAmmoID;
++		_pendingPoisonWeaponID = _pendingPoisonAmmoID = 0;
+ 
+ 		RE::PlayerCharacter* pc = RE::PlayerCharacter::GetSingleton();
+ 		if (!pc) {
+@@ -6863,6 +6872,9 @@
+ 			if (!poison) {
+ 				Utils::NotificationMessage("Wheeler: Poison not found (may have been removed).");
+ 				LOG_WARN(Activation_RTU, "Poison: pending apply failed (LookupByID failed): {}", poisonFormID);
++			} else if (PoisonedAmmoBridge::TryCoat(poison, inventoryName, clickedWeapon, clickedAmmo)) {
++				// The ammunition plugin owns this click, including refusals. Do not
++				// equip the poison as well or consume a second bottle.
+ 			} else {
+ 				RE::ActorEquipManager* aeMan = RE::ActorEquipManager::GetSingleton();
+ 				if (!aeMan) {
+@@ -8352,6 +8364,9 @@
+ 	_hoveredEntryTime = 0.0f;
+ 	_lastHoveredEntryByWheel.clear();
+ 	_pendingExternalHotkeyDispatch.reset();
++	_pendingPoisonApplyFormID.reset();
++	_pendingPoisonInventoryName.reset();
++	_pendingPoisonWeaponID = _pendingPoisonAmmoID = 0;
+ 	_lastExternalHotkeyDispatchTime = 0.0;
+ 	_lastExternalHotkeyDispatchScanCode = 0;
+ 	_lastExternalHotkeyDispatchModifier = 0;
+diff --git a/src/bin/main.cpp b/src/bin/main.cpp
+--- a/src/bin/main.cpp
++++ b/src/bin/main.cpp
+@@ -398,7 +398,7 @@
+ 	// Startup banner - ALWAYS log version/author info (not gated)
+ 	logger::info("{} {} by {} | Build: {}"sv, Plugin::DISPLAY_NAME, Plugin::DISPLAY_VERSION, Plugin::AUTHOR, Plugin::BUILD_TIMESTAMP);
+ 	logger::info("=== Wheeler - Refined v1.3.3 | 4/26/2026 | External API Enabled | C0kadam ===");
+-	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.6 enabled (2026-09-29; 2K icons with alpha-aware mipmaps and corrected screen sampling)");
++	logger::info("Wheeler - Refined Rename Potions + I4 compatibility patch v1.7 enabled (2026-09-30; one-bottle poisoned ammunition bridge; preserved 2K mip filtering)");
+ 
+ 	SKSE::Init(a_skse);
+ 

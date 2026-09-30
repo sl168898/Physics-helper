@@ -1,4 +1,4 @@
-name: Build Wheeler Icon Sampling Fix
+name: Build Wheeler Poisoned Ammunition Bridge
 on:
   workflow_dispatch:
   push:
@@ -19,12 +19,12 @@ jobs:
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: wheeler-windows2022-staticmd-vcpkg-382c5b8a-v1
-      - name: Build and test Wheeler icon sampling
+      - name: Build and test Wheeler with ammunition bridge
         shell: pwsh
         run: '& .\wheeler-potion-names\tools\build_windows.ps1'
       - name: Upload installable mod
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Wheeler-Icon-Filtering-Component-v1-6
-          path: wheeler-potion-names/_build/Wheeler_Refined_Icon_Filtering_Component_v1_6.zip
+          name: Wheeler-Poison-Ammo-Component-v1-7
+          path: wheeler-potion-names/_build/Wheeler_Refined_Poison_Ammo_Component_v1_7.zip
           if-no-files-found: error

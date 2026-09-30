@@ -37,6 +37,8 @@ Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root '2k-icons.patch
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root '2k-icons.patch'))
 Run 'git' @('-C', $Refined, 'apply', '--check', (Join-Path $Root 'icon-filtering.patch'))
 Run 'git' @('-C', $Refined, 'apply', (Join-Path $Root 'icon-filtering.patch'))
+Run 'git' @('-C', $Refined, 'apply', '--ignore-space-change', '--check', (Join-Path $Root 'poison-ammunition.patch'))
+Run 'git' @('-C', $Refined, 'apply', '--ignore-space-change', (Join-Path $Root 'poison-ammunition.patch'))
 # Run portable and WARP renderer gates before dependency and plugin compilation.
 Run 'cmake' @('-S', (Join-Path $Root 'tests'), '-B', (Join-Path $WorkDirectory 'tests'),
     '-G', 'Visual Studio 17 2022', '-A', 'x64', "-DREFINED_SOURCE=$Refined")
@@ -74,7 +76,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Source 'Wheeler-Refined') 
 foreach ($Name in @('src','cmake','CMakeLists.txt','CMakePresets.json','vcpkg.json','vcpkg-configuration.json','.clang-format','.editorconfig','LICENSE','LICENSES','NOTICE.md','THIRD_PARTY_NOTICES.md','BUILDING.md','README.md','tools')) {
     Copy-Item (Join-Path $Refined $Name) (Join-Path $Source 'Wheeler-Refined') -Recurse
 }
-foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','omen-gluttony-icon.patch','hd-icons.patch','2k-icons.patch','icon-filtering.patch','assets','README.md','build_patch.py','validate_assets.py')) {
+foreach ($Name in @('tools','tests','rename-potions.patch','i4-named-icons.patch','omen-gluttony-icon.patch','hd-icons.patch','2k-icons.patch','icon-filtering.patch','poison-ammunition.patch','assets','README.md','build_patch.py','validate_assets.py')) {
     Copy-Item (Join-Path $Root $Name) $Source -Recurse
 }
 Run 'python' @((Join-Path $Root 'build_patch.py'), '--stage', $Stage)
@@ -84,7 +86,7 @@ $NamedIcons = Join-Path $Stage 'SKSE/Plugins/wheeler/resources/named_powers'
 New-Item -ItemType Directory -Force -Path $NamedIcons | Out-Null
 Copy-Item (Join-Path $Root 'assets/omen_of_gluttony.svg') $NamedIcons
 $Info = [ordered]@{
-    patchVersion = '1.6'; builtUTC = [DateTime]::UtcNow.ToString('o')
+    patchVersion = '1.7'; builtUTC = [DateTime]::UtcNow.ToString('o')
     refinedCommit = $RefinedCommit; commonLibCommit = $CommonCommit; vcpkgCommit = $VcpkgCommit
     patchCommit = $env:GITHUB_SHA
     targetRuntime = 'Steam Skyrim SE 1.6.1170'; targetRefined = '1.3.3.0'
@@ -96,7 +98,9 @@ $Info = [ordered]@{
     automatedTests = '16 batch identity, 11 name-dependent icon cache, 8 named-power icon checks, 19 HD sizing, 16 mip transparency, and 8 D3D11 WARP checks'
     preservedCompatibility = 'Rename Potions v1.0 and Wheeler donor-description bridge from Enchantment Swapper Description Fix v1.1.0'
     descriptionBridgeSourceCommit = '3f2a35c7fe83e67efda98f458488efe5173e9d83'
+    poisonAmmoBridge = 'PoisonedAmmoNative_CoatOneV1'; minimumPoisonAmmoVersion = '0.2.3'
+    poisonAmmoPatchSHA256 = (Get-FileHash (Join-Path $Root 'poison-ammunition.patch') -Algorithm SHA256).Hash.ToLower()
     inGameTested = $false
 }
 $Info | ConvertTo-Json | Set-Content (Join-Path $Stage 'BUILD-INFO.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Icon_Filtering_Component_v1_6.zip') -CompressionLevel Optimal
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Wheeler_Refined_Poison_Ammo_Component_v1_7.zip') -CompressionLevel Optimal
