@@ -1,3 +1,43 @@
+# Corpse Explosion / Huntsman’s Satchel 2.1.0 beta
+
+Combined package requirement: 2.13.0-beta1, Skyrim Steam 1.6.1170.
+
+Corpse Explosion is a selectable trait with a 50-point maximum Health penalty.
+A confirmed player poison/weapon-oil killing blow produces one burst after death.
+The burst deals 25% of actual Health damage personally dealt to that victim;
+weapon, enchantment and spell damage contribute, follower damage and overkill do not.
+Each nearby hostile enemy within 420 units (about six metres) is eligible, with
+line of sight to the corpse. The player, teammates and player-controlled summons
+are excluded. The corpse remains intact and lootable.
+
+The lethal oil controls the damage mix, proportional to its recorded fire, frost,
+shock and poison Health damage. Each portion checks only its matching resistance;
+100% or greater resistance blocks that portion, and negative resistance amplifies it.
+The private native spells bypass generic magic resistance/absorption after this
+calculation and disable magnitude perk scaling, avoiding double resistance or
+Coating Mechanist/Alchemy/Destruction amplification. Native damage delivery remains
+responsible for difficulty scaling, kill credit and essential actors.
+
+Weakness-only oils cannot deal a killing blow. Having an oil active when a weapon
+or follower kills is insufficient. Explosion damage does not contribute to future
+explosions and explosion kills cannot trigger chains. Static poisons, crafted
+poisons and ammunition-delivered oils are observed independently of Satchel recipes.
+
+The observer snapshots source identity before the engine can destroy ActiveEffect.
+Nested native callbacks share exclusive Health-loss accounting. Settlement waits
+until the outermost callback, and the visible burst waits for the actual corpse.
+Actor handles/IDs, never borrowed ActiveEffect pointers, survive deferred tasks.
+CEXP v1 co-save data preserves ongoing damage, pending bursts and consumed corpses;
+older saves without CEXP start tracking on load. Save-generation changes invalidate
+queued work. Fully healed actors out of combat start a fresh damage tally.
+
+The two existing Satchel co-save records and all crafting/refund behavior remain.
+Tests cover nested callbacks, mixed oils, player attribution, overkill, immunity,
+negative resistance, queued death, duplicate suppression and serialization.
+An actual Windows build is required; no in-game runtime test is claimed.
+
+## Previous Satchel documentation
+
 # Huntsman's Satchel 2.0.13 beta
 
 Requires Combined 2.12.0-beta1. Base refund is one original ingredient set per batch, with current harvest perk bonuses evaluated for each ingredient at payout. Green Thumb is applied once through the shared native harvest entry point. The Alchemy 50 bonus is removed. Existing batch IDs, original costs, paid flags, rename support, and save formats are unchanged.

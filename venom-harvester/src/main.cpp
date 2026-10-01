@@ -8,6 +8,7 @@
 #include "DamageObservation.h"
 #include "PendingCrafts.h"
 #include "MenuGate.h"
+#include "CorpseExplosionRuntime.h"
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -31,6 +32,7 @@ namespace
     std::mutex mutex;
     harvest::Ledger ledger;
     harvest::PendingCrafts pendingCrafts;
+    corpse::Runtime corpseExplosion;
 
     bool selected()
     {
@@ -767,8 +769,10 @@ namespace
                 }
             }
             const RE::NiPointer<RE::Actor> keepAlive(actor);
+            corpse::Runtime::Scope corpseObservation(effect, actor, healthChange);
             // Preserve kNone when forwarding: only our observer resolves it.
             original(effect, actor, value, av);
+            corpseObservation.finish();
             if (!actor || (!healthChange && !diagnosticSource)) return;
             const float after = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
             const auto state = actor->AsActorState()->GetLifeState();
@@ -1023,6 +1027,7 @@ namespace
         }
         Result ProcessEvent(const RE::TESFormDeleteEvent* event, RE::BSTEventSource<RE::TESFormDeleteEvent>*) override
         {
+            if (event) corpseExplosion.forget(event->formID);
             if (event) { std::lock_guard lock(mutex); ledger.forgetActor(event->formID); }
             return Result::kContinue;
         }
@@ -1030,11 +1035,13 @@ namespace
 
     void reset()
     {
+        corpseExplosion.reset();
         ++epoch; queued.store(false); menuGate.reset(); damageDiagnostics.store(0);
         std::lock_guard lock(mutex); ledger.clear(); pendingCrafts.clear(); pendingForms.clear();
     }
     void save(SKSE::SerializationInterface* api)
     {
+        corpseExplosion.save(api);
         std::lock_guard lock(mutex);
         const auto bytes = harvest::encode(ledger);
         if (!api->WriteRecord(recordID, 2, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
@@ -1048,6 +1055,7 @@ namespace
         reset();
         std::uint32_t type, version, length;
         while (api->GetNextRecordInfo(type, version, length)) {
+            if (type == corpse::recordID) { corpseExplosion.load(api, version, length); continue; }
             if (type == pendingRecordID && (version == 1 || version == 2) && length <= 64 * 1024 * 1024) {
                 std::vector<std::uint8_t> bytes(length);
                 if (api->ReadRecordData(bytes.data(), length) != length) continue;
@@ -1116,20 +1124,22 @@ namespace
             DamageHook<RE::PeakValueModifierEffect>::install();
             DamageHook<RE::AccumulatingValueModifierEffect>::install();
             DamageHook<RE::AbsorbEffect>::install();
+            corpseExplosion.init();
             SKSE::log::info("Ready: Huntsman's Satchel; PoisonResist -50; outgoing poisons unchanged; 5 native damage observers; implicit actor values resolved");
         } else if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
+            corpseExplosion.setSession(false);
             session.store(false); reset();
         } else if (message->type == SKSE::MessagingInterface::kNewGame) {
-            reset(); session.store(true); resume();
+            reset(); session.store(true); corpseExplosion.setSession(true); resume();
         } else if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
-            session.store(message->data != nullptr); if (session.load()) resume();
+            session.store(message->data != nullptr); corpseExplosion.setSession(session.load()); if (session.load()) resume();
         }
     }
 }
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 0, 13, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 1, 0, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -1144,10 +1154,10 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel 2.0.13 beta; Skyrim 1.6.1170; harvest perk refunds; Alchemy 50 bonus removed");
+    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.0 beta; Skyrim 1.6.1170; typed alchemical corpse bursts");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
-    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); reset(); });
+    serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); corpseExplosion.setSession(false); reset(); });
     if (!SKSE::GetPapyrusInterface()->Register([](RE::BSScript::IVirtualMachine* vm) {
         vm->RegisterFunction("Poll", "VH_Native", poll); return true;
     })) return false;
