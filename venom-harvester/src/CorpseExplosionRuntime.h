@@ -245,13 +245,14 @@ namespace corpse
             bool queuedBefore{}, essential{}, finished{};
         public:
             Scope(RE::Actor* a, Origin origin, bool healthChange) {
-                if (!healthChange || !self || !self->selected() || !alive(a) ||
+                essential = a && a->GetActorRuntimeData().boolFlags.any(RE::Actor::BOOL_FLAGS::kEssential);
+                if (!healthChange || !self || !self->selected() || !a ||
+                    !harvest::canObserveHealthBefore(a->AsActorState()->GetLifeState(), essential) ||
                     a == RE::PlayerCharacter::GetSingleton() || health(a) <= 0) return;
                 runtime = self; actor = RE::NiPointer<RE::Actor>(a); generation = runtime->epoch.load();
                 frame = {a->GetFormID(), health(a), 0, origin, active, std::nullopt};
                 active = &frame;
                 queuedBefore = killQueued(a);
-                essential = a->GetActorRuntimeData().boolFlags.any(RE::Actor::BOOL_FLAGS::kEssential);
                 if (!queuedBefore) { std::lock_guard lock(runtime->mutex); runtime->ledger.resurrected(frame.actor); }
             }
             Scope(RE::ActiveEffect* effect, RE::Actor* a, bool healthChange) :

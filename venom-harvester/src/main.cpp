@@ -744,11 +744,14 @@ namespace
             const auto storedAV = effect ? effect->actorValue : RE::ActorValue::kNone;
             const auto resolvedAV = harvest::effectiveActorValue(av, storedAV, RE::ActorValue::kNone);
             const bool healthChange = resolvedAV == RE::ActorValue::kHealth;
-            const bool alive = actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
-            const float health = alive ? actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) : 0;
+            const auto stateBefore = actor ? actor->AsActorState()->GetLifeState() : RE::ACTOR_LIFE_STATE::kDead;
+            const bool essential = actor && actor->GetActorRuntimeData().boolFlags.any(RE::Actor::BOOL_FLAGS::kEssential);
+            const bool alive = actor && harvest::canObserveHealthBefore(stateBefore, essential);
+            // Keep the real pre-tick Health even outside kAlive. Fabricating
+            // zero here hid positive-Health bleedout victims from attribution.
+            const float health = actor ? actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) : 0;
             const auto beforeProcess = actor ? actor->GetMiddleHighProcess() : nullptr;
             const bool queuedBefore = beforeProcess && beforeProcess->killQueued;
-            const bool essential = actor && actor->GetActorRuntimeData().boolFlags.any(RE::Actor::BOOL_FLAGS::kEssential);
             const auto rejection = poisonRejection(effect, actor);
             const bool eligible = healthChange && alive && health > 0 && !queuedBefore && !rejection;
             // The ActiveEffect can be deleted inside the engine's call.
@@ -782,11 +785,12 @@ namespace
                 queuedBefore, queuedAfter,
                 state == RE::ACTOR_LIFE_STATE::kDying || state == RE::ACTOR_LIFE_STATE::kDead, essential});
             if (diagnosticSource) SKSE::log::info(
-                "Poison modification: source {:08X}; batch {}; victim {:08X}; caster {:08X}; AV input {} stored {} resolved {}; value {}; alive-before {}; Health {} -> {}; state {}; killQueued {} -> {}; eligible {}; source check {}; lethal {}; nested lethal {}",
+                "Poison modification: source {:08X}; batch {}; victim {:08X}; caster {:08X}; AV input {} stored {} resolved {}; value {}; alive-before {}; Health {} -> {}; state {}; killQueued {} -> {}; eligible {}; source check {}; lethal {}; nested lethal {}; state-before {}; essential {}",
                 diagnosticSource, diagnosticNonce, actor->GetFormID(), diagnosticCaster,
                 static_cast<std::int32_t>(av), static_cast<std::int32_t>(storedAV), static_cast<std::int32_t>(resolvedAV),
                 value, alive, health, after, static_cast<unsigned>(state), queuedBefore, queuedAfter,
-                eligible, rejection ? rejection : "accepted", lethal, serial != lethalSerial);
+                eligible, rejection ? rejection : "accepted", lethal, serial != lethalSerial,
+                static_cast<unsigned>(stateBefore), essential);
             if (!lethal || serial != lethalSerial) return;
             ++lethalSerial; // An unbound poison can also block outer attribution.
             if (!eligible || generation != epoch.load() || !selected()) return;
@@ -1139,7 +1143,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 1, 0, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 1, 1, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -1154,7 +1158,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.0 beta; Skyrim 1.6.1170; typed alchemical corpse bursts");
+    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.1 beta; Skyrim 1.6.1170; nonessential bleedout poison kills observed");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); corpseExplosion.setSession(false); reset(); });

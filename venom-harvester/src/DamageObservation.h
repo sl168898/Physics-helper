@@ -3,6 +3,15 @@
 
 namespace harvest
 {
+    // Nonessential actors can enter kBleedout with positive Health, then die
+    // on a later poison tick. Bleedout itself is not a kill: the existing
+    // Health crossing and newly committed death checks still have to pass.
+    template<class LifeState>
+    constexpr bool canObserveHealthBefore(LifeState state, bool essential)
+    {
+        return state == LifeState::kAlive || (state == LifeState::kBleedout && !essential);
+    }
+
     // kNone is the native "use ValueModifierEffect::actorValue" sentinel.
     // This is for observation only: forward the original argument unchanged.
     template<class ActorValue>

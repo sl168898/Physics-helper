@@ -1,3 +1,40 @@
+# Version 2.1.1 beta: poison kills after nonessential bleedout
+
+Fixes the missed killing blows shown in the supplied 2026-10-02 log. The poison
+batch was correctly recorded, its marker matched, the player was the caster,
+and source checks accepted every Health tick. Each victim entered life state
+8 (bleedout) while still above zero Health. The next poison tick crossed zero
+and newly queued death, but 2.1.0 required state 0 and substituted zero for the
+pre-tick Health. It therefore never offered a refund or a corpse explosion.
+
+The observer now accepts nonessential bleedout as a living pre-damage state
+and reads the actual Health before the tick. This applies to both Satchel and
+Corpse Explosion. A positive-to-zero Health crossing plus newly queued or
+actual death is still required. Entering bleedout alone cannot trigger either
+reward. Essential bleedout, pre-existing death queues, corpse ticks, non-Health
+damage, nonlethal damage and duplicate batch claims remain excluded.
+
+Regression tests replay all three logged final sequences:
+20.117188 -> 3.8125 -> -12.4921875;
+20.500595 -> 8.272079 -> -3.9564362;
+22.475403 -> 2.0945435 -> -18.286316.
+They check one ingredient refund, one correctly capped corpse-explosion budget,
+and rejection of essential/previously dying targets. Logs now include the
+pre-tick life state and essential status, as well as the real pre-tick Health.
+
+Install the Combined 2.13.1-beta1 package over 2.13.0-beta1 with Skyrim closed,
+let its VenomHarvester.dll win, and restart through SKSE. No ESP/script/icon or
+save-format changes are needed. The startup log must show native version 2.1.1.
+Reload a save before the failed kill, or use a fresh unclaimed batch on a fresh
+target. The old log contains no queued refund, so old kills cannot be paid
+retroactively. Expect Poison lethal followed by Refunded ingredient; with
+Corpse Explosion selected, expect a confirmed killing blow and one later burst.
+
+This fix addresses the confirmed dagger-test failure. Coated-ammunition proxy
+identity matching is a separate compatibility check and is not changed here.
+Windows tests are automated; an in-game retest in the user's load order remains
+necessary.
+
 # Corpse Explosion / Huntsman’s Satchel 2.1.0 beta
 
 Combined package requirement: 2.13.0-beta1, Skyrim Steam 1.6.1170.
