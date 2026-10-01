@@ -60,7 +60,13 @@ Get-ChildItem (Join-Path $Build 'vcpkg_installed/x64-windows-static-md/share') -
 $Sources = [ordered]@{}
 $SourcePaths = @('src','tests','tools','Data','CMakeLists.txt','vcpkg.json','README.md','TESTING.md','DESIGN.md','CRASH_FIX.md','LICENSE')
 foreach ($Name in $SourcePaths) {
-    Get-ChildItem (Join-Path $Root $Name) -Recurse -File | Sort-Object FullName | ForEach-Object {
+    $SourcePath = Join-Path $Root $Name
+    $SourceFiles = if (Test-Path $SourcePath -PathType Container) {
+        Get-ChildItem -LiteralPath $SourcePath -Recurse -File
+    } else {
+        Get-Item -LiteralPath $SourcePath
+    }
+    $SourceFiles | Sort-Object FullName | ForEach-Object {
         $Relative = [IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\','/')
         $Text = [IO.File]::ReadAllText($_.FullName).Replace("`r`n", "`n")
         $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
