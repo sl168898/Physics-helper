@@ -1,0 +1,66 @@
+#include "PrecisionCore.h"
+#include <cassert>
+namespace RE {
+    struct BGSPerk {};
+    struct Form { unsigned id{}; unsigned GetFormID() { return id; } };
+    struct Actor : Form { bool owns = true; bool HasPerk(BGSPerk*) { return owns; } };
+    struct TESObjectWEAP : Form {};
+    struct PlayerCharacter : Actor { static PlayerCharacter* GetSingleton(); };
+    PlayerCharacter player;
+    PlayerCharacter* PlayerCharacter::GetSingleton() { return &player; }
+}
+namespace SKSE::log { template<class... T> void info(T&&...) {} }
+namespace precision {
+    RE::BGSPerk perkRecord;
+    auto perk = &perkRecord;
+    bool available = true, trace = false;
+    thread_local unsigned entryDepth{};
+    std::uint64_t epoch = 7;
+    bool active(std::uint64_t value) { return value == epoch; }
+@@CRITICAL_HOOK@@
+}
+int calls{};
+bool nested{};
+RE::TESObjectWEAP weapon;
+RE::Actor target;
+void native(std::uint32_t entry, RE::Actor* owner, RE::TESObjectWEAP* w, RE::Actor* t, float* value)
+{
+    ++calls;
+    assert(w == &weapon && t == &target && owner);
+    if (nested) {
+        nested = false;
+        float other = 0;
+        precision::CriticalHook::thunk(1, owner, w, t, &other);
+        assert(other == 10); // Never reapply the same bonus in a nested query.
+    }
+    *value += 10; // Stand-in for the game's existing chance / critical perk.
+    assert(entry == 1 || entry == 2);
+}
+int main()
+{
+    using namespace precision;
+    RE::player.id = 0x14; weapon.id = 0xABC; target.id = 0x77;
+    CriticalHook::original = native;
+    Frame frame{{7, 0x14, 0xABC, 0xF01, 0x123, 0x456, 100}, 0x77};
+    {
+        FrameGuard guard(&frame);
+        float v = 0; CriticalHook::thunk(1, &RE::player, &weapon, &target, &v);
+        assert(v == 35 && calls == 1);
+        v = 20; CriticalHook::thunk(2, &RE::player, &weapon, &target, &v);
+        assert(v == 90 && calls == 2); // (20 + native 10) * 3, not 20*3+10.
+        v = 90; CriticalHook::thunk(1, &RE::player, &weapon, &target, &v); assert(v == 100);
+        RE::player.owns = false;
+        v = 0; CriticalHook::thunk(1, &RE::player, &weapon, &target, &v); assert(v == 10);
+        RE::player.owns = true;
+        ++epoch;
+        v = 20; CriticalHook::thunk(2, &RE::player, &weapon, &target, &v); assert(v == 30);
+        --epoch;
+        nested = true;
+        v = 0; CriticalHook::thunk(1, &RE::player, &weapon, &target, &v); assert(v == 35);
+        RE::Actor npc; npc.id = 0x14;
+        v = 0; CriticalHook::thunk(1, &npc, &weapon, &target, &v); assert(v == 10);
+        FrameGuard plain(nullptr);
+        v = 20; CriticalHook::thunk(2, &RE::player, &weapon, &target, &v); assert(v == 30);
+    }
+    assert(!current && entryDepth == 0);
+}

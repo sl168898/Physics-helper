@@ -1,3 +1,39 @@
+# Alchemical Precision integration (0.3.0)
+
+`CM_AlchemicalPrecision` is additive PERK 0x803 in CoatingMechanist.esp. Like the
+existing coating perks it is an SKSE-backed marker; it has no duplicate CK entry
+that would add the bonus a second time. CTDA gates require GetBaseActorValue
+Marksman >=60 AND HasPerk 0x802. Perk Adjuster adds only the new connected node.
+
+Precision.h detours Projectile::Launch (AE Address Library 44108) to snapshot
+current Stamina, source weapon, coating and save generation for each player bolt.
+It never asks which ammo or weapon is equipped later. The recipe owner validates
+stable coated-ammo slots. The existing ArrowProjectile impact/process wrappers
+supply independent critical contexts, even without Coating Mechanist I/II.
+
+BGSEntryPoint::HandleEntryPoint (AE 23526) is variadic. An x64 tail gate redirects
+only entry 1 (critical chance) and entry 2 (critical damage), whose parameters are
+owner, source weapon, target and float result pointer. Other entry points tail-
+jump the original trampoline with all registers and stack arguments untouched.
+After the original resolves existing native perks, entry 1 adds 25 and clamps
+to 100; entry 2 multiplies the ordinary critical bonus by 1+0.02*shot Stamina.
+The engine retains RNG, critical flags, damage application and resistances.
+There is no second roll, manual Health damage, full-hit multiplication or write
+to HitData::criticalDamageMult (misnamed reflected damage in the pinned headers).
+
+Transient shot handles include engine generation bits, are removed at OnKill,
+are bounded to 4096 records and are cleared on save-game load/revert. No strong
+projectile pointers are retained. Existing recipe serialization is unchanged.
+Previously in-flight bolts on a load do not receive this perk's enhancement.
+Nested unrelated projectile scopes clear the outer context and restore it after
+return. A depth guard prevents duplicate application in nested entry queries.
+MinHook setup fails closed for this perk without disabling existing coating.
+
+Validation includes an executable Windows x64 gate test with floating variadic
+registers, extra stack arguments and a 64-bit return sentinel. The production
+critical wrapper and impact wrapper are extracted into tests to exercise the
+actual code compiled into the DLL. CommonLib and vcpkg remain pinned.
+
 # Coating Mechanist balance update (0.2.9)
 
 The rank selector returns 1.0 without a perk, 1.25 for rank I, and 1.5 for

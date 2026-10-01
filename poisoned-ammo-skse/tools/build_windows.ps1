@@ -55,21 +55,23 @@ Get-ChildItem (Join-Path $Build 'vcpkg_installed/x64-windows-static-md/share') -
     $Copyright = Join-Path $_.FullName 'copyright'
     if (Test-Path $Copyright) { Copy-Item $Copyright (Join-Path $Licenses ($_.Name + '-LICENSE')) }
 }
-$Source = Join-Path $Stage 'Source'
-New-Item -ItemType Directory -Force -Path $Source | Out-Null
-foreach ($Name in @('src','tests','tools','Data','CMakeLists.txt','vcpkg.json','README.md','TESTING.md','DESIGN.md','CRASH_FIX.md','LICENSE')) {
-    Copy-Item (Join-Path $Root $Name) $Source -Recurse
-}
+# Source is versioned in Git. Ship an exact commit pointer and LF-normalized
+# source hashes instead of duplicating the repository in the install archive.
 $Sources = [ordered]@{}
-Get-ChildItem $Source -Recurse -File | Sort-Object FullName | ForEach-Object {
-    $Relative = [IO.Path]::GetRelativePath($Source, $_.FullName).Replace('\','/')
-    $Text = [IO.File]::ReadAllText($_.FullName).Replace("`r`n", "`n")
-    $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
-    $Sources[$Relative] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
+$SourcePaths = @('src','tests','tools','Data','CMakeLists.txt','vcpkg.json','README.md','TESTING.md','DESIGN.md','CRASH_FIX.md','LICENSE')
+foreach ($Name in $SourcePaths) {
+    Get-ChildItem (Join-Path $Root $Name) -Recurse -File | Sort-Object FullName | ForEach-Object {
+        $Relative = [IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\','/')
+        $Text = [IO.File]::ReadAllText($_.FullName).Replace("`r`n", "`n")
+        $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+        $Sources[$Relative] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
+    }
 }
+$SourceUrl = "https://github.com/sl168898/Physics-helper/tree/$($env:GITHUB_SHA)/poisoned-ammo-skse"
+"Exact build source: $SourceUrl`nBuild instructions: tools/build_windows.ps1`nSource file hashes: BuildInfo.json" | Set-Content (Join-Path $Stage 'SOURCE.txt') -Encoding utf8
 $Info = [ordered]@{
-    plugin = 'PoisonedAmmoNative'; version = '0.2.9-beta'; runtime = 'Steam 1.6.1170'
-    source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
+    plugin = 'PoisonedAmmoNative'; version = '0.3.0-beta'; runtime = 'Steam 1.6.1170'
+    source_commit = $env:GITHUB_SHA; source_url = $SourceUrl; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     esp_sha256 = (Get-FileHash (Join-Path $Stage 'PoisonedAmmoNative.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
     perks_sha256 = (Get-FileHash (Join-Path $Stage 'CoatingMechanist.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -85,8 +87,12 @@ $Info = [ordered]@{
     crafted_poison_handle_check_fixed = $true; production_poison_snapshot_tests = 'passed'
     runtime_keyword_persistence = $true; runtime_keyword_tests = 'passed'; legacy_v1_golden_tests = 'passed'
     global_form_keyword_lookup = $true; factory_keyword_regression_tests = 'passed'
+    alchemical_precision = $true; precision_form_id = '0x803|CoatingMechanist.esp'
+    precision_marksman = 60; precision_parent = 'Measured Dose'; native_critical_chance_points = 25
+    critical_bonus_stamina_per_point = 0.02; stamina_snapshot = 'Projectile::Launch'
+    native_critical_wrapper_tests = 'passed'; windows_x64_variadic_gate_tests = 'passed'
     recipe_payload_versions = @(1, 2)
     in_game_tested = $false; recipe_capacity = 512; dynamic_form_creation = $false; papyrus_scripts = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_9_Beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_3_0_Beta.zip')

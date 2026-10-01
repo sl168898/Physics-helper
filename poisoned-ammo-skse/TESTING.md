@@ -1,3 +1,39 @@
+# Alchemical Precision 0.3.0 beta: in-game acceptance check
+
+1. Install the complete archive and launch Steam 1.6.1170 through SKSE. In the
+   Marksman tree, find Alchemical Precision connected above Measured Dose.
+   It must require Measured Dose, base Marksman 60, and one perk point. Check
+   Marksman 59, then 60; test without and with Measured Dose. Do not use console
+   addperk to evaluate purchase requirements, because it bypasses the perk menu.
+2. Enable `TraceProjectiles=1` in `SKSE/Plugins/PoisonedAmmoNative.ini`, restart,
+   and inspect `Documents/My Games/Skyrim Special Edition/SKSE/PoisonedAmmoNative.log`.
+   Expect `Alchemical Precision ready` at startup. A fired coated bolt with the
+   perk must log `Alchemical Precision shot` and the firing Stamina.
+3. Fire plain bolts, coated arrows from a bow, and coated bolts without the perk.
+   None should log an enhanced chance/critical bonus. With the perk, test coated
+   crossbow bolts separately with poison, elemental oil, and pure weakness oil.
+   Coating Mechanist I/II must not be needed.
+4. With existing critical perks active, inspect `Alchemical Precision chance`:
+   enhanced chance must be ordinary +25, capped at 100. The engine rolls once;
+   a noncritical shot must not receive the critical-bonus multiplier. On a native
+   critical, the `critical bonus` line must be ordinary * (1 + 0.02 * firing Stamina).
+   For ordinary=20, Stamina 100/500/1000 produces 60/220/420. These log values are
+   the native critical bonus, not the full hit or the target's final Health loss.
+5. Fire at a distant target, then change Stamina or switch weapons before impact.
+   The bonus must use the logged firing Stamina and source crossbow. Test blocked
+   hits, armored targets, misses, rapid consecutive bolts and a reflected-damage
+   target. There must be no multiplier applied to poison ticks or reflected damage.
+6. Save/reload with coated ammunition in inventory, then fire a fresh bolt. The
+   coating, new perk and critical behavior must still work. Snapshots of bolts
+   already in flight are intentionally cleared on load; no impact-time Stamina
+   substitute is used. Turn tracing back off when finished.
+
+Automated checks cover native modifier ordering, exactly one original entry
+call, nested-query isolation, real Windows x64 variadic forwarding and return
+registers, Stamina arithmetic, shot-cache lifetime, the production impact pointer
+ABI, generated perk records/tree prerequisites, and all existing recipe tests.
+They do not substitute for this in-game check.
+
 # Coating Mechanist balance checks, v0.2.9
 
 1. Confirm the startup log says 0.2.9 and the perk descriptions say 25% / 50%.

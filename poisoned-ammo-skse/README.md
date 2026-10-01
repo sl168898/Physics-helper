@@ -1,4 +1,32 @@
-# Version 0.2.9 — Coating Mechanist balance update
+# Version 0.3.0 beta — Alchemical Precision
+
+Adds a one-point, single-rank Marksman perk above Measured Dose. Buying it
+requires base Marksman 60 and Measured Dose. Coating Mechanist I/II are not
+additional prerequisites.
+
+Coated crossbow bolts gain 25 percentage points of native critical chance,
+capped at 100%. All their native criticals receive an enhanced critical bonus:
+`ordinary critical bonus * (1 + 0.02 * current Stamina when fired)`.
+This is 2% per ONE Stamina point. A normal 20-point critical bonus becomes
+60 at 100 Stamina, 220 at 500, or 420 at 1000. It does not consume Stamina.
+Skyrim still rolls once. Existing perks resolve first. Ordinary physical shot
+damage, poison/oil damage, enchantments and noncritical hits are not multiplied.
+Poisons and elemental or pure-weakness oils all qualify as coatings.
+
+Install this complete archive over the previous Poisoned Ammunition / Coating
+Perks mod in MO2, let its files win, and restart through SKSE. Enable both
+PoisonedAmmoNative.esp and CoatingMechanist.esp; keep Perk Adjuster and Address
+Library installed. Target: Skyrim SE Steam 1.6.1170. No new game, trait selection,
+or animation regeneration is needed. Existing coating recipes and perk IDs are
+preserved. Buy Alchemical Precision normally in the Marksman tree.
+
+This is a Windows-built beta with automated native-wrapper and ABI tests;
+Skyrim and the user's complete load order have not been run here. See the first
+section of TESTING.md for the in-game check. Stamina snapshots are transient:
+a bolt already in flight when saving/reloading does not retain this perk's bonus;
+bolts fired after loading do. Inventory coatings remain saved as before.
+
+## Previous version 0.2.9 — Coating Mechanist balance update
 
 Coating Mechanist I now strengthens crossbow-delivered poisons and weapon oils
 by 25% (x1.25). Coating Mechanist II now gives 50% total (x1.5), replacing rank I.
