@@ -1,3 +1,61 @@
+# Version 2.1.3 beta: corpse-origin area delivery
+
+The latest log confirms poison kills and two nonzero cast requests, but the
+user reports camera shake without damage. Earlier `delivered` lines recorded
+only the requested magnitude: they did not prove native acceptance or Health
+loss. The exact cause of those missing hits is not established from that log.
+
+The supplied Ordinator archive provides a working reference. Its
+ORD_Damnation2_Script.OnDying checks MagicDamageFire and calls its blast
+Spell.Cast with the dying target as the source and no explicit target. The
+Corpse Gas blast record uses Self delivery, two Health-damage effects with
+25/15-foot areas and magnitude 150 each, and an explosion attached to each
+magic effect. We use that delivery pattern, independently implemented. No
+Ordinator code, forms, assets or master dependency are included.
+
+Our four private damage spells now use Self delivery, a 25-foot native search
+area, zero-duration Health damage and their matching private explosion. The
+corpse's instant caster fires each nonzero damage portion, with the player as
+blame actor. There is no separate PlaceObjectAtMe visual or player-origin
+TargetActor cast. The corpse's 420-unit radius (about six metres) remains the
+actual damage limit; the slightly wider native search area does not increase
+it. Our loaded-actor snapshot, space/range/hostility/companion/summon filters,
+corpse line-of-sight check, and a second check at application protect excluded
+actors. A native MagicTarget.AddTarget wrapper applies matching resistance,
+sets the actual per-target effect magnitude, attributes it to the player,
+and forwards the effect to Skyrim. Each actor is admitted once per type per
+corpse; rejected effects are not retried with direct Health subtraction.
+Ordinary spells pass through the wrapper unchanged.
+
+The poison visual selector no longer mistakes spider web strips for a poison
+explosion. If no explicit poison explosion is available, it uses the known
+vanilla shout shockwave. Private visuals have no physical damage, force,
+secondary spell, hazard or projectile; image-space swap and controller
+vibration are disabled. Fire/frost/shock retain their loaded elemental visuals.
+
+Diagnostics distinguish:
+- `area-cast`: requested amount and eligible enemy count, originating at corpse.
+- `area-apply`: native acceptance, input/final magnitude, resistance and Health
+  at that call. Acceptance alone is not evidence of damage.
+- `health-update`: an observed native Health modification from our effect,
+  including actual Health lost, even if the effect updates after the cast.
+- `area-result`: attempted and accepted target counts for that type.
+- `candidate`: excluded nearby targets, including failed corpse line of sight.
+
+Install the COMPLETE Combined 2.13.3-beta1 package. Both its ESP and
+VenomHarvester.dll must win conflicts. The DLL refuses mismatched old area
+records and writes a clear error; other Satchel functionality remains active.
+The startup log must say 2.1.3. All prior save records and trait IDs are kept.
+Use two hostile enemies standing within about six metres of each other; let
+your oil/poison kill one and inspect the survivor's Health. Send the fresh
+VenomHarvester.log if damage remains absent. A nearby neutral deer is excluded
+by the enemy-only rule. Test elemental oil too, and verify the Satchel refund.
+
+The twelve native automated suites and checked eight-record ESP conversion
+cover our filters, numbers, compatibility and packaging. They do not prove
+Skyrim rendered the burst or applied damage: this is a beta awaiting in-game
+confirmation. No change is made to the separate coated-ammo proxy/batch issue.
+
 # Version 2.1.2 beta: corpse explosion target-search crash
 
 The supplied crash-2026-10-02-01-24-39 report shows a different failure from

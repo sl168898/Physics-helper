@@ -4,6 +4,7 @@
 #include "CorpseExplosion.h"
 #include "DamageObservation.h"
 #include "BlastTargets.h"
+#include "BlastDelivery.h"
 #include <atomic>
 #include <cctype>
 #include <mutex>
@@ -16,6 +17,11 @@ namespace corpse
         inline static Runtime* self{};
         inline static thread_local Frame* active{};
         inline static thread_local bool applying{};
+        struct AreaCast {
+            BlastDelivery delivery;
+            RE::NiPointer<RE::Actor> body, player;
+        };
+        inline static thread_local AreaCast* areaCast{};
         inline static REL::Relocation<void (*)(RE::PlayerCharacter*, float)> originalUpdate;
         RE::SpellItem* trait{};
         std::array<RE::SpellItem*, 4> spells{};
@@ -88,7 +94,11 @@ namespace corpse
                     std::transform(model.begin(), model.end(), model.begin(), [](unsigned char c) { return std::tolower(c); });
                     int score = model.find(names[i]) != std::string::npos ? 10 : 0;
                     if (i == 2 && model.find("lightning") != std::string::npos) score = 10;
-                    if (i == 3 && model.find("spider") != std::string::npos) score = 10;
+                    // A spider WEB strip is not a poison burst. Only accept
+                    // explicit poison presentations, otherwise use the known
+                    // vanilla shout shockwave already shipped in the ESP.
+                    if (i == 3 && (model.find("web") != std::string::npos ||
+                        model.find("strip") != std::string::npos)) continue;
                     if (!score) continue;
                     if (model.find("explosion") != std::string::npos) score += 5;
                     if (model.find("fireball") != std::string::npos) score += 5;
@@ -111,6 +121,7 @@ namespace corpse
                 visual->data.spawnProjectile = nullptr;
                 visual->data.impactDataSet = nullptr;
                 visual->data.flags = RE::BGSExplosionData::Flag::kIgnoreImageSpaceSwap;
+                visual->data.flags.set(RE::BGSExplosionData::Flag::kNoControllerVibration);
                 SKSE::log::info("[CorpseExplosion] {} visual: {}", names[i], visual->GetModel());
             }
         }
@@ -121,6 +132,55 @@ namespace corpse
                 (commander.get() == player || commander->IsPlayerTeammate())) return false;
             return actor->IsHostileToActor(player);
         }
+        template<class T> struct AreaTargetHook {
+            inline static REL::Relocation<bool (*)(RE::MagicTarget*, RE::MagicTarget::AddTargetData&)> original;
+            static bool Add(RE::MagicTarget* target, RE::MagicTarget::AddTargetData& data) {
+                auto runtime = self;
+                if (!runtime || !data.magicItem) return original(target, data);
+                const auto found = std::find(runtime->spells.begin(), runtime->spells.end(), data.magicItem);
+                if (found == runtime->spells.end()) return original(target, data);
+                const auto index = static_cast<unsigned>(found - runtime->spells.begin());
+                auto cast = areaCast;
+                // Never let a console cast, deferred stray request, or native
+                // splash hit unfiltered actors. Ordinary magic is forwarded.
+                if (!cast || static_cast<unsigned>(cast->delivery.type) != index ||
+                    !data.effect || data.effect->baseEffect != runtime->effects[index]) {
+                    SKSE::log::warn("[CorpseExplosion] area-rejected type={} reason=no-matching-cast", names[index]);
+                    return false;
+                }
+                const auto ref = target ? target->GetTargetStatsObject() : nullptr;
+                const RE::NiPointer<RE::Actor> actor(ref ? ref->As<RE::Actor>() : nullptr);
+                if (!enemy(actor.get(), cast->player.get()) || killQueued(actor.get()) ||
+                    !withinBlast(blastLocation(cast->body.get()), blastLocation(actor.get()), radius)) return false;
+                const auto resistance = actor->AsActorValueOwner()->GetActorValue(resistances[index]);
+                const auto quote = cast->delivery.claim(actor->GetFormID(), resistance);
+                if (quote.result != BlastDelivery::Result::ready) {
+                    SKSE::log::info("[CorpseExplosion] area-filter victim={:08X} target={:08X} type={} result={} resistance={}",
+                        cast->delivery.victim, actor->GetFormID(), names[index], static_cast<unsigned>(quote.result), resistance);
+                    return false;
+                }
+                const float incoming = data.magnitude, before = health(actor.get());
+                // The corpse determines origin; the player determines damage
+                // ownership. This is the final per-target magnitude entering
+                // native effect creation, with matching resistance applied once.
+                data.caster = cast->player.get();
+                data.magnitude = quote.magnitude;
+                const bool accepted = original(target, data);
+                if (accepted) ++cast->delivery.accepted;
+                SKSE::log::info("[CorpseExplosion] area-apply victim={:08X} target={:08X} type={} base={} resistance={} engine-input={} requested={} accepted={} Health-now {} -> {}",
+                    cast->delivery.victim, actor->GetFormID(), names[index], cast->delivery.base, resistance,
+                    incoming, quote.magnitude, accepted, before, health(actor.get()));
+                return accepted;
+            }
+            static void install() {
+                // TESObjectREFR owns four vtables. Actor's next secondary
+                // base is MagicTarget (0xA0 on 1.6.1170), whose slot 1 is
+                // AddTarget. Use the real secondary-base this pointer.
+                static_assert(RE::VTABLE_TESObjectREFR.size() == 4);
+                REL::Relocation<std::uintptr_t> table{T::VTABLE[4]};
+                original = table.write_vfunc(1, Add);
+            }
+        };
         void explode(RE::Actor* body, const Damage& damage) {
             const auto p = RE::PlayerCharacter::GetSingleton();
             const auto processes = RE::ProcessLists::GetSingleton();
@@ -134,35 +194,46 @@ namespace corpse
                 processes, body, radius);
             SKSE::log::info("[CorpseExplosion] target scan victim={:08X} loaded candidates={} radius={}",
                 body->GetFormID(), actors.size(), radius);
-            const auto dominant = std::distance(damage.begin(), std::max_element(damage.begin(), damage.end()));
-            body->PlaceObjectAtMe(visuals[dominant], false);
-            auto caster = p->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
-            if (!caster) return;
-            struct Applying { bool old = applying; Applying() { applying = true; } ~Applying() { applying = old; } } scope;
-            unsigned hit{};
+            std::set<ID> allowed;
             for (auto handle : actors) {
                 auto a = handle.get();
                 if (!enemy(a.get(), p) ||
-                    !withinBlast(blastLocation(body), blastLocation(a.get()), radius)) continue;
-                bool visible = false;
-                if (!a->HasLineOfSight(body, visible)) continue;
-                ++hit;
-                for (unsigned i = 0; i < 4 && alive(a.get()) && health(a.get()) > 0 && !killQueued(a.get()); ++i) {
-                    const auto resist = a->AsActorValueOwner()->GetActorValue(resistances[i]);
-                    const double amount = damage[i] * resistanceMultiplier(resist);
-                    if (!(amount > 0) || !std::isfinite(amount) || amount > std::numeric_limits<float>::max()) continue;
-                    // Dedicated effects bypass engine resistance/absorption:
-                    // matching alchemical resistance is applied above exactly
-                    // once. Generic MagicResist and PoisonResist must not
-                    // accidentally resist elemental oils. Native health,
-                    // difficulty, essential status and kill attribution remain.
-                    caster->CastSpellImmediate(spells[i], true, a.get(), 1.f, false, static_cast<float>(amount), p);
-                    SKSE::log::info("[CorpseExplosion] victim={:08X} target={:08X} type={} base={} resistance={} delivered={}",
-                        body->GetFormID(), a->GetFormID(), names[i], damage[i], resist, amount);
+                    !withinBlast(blastLocation(body), blastLocation(a.get()), radius)) {
+                    if (a) SKSE::log::info("[CorpseExplosion] candidate target={:08X} name='{}' eligible=false", a->GetFormID(), a->GetName());
+                    continue;
                 }
+                bool visible = false;
+                if (!a->HasLineOfSight(body, visible)) {
+                    SKSE::log::info("[CorpseExplosion] candidate target={:08X} name='{}' eligible=false reason=corpse-line-of-sight", a->GetFormID(), a->GetName());
+                    continue;
+                }
+                allowed.insert(a->GetFormID());
             }
-            SKSE::log::info("[CorpseExplosion] burst victim={:08X} enemies={} radius={}; fire={} frost={} shock={} poison={}",
-                body->GetFormID(), hit, radius, damage[0], damage[1], damage[2], damage[3]);
+            // Ordinator Corpse Gas casts a Self-area spell from the dying
+            // actor; its MGEF's Explosion drives presentation. Do the same
+            // through the native instant caster, with player blame and our
+            // own enemy/resistance gate at actual native effect application.
+            auto caster = body->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
+            if (!caster) { SKSE::log::warn("[CorpseExplosion] corpse has no instant caster"); return; }
+            unsigned accepted{};
+            for (unsigned i = 0; i < 4; ++i) {
+                if (!(damage[i] > 0) || !std::isfinite(damage[i]) || damage[i] > std::numeric_limits<float>::max()) continue;
+                AreaCast cast{{body->GetFormID(), static_cast<Type>(i), damage[i], allowed},
+                    RE::NiPointer<RE::Actor>(body), RE::NiPointer<RE::Actor>(p)};
+                struct Applying {
+                    bool old = applying; AreaCast* previous = areaCast;
+                    explicit Applying(AreaCast* cast) { applying = true; areaCast = cast; }
+                    ~Applying() { applying = old; areaCast = previous; }
+                } scope(&cast);
+                SKSE::log::info("[CorpseExplosion] area-cast victim={:08X} type={} requested={} eligible={} origin=corpse",
+                    body->GetFormID(), names[i], damage[i], allowed.size());
+                caster->CastSpellImmediate(spells[i], false, nullptr, 1.f, false, static_cast<float>(damage[i]), p);
+                accepted += cast.delivery.accepted;
+                SKSE::log::info("[CorpseExplosion] area-result victim={:08X} type={} attempted={} accepted={}",
+                    body->GetFormID(), names[i], cast.delivery.attempted.size(), cast.delivery.accepted);
+            }
+            SKSE::log::info("[CorpseExplosion] burst victim={:08X} enemies={} accepted-portions={} radius={}; fire={} frost={} shock={} poison={}",
+                body->GetFormID(), allowed.size(), accepted, radius, damage[0], damage[1], damage[2], damage[3]);
         }
         void pump(std::uint64_t generation) {
             if (generation != epoch.load()) return;
@@ -240,6 +311,32 @@ namespace corpse
             }
         };
     public:
+        struct DamageSample {
+            ID spell{}, caster{};
+            unsigned type{};
+            float magnitude{};
+        };
+        static DamageSample captureDamage(RE::ActiveEffect* effect, RE::Actor* actor) {
+            DamageSample sample;
+            if (!self || !effect || !effect->effect || !effect->spell ||
+                !harvest::matchesMagicTarget(effect->target, actor)) return sample;
+            const auto found = std::find(self->effects.begin(), self->effects.end(), effect->effect->baseEffect);
+            if (found == self->effects.end()) return sample;
+            sample.spell = effect->spell->GetFormID();
+            sample.type = static_cast<unsigned>(found - self->effects.begin());
+            sample.magnitude = effect->magnitude;
+            const auto caster = effect->GetCasterActor();
+            sample.caster = caster ? caster->GetFormID() : 0;
+            return sample;
+        }
+        static void reportDamage(const DamageSample& sample, RE::Actor* actor, float value, float before, float after) {
+            if (!sample.spell || !actor) return;
+            // Captured values only: the ActiveEffect may have been destroyed
+            // inside the native modification call. Also runs for later ticks.
+            SKSE::log::info("[CorpseExplosion] health-update target={:08X} spell={:08X} caster={:08X} type={} effect-magnitude={} native-value={} Health {} -> {} actual-loss={}",
+                actor->GetFormID(), sample.spell, sample.caster, names[sample.type], sample.magnitude,
+                value, before, after, healthLost(before, after));
+        }
         class Scope {
             Runtime* runtime{};
             RE::NiPointer<RE::Actor> actor;
@@ -301,6 +398,23 @@ namespace corpse
                 ready &= effects[i] && spells[i] && visuals[i];
             }
             if (!ready) { SKSE::log::error("[CorpseExplosion] records missing; trait disabled (requires Combined 2.13.0)"); return; }
+            for (unsigned i = 0; i < 4; ++i) {
+                const auto spell = spells[i];
+                const auto effect = effects[i];
+                const bool valid = spell->data.delivery == RE::MagicSystem::Delivery::kSelf &&
+                    effect->data.delivery == RE::MagicSystem::Delivery::kSelf &&
+                    effect->data.explosion == visuals[i] && spell->effects.size() == 1 &&
+                    spell->effects[0] && spell->effects[0]->baseEffect == effect &&
+                    spell->effects[0]->effectItem.area == 25 && spell->effects[0]->effectItem.duration == 0 &&
+                    !effect->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoArea) &&
+                    spell->data.flags.any(RE::SpellItem::SpellFlag::kIgnoreResistance) &&
+                    spell->data.flags.any(RE::SpellItem::SpellFlag::kNoAbsorb);
+                if (!valid) {
+                    ready = false;
+                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.3 ESP winning conflicts", names[i]);
+                }
+            }
+            if (!ready) return;
             constexpr std::array<std::string_view, 4> typeKeywords{
                 "MagicDamageFire", "MagicDamageFrost", "MagicDamageShock", "MagicDamagePoison"};
             for (auto keyword : data->GetFormArray<RE::BGSKeyword>()) {
@@ -311,10 +425,13 @@ namespace corpse
                     if (typeKeywords[i] == editor) effects[i]->AddKeyword(keyword);
             }
             configureVisuals(data);
+            AreaTargetHook<RE::Actor>::install();
+            AreaTargetHook<RE::Character>::install();
+            AreaTargetHook<RE::PlayerCharacter>::install();
             HealthHook<RE::Actor>::install(); HealthHook<RE::Character>::install();
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
-            SKSE::log::info("[CorpseExplosion] ready: 25 percent, radius 420, elemental/poison resistance, strict oil kill, no chains");
+            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, 25 percent, radius 420, matching resistance, enemy filter, no chains; acceptance and Health diagnostics");
         }
         void setSession(bool value) { session.store(value); }
         void reset() {

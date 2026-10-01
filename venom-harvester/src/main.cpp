@@ -772,12 +772,14 @@ namespace
                 }
             }
             const RE::NiPointer<RE::Actor> keepAlive(actor);
+            const auto explosionSample = healthChange ? corpse::Runtime::captureDamage(effect, actor) : corpse::Runtime::DamageSample{};
             corpse::Runtime::Scope corpseObservation(effect, actor, healthChange);
             // Preserve kNone when forwarding: only our observer resolves it.
             original(effect, actor, value, av);
             corpseObservation.finish();
             if (!actor || (!healthChange && !diagnosticSource)) return;
             const float after = actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth);
+            corpse::Runtime::reportDamage(explosionSample, actor, value, health, after);
             const auto state = actor->AsActorState()->GetLifeState();
             const auto afterProcess = actor->GetMiddleHighProcess();
             const bool queuedAfter = afterProcess && afterProcess->killQueued;
@@ -1158,7 +1160,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.2 beta; Skyrim 1.6.1170; loaded-actor explosion target scan");
+    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.3 beta; Skyrim 1.6.1170; corpse-origin native area spells");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); corpseExplosion.setSession(false); reset(); });
