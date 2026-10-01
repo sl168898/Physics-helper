@@ -6,7 +6,7 @@
 namespace coating
 {
     // Rank II replaces rank I's multiplier. Quantity and strength are independent.
-    inline float strength(bool rank1, bool rank2) { return rank2 ? 2.0f : rank1 ? 1.5f : 1.0f; }
+    inline float strength(bool rank1, bool rank2) { return rank2 ? 1.5f : rank1 ? 1.25f : 1.0f; }
     inline std::uint32_t doseCount(std::uint32_t base, bool bolts, bool measured)
     {
         base = std::clamp(base, 1u, 10000u);

@@ -19,8 +19,8 @@ def perk(local, name, level, description, parent=None):
 
 def build():
     perks=[
-      perk(0x800,'Coating Mechanist I',25,'Poisons and weapon oils delivered by your crossbow bolts are 50% stronger.'),
-      perk(0x801,'Coating Mechanist II',50,'Poisons and weapon oils delivered by your crossbow bolts are 100% stronger. Replaces the bonus from Coating Mechanist I.',0x800),
+      perk(0x800,'Coating Mechanist I',25,'Poisons and weapon oils delivered by your crossbow bolts are 25% stronger.'),
+      perk(0x801,'Coating Mechanist II',50,'Poisons and weapon oils delivered by your crossbow bolts are 50% stronger. Replaces the bonus from Coating Mechanist I.',0x800),
       perk(0x802,'Measured Dose',30,'Each poison or weapon-oil bottle coats twice as many crossbow bolts. Combines with Coating Mechanist and existing poison-dose bonuses.')]
     header=record('TES4',0,sub('HEDR',struct.pack('<fII',1.7,4,0x803))+
       text('CNAM','Physics-helper contributors')+text('SNAM','Coating Mechanist perks. Requires PoisonedAmmoNative 0.2.0+ and Perk Adjuster.')+

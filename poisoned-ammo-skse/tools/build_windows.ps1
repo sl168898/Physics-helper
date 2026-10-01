@@ -68,13 +68,14 @@ Get-ChildItem $Source -Recurse -File | Sort-Object FullName | ForEach-Object {
     $Sources[$Relative] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'PoisonedAmmoNative'; version = '0.2.8-beta'; runtime = 'Steam 1.6.1170'
+    plugin = 'PoisonedAmmoNative'; version = '0.2.9-beta'; runtime = 'Steam 1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     esp_sha256 = (Get-FileHash (Join-Path $Stage 'PoisonedAmmoNative.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
     perks_sha256 = (Get-FileHash (Join-Path $Stage 'CoatingMechanist.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources
     windows_build = 'passed'; portable_tests = 'passed'; esp_structure_validation = 'passed'
+    coating_strength_multipliers = @(1.0, 1.25, 1.5); rank_ii_replaces_rank_i = $true
     impact_pointer_abi_fixed = $true; production_impact_wrapper_test = 'passed'
     wheeler_icon_api = 'PoisonedAmmoNative_GetIconInfoV1'; icon_metadata_tests = 'passed'; icon_changes_only = $false
     wheeler_coat_api = 'PoisonedAmmoNative_CoatOneV1'; wheeler_runtime_verified = $false
@@ -88,4 +89,4 @@ $Info = [ordered]@{
     in_game_tested = $false; recipe_capacity = 512; dynamic_form_creation = $false; papyrus_scripts = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_8_Beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_2_9_Beta.zip')

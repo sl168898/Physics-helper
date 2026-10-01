@@ -1,3 +1,17 @@
+# Coating Mechanist balance checks, v0.2.9
+
+1. Confirm the startup log says 0.2.9 and the perk descriptions say 25% / 50%.
+2. Against the same target with the same poison and bolt, compare no perk,
+   rank I, and both ranks. A magnitude of 100 becomes 100 / 125 / 150 before
+   unchanged downstream resistance calculations. Rank II alone also uses x1.5.
+3. For an effect flagged No Magnitude, a duration of 8 becomes 8 / 10 / 12;
+   magnitude-bearing effects keep their original duration.
+4. Previously coated bolts must use the current rank at impact. Measured Dose
+   still doubles the bolt quantity and does not alter effect strength.
+
+The existing portable perk-combination and scaling checks cover these values.
+Skyrim itself was not run here; verify the above in game after installing.
+
 # Global form keyword checks, v0.2.8 (not yet run in Skyrim)
 
 1. Confirm the startup log says 0.2.8. Keep Dynamic Tooltips enabled. Use the
@@ -144,7 +158,7 @@ Use a copied save and TraceProjectiles=1. Verify actual target health/effect dur
 
 - At Marksman 24/25: Coating Mechanist I unavailable/available. At 49/50: II unavailable/available, and II also requires I. At 29/30: Measured Dose unavailable/available independently of I.
 - All three nodes visible and selectable with perk points; no overlap with the throwing-weapon branch; existing nodes unchanged.
-- Same poison, same bolt and target: no perks 1x, I 1.5x, I+II 2x (never 3x). Measured Dose alone leaves strength at 1x.
+- Same poison, same bolt and target: no perks 1x, I 1.25x, I+II 1.5x (rank II replaces I). Measured Dose alone leaves strength at 1x.
 - Base 5 bolts/bottle: no Measured Dose 5; with Measured Dose 10 at both strength ranks. One bottle is consumed; output count agrees with dialog. Repeat with native dose perks and ArrowsPerBottle override.
 - Repeat with a native weapon oil (including elemental and conditional target-specific oil), a static poison, and a player-crafted multi-effect poison. Include a last-bottle custom poison.
 - Melee and bows/arrows get no new bonus. Swap away from a crossbow while a bolt is in flight: that bolt still qualifies; an arrow fired before switching to crossbow does not.

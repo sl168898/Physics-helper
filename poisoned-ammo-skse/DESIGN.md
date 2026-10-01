@@ -1,3 +1,11 @@
+# Coating Mechanist balance update (0.2.9)
+
+The rank selector returns 1.0 without a perk, 1.25 for rank I, and 1.5 for
+rank II, including when both ranks are owned. The existing impact-scoped
+active-effect path is unchanged. The two PERK descriptions match the reduced
+bonuses. No physical-damage, magnitude/duration selection, dose-count, form-ID,
+or save-format changes are included.
+
 # Factory-created keywords outside TESDataHandler (0.2.8)
 
 The reported rejection identified `LoreBox_quantDTWhoseQuest` with a valid

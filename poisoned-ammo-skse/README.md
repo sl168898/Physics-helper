@@ -1,4 +1,17 @@
-# Version 0.2.8 — Dynamic Tooltips runtime keyword correction
+# Version 0.2.9 — Coating Mechanist balance update
+
+Coating Mechanist I now strengthens crossbow-delivered poisons and weapon oils
+by 25% (x1.25). Coating Mechanist II now gives 50% total (x1.5), replacing rank I.
+The in-game descriptions and native multiplier use these same values.
+
+Install this complete package over 0.2.8 in MO2 and restart Skyrim through SKSE.
+Both PoisonedAmmoNative.dll and CoatingMechanist.esp must come from this update.
+Previously coated bolts use the new multiplier on impact. Perk requirements,
+Measured Dose, save formats, recipe IDs, and all other mechanics are unchanged.
+No new game or perk reselection is required. The beta still needs in-game
+confirmation in the user's full load order.
+
+# Previous version 0.2.8 — Dynamic Tooltips runtime keyword correction
 
 Addresses the logged refusal for `LoreBox_quantDTWhoseQuest` on a crafted
 Weakness to Fire poison. Dynamic Tooltips creates its named keywords through
@@ -170,11 +183,11 @@ The two existing ESPs and the Satchel mod are not changed; no Satchel ingredient
 
 | Perk | Requirements | Effect |
 |---|---|---|
-| Coating Mechanist I | Marksman 25; one perk point | Crossbow-delivered poison/oil strength x1.5 |
-| Coating Mechanist II | Marksman 50 + Coating Mechanist I; one perk point | Strength x2 total; supersedes I |
+| Coating Mechanist I | Marksman 25; one perk point | Crossbow-delivered poison/oil strength x1.25 |
+| Coating Mechanist II | Marksman 50 + Coating Mechanist I; one perk point | Strength x1.5 total; supersedes I |
 | Measured Dose | Marksman 30; one perk point; no other perk prerequisite | Twice the bolts per bottle when coating through Inventory, updated Wheeler or F8 |
 
-Measured Dose works alongside either Coating Mechanist perk. A bottle giving 5 bolts normally gives 10 with Measured Dose; with Coating Mechanist II each bolt delivers x2 strength. Existing native poison-dose perks are evaluated first. The fixed ArrowsPerBottle setting, if used, is also doubled for bolts.
+Measured Dose works alongside either Coating Mechanist perk. A bottle giving 5 bolts normally gives 10 with Measured Dose; with Coating Mechanist II each bolt delivers x1.5 strength. Existing native poison-dose perks are evaluated first. The fixed ArrowsPerBottle setting, if used, is also doubled for bolts.
 
 ## Install/update in MO2
 

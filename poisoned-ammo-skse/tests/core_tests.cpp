@@ -15,7 +15,7 @@ int main()
     // All perk combinations: dose count and per-bolt strength remain independent.
     for (bool r1 : {false,true}) for (bool r2 : {false,true}) for (bool md : {false,true}) {
         const auto mult = coating::strength(r1,r2);
-        assert(mult == (r2 ? 2.0f : r1 ? 1.5f : 1.0f));
+        assert(mult == (r2 ? 1.5f : r1 ? 1.25f : 1.0f));
         const auto count = coating::doseCount(5,true,md);
         assert(count == (md ? 10u : 5u));
         assert(coating::doseCount(5,false,md)==5u);

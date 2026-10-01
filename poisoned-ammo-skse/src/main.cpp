@@ -752,7 +752,7 @@ extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 2, 8, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 2, 9, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -765,7 +765,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.2.8 beta; global form keyword lookup; Skyrim Steam 1.6.1170; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
+    SKSE::log::info("PoisonedAmmoNative 0.2.9 beta; Coating Mechanist +25%/+50%; global form keyword lookup; Skyrim Steam 1.6.1170; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });
