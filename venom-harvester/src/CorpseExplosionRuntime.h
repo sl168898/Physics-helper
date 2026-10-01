@@ -3,6 +3,7 @@
 #include <SKSE/SKSE.h>
 #include "CorpseExplosion.h"
 #include "DamageObservation.h"
+#include "BlastTargets.h"
 #include <atomic>
 #include <cctype>
 #include <mutex>
@@ -122,25 +123,27 @@ namespace corpse
         }
         void explode(RE::Actor* body, const Damage& damage) {
             const auto p = RE::PlayerCharacter::GetSingleton();
-            const auto world = RE::TES::GetSingleton();
-            if (!p || !world || !body->Is3DLoaded() || body->IsDisabled()) return;
+            const auto processes = RE::ProcessLists::GetSingleton();
+            if (!p || !processes || !body || !body->GetParentCell() ||
+                !body->Is3DLoaded() || body->IsDisabled()) return;
+            // The pinned CommonLib TES facade reads the wrong world-space
+            // field on 1.6.1170; its sky-cell lookup crashed at this call site.
+            // Enumerate actor process handles instead, then apply our own
+            // 3D radius and interior/exterior-space checks.
+            const auto actors = collectBlastActors<RE::BSContainer::ForEachResult::kContinue>(
+                processes, body, radius);
+            SKSE::log::info("[CorpseExplosion] target scan victim={:08X} loaded candidates={} radius={}",
+                body->GetFormID(), actors.size(), radius);
             const auto dominant = std::distance(damage.begin(), std::max_element(damage.begin(), damage.end()));
             body->PlaceObjectAtMe(visuals[dominant], false);
-            // Collect references first; native casts must not run under a cell
-            // reference-list spinlock held by ForEachReferenceInRange.
-            std::vector<RE::ActorHandle> actors;
-            world->ForEachReferenceInRange(body, radius, [&](RE::TESObjectREFR* ref) {
-                if (auto a = ref ? ref->As<RE::Actor>() : nullptr; a && a != body)
-                    actors.push_back(a->GetHandle());
-                return RE::BSContainer::ForEachResult::kContinue;
-            });
             auto caster = p->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant);
             if (!caster) return;
             struct Applying { bool old = applying; Applying() { applying = true; } ~Applying() { applying = old; } } scope;
             unsigned hit{};
             for (auto handle : actors) {
                 auto a = handle.get();
-                if (!enemy(a.get(), p)) continue;
+                if (!enemy(a.get(), p) ||
+                    !withinBlast(blastLocation(body), blastLocation(a.get()), radius)) continue;
                 bool visible = false;
                 if (!a->HasLineOfSight(body, visible)) continue;
                 ++hit;

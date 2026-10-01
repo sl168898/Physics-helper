@@ -1,3 +1,46 @@
+# Version 2.1.2 beta: corpse explosion target-search crash
+
+The supplied crash-2026-10-02-01-24-39 report shows a different failure from
+2.1.1's bleedout fix. Both observers accepted the poison killing blow, and
+Satchel logged `Poison lethal`. A queued explosion then crashed during its
+nearby-reference search, before the queued ingredient refund could run.
+
+The shipped 2.1.1 DLL return offset +0x43E3D maps to CommonLib's
+TES::ForEachReferenceInRange calling TESWorldSpace::GetSkyCell (AE ID 20543).
+The DLL loads its world pointer from TES+0x140; the crash reports the invalid
+value 0x44FE0000456F4000 passed to that lookup. The pinned TES header guards
+its AE member-layout adjustment with SKYRIM_SUPPORT_AE, whereas the build
+uses ENABLE_SKYRIM_AE. This target-search path is therefore removed.
+
+The explosion now snapshots handles from all four actor process lists.
+Only loaded, enabled actors within the same game space and a 420-unit 3D
+radius are collected, with duplicate actors removed. Exterior neighbours
+across cell boundaries are included; different world spaces and separate
+interiors are excluded. Handles are resolved again and range/space, life,
+hostility, teammate, summon and line-of-sight checks run before delivery.
+Collection finishes before any visual or damage is emitted.
+
+No global TES/world-space sky-cell lookup is used by the replacement collector.
+The exact templated collector used by the native adapter is also compiled in
+the regression suite, which covers cell boundaries, all process levels,
+missing/unloaded/disabled actors, duplicate entries, 3D distance, separate
+interiors/worlds, invalid coordinates and target movement after the snapshot.
+The earlier bleedout regression and all Satchel tests remain in the build.
+
+Install Combined 2.13.2-beta1 over the previous Combined package with Skyrim
+closed and restart through SKSE. VenomHarvester.log must begin with 2.1.2.
+Reload before the crash, store/brew an unclaimed recipe batch, then let its
+poison kill the deer. Expect `Poison lethal`, `Refunded ingredient`, and,
+with Corpse Explosion selected, `target scan` followed by `burst`. Their
+relative order can vary because refunds and explosions use separate tasks.
+A nearby hostile enemy within 420 units and line of sight should take the
+matching damage type. Repeat indoors and near an exterior cell boundary.
+
+The previous bleedout fix, recipes, once-per-batch refund accounting, save
+formats, matching resistance rules, 25% damage and six-metre radius are retained.
+No ESP, script or thumbnail change is required. This is a Windows-built beta;
+automated tests do not replace an in-game retest of the native engine path.
+
 # Version 2.1.1 beta: poison kills after nonessential bleedout
 
 Fixes the missed killing blows shown in the supplied 2026-10-02 log. The poison
