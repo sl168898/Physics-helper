@@ -7,6 +7,7 @@
 #include <cctype>
 #include <mutex>
 #include <string>
+#include <string_view>
 
 namespace corpse
 {
@@ -143,7 +144,7 @@ namespace corpse
                 bool visible = false;
                 if (!a->HasLineOfSight(body, visible)) continue;
                 ++hit;
-                for (unsigned i = 0; i < 4 && alive(a.get()); ++i) {
+                for (unsigned i = 0; i < 4 && alive(a.get()) && health(a.get()) > 0 && !killQueued(a.get()); ++i) {
                     const auto resist = a->AsActorValueOwner()->GetActorValue(resistances[i]);
                     const double amount = damage[i] * resistanceMultiplier(resist);
                     if (!(amount > 0) || !std::isfinite(amount) || amount > std::numeric_limits<float>::max()) continue;
@@ -254,7 +255,7 @@ namespace corpse
                 if (!queuedBefore) { std::lock_guard lock(runtime->mutex); runtime->ledger.resurrected(frame.actor); }
             }
             Scope(RE::ActiveEffect* effect, RE::Actor* a, bool healthChange) :
-                Scope(a, self ? self->effectOrigin(effect, a) : Origin{}, healthChange) {}
+                Scope(a, self && healthChange && self->selected() ? self->effectOrigin(effect, a) : Origin{}, healthChange) {}
             Scope(const Scope&) = delete;
             ~Scope() { finish(); }
             void finish() {
@@ -296,6 +297,15 @@ namespace corpse
                 ready &= effects[i] && spells[i] && visuals[i];
             }
             if (!ready) { SKSE::log::error("[CorpseExplosion] records missing; trait disabled (requires Combined 2.13.0)"); return; }
+            constexpr std::array<std::string_view, 4> typeKeywords{
+                "MagicDamageFire", "MagicDamageFrost", "MagicDamageShock", "MagicDamagePoison"};
+            for (auto keyword : data->GetFormArray<RE::BGSKeyword>()) {
+                if (!keyword) continue;
+                const auto editor = keyword->GetFormEditorID();
+                if (!editor) continue;
+                for (unsigned i = 0; i < 4; ++i)
+                    if (typeKeywords[i] == editor) effects[i]->AddKeyword(keyword);
+            }
             configureVisuals(data);
             HealthHook<RE::Actor>::install(); HealthHook<RE::Character>::install();
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
