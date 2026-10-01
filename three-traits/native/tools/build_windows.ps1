@@ -81,14 +81,14 @@ foreach ($Name in $SourceNames) {
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'BiggieTraitMechanics'; version = '1.7.0'; runtime = '1.6.1170'
+    plugin = 'BiggieTraitMechanics'; version = '1.8.0'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
-    source_sha256_lf = $Sources; windows_build = 'passed'; rules_tests = 'passed'; native_test_suites = 11; dynamo_charge_tests = 'passed'; scoped_charge_cost = $true; original_cost_for_magicka_payment = $true; direct_and_virtual_cast_paths = $true; fixed_resource_call_offsets_removed = $true; in_game_tested = $false
+    source_sha256_lf = $Sources; windows_build = 'passed'; rules_tests = 'passed'; native_test_suites = 12; dynamo_charge_tests = 'passed'; scoped_charge_cost = $true; original_cost_for_magicka_payment = $true; direct_and_virtual_cast_paths = $true; fixed_resource_call_offsets_removed = $true; in_game_tested = $false
     voice_authority_upgrade_tests = 'passed'; legacy_shout_script_inert = $true
     papyrus_compiler = 'russo-2025/papyrus-compiler 2026.03.15'; papyrus_compiler_archive_sha256 = $CompilerHash
     retired_voice_pex_sha256 = (Get-FileHash $Pex -Algorithm SHA256).Hash.ToLowerInvariant()
-    combined_version = "2.11.0-beta1"; no_new_inventory_items = $true
+    combined_version = "2.12.0-beta1"; green_thumb_stacking_and_dispatch_tests = 'passed'; harvest_post_perk_multiplier = 2.0; no_new_inventory_items = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
 Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Biggie_Trait_Mechanics_v1.zip')

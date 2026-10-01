@@ -1,3 +1,7 @@
+# Biggie Trait Mechanics 1.8.0
+
+Green Thumb: ingredient harvest yield is multiplied by two after the native harvest perks have resolved, including Satchel payouts. An x64 assembly gate forwards all other entry points unchanged. The ESP handles all-effects learning, doubled raw ingredient duration, and 50 less carrying capacity. Requires Combined 2.12.0-beta1.
+
 # Biggie Trait Mechanics 1.7.0 / Combined 2.11.0-beta1
 
 Voice of Authority is now a normal one-rank Speech perk. It requires base

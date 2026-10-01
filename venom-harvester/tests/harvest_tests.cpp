@@ -1,6 +1,7 @@
 #include "Harvest.h"
 #include <cassert>
 #include <iostream>
+#include <limits>
 using namespace harvest;
 constexpr ID a = 0xFF000100, b = 0xFF000101, c = 0xFF000102;
 const Recipe roots{0x100, 0x200};
@@ -55,13 +56,56 @@ int main()
     }
     {
         auto ledger = prepared();
+        const auto ingredientExists = [](ID id) { return id == 0x100 || id == 0x200; };
+        assert(ledger.unclaimed() == 2);
+        // No proven lethal callback: being poisoned or a weapon kill cannot pay.
+        assert(!ledger.claimVerified(10, ingredientExists));
+        assert(ledger.offer(10, a));
+        assert(ledger.offer(11, a));
+        // Native hook has already proved death (kDying or kDead). Payout has
+        // no actor lookup dependency and works on the very next queued task.
+        assert(ledger.claimVerified(10, ingredientExists) == Ingredients({{0x100, 1}, {0x200, 1}}));
+        assert(!ledger.claimVerified(11, ingredientExists));
+        assert(!ledger.claimVerified(10, ingredientExists));
+        assert(ledger.unclaimed() == 1);
+        assert(ledger.candidates.empty());
+    }
+    {
+        auto ledger = prepared();
+        assert(ledger.offer(10, a));
+        // FEC or other corpse cleanup can delete the victim before the task.
+        ledger.forgetActor(10);
+        assert(ledger.candidates.contains(10));
+        assert(ledger.claimVerified(10, [](ID) { return true; }));
+        ledger.forgetActor(10);
+        assert(!ledger.offer(10, a)); // Paid batch cannot be revived by deletion.
+        assert(!ledger.claimVerified(10, [](ID) { return true; }));
+        assert(ledger.unclaimed() == 1);
+    }
+    {
+        auto ledger = prepared();
+        assert(ledger.offer(10, a));
+        // Missing ingredients must not consume the batch or give a partial refund.
+        assert(!ledger.claimVerified(10, [](ID id) { return id != 0x200; }));
+        assert(ledger.unclaimed() == 2);
+        assert(ledger.candidates.empty());
+        assert(ledger.offer(11, a));
+        assert(ledger.claimVerified(11, [](ID) { return true; }));
+        assert(ledger.remember(flowers));
+        assert(ledger.unclaimed() == 1);
+        assert(ledger.offer(12, c));
+        assert(ledger.remember(roots));
+        assert(!ledger.claimVerified(12, [](ID) { return true; }));
+    }
+    {
+        auto ledger = prepared();
         assert(ledger.offer(10, a));
         ledger.giftGiven = true; ledger.armed = true;
         const auto bytes = encode(ledger);
         const auto restore = decode(bytes, [](ID id) { return id; });
         assert(restore && encode(*restore) == bytes);
         assert(restore->giftGiven && restore->armed);
-        auto paid = *restore; assert(paid.claim(10));
+        auto paid = *restore; assert(paid.claimVerified(10, [](ID) { return true; }));
         auto again = decode(encode(paid), [](ID id) { return id; });
         assert(again && !again->offer(12, a)); assert(again->offer(12, b));
         auto remap = decode(bytes, [](ID id) { return id + 0x1000; });
@@ -88,5 +132,31 @@ int main()
         assert(ledger.offer(1, 0xFF002222));
         assert(ledger.claim(1) == Ingredients({{0x100, 1}}));
     }
-    std::cout << "Huntsman's Satchel: batch, lethal-source, recipe, multi-hit, save and cost tests passed\n";
+    {
+        // Original expenditure is retained in old and new saves. Yield is
+        // applied once at payout, after a batch is atomically marked paid.
+        for (const auto yield : {1.f, 2.f, 4.f}) {
+            auto ledger = prepared();
+            assert(ledger.offer(10, b));
+            assert(ledger.offer(11, b));
+            auto restored = decode(encode(ledger), [](ID id) { return id; });
+            assert(restored);
+            auto reward = restored->claimVerified(10, [](ID) { return true; });
+            assert(reward);
+            for (auto& part : *reward) part.count = refundCount(part.count, yield);
+            const auto sets = static_cast<unsigned>(yield);
+            assert(*reward == Ingredients({{0x100, sets}, {0x200, 2 * sets}}));
+            assert(restored->batches.at(b).cost == Ingredients({{0x100, 1}, {0x200, 2}}));
+            assert(!restored->claimVerified(11, [](ID) { return true; }));
+            auto paid = decode(encode(*restored), [](ID id) { return id; });
+            assert(paid && !paid->offer(12, b));
+        }
+        assert(refundCount(1, 0.f) == 0);
+        assert(refundCount(2, 1.5f) == 3);
+        assert(refundCount(3, -1.f) == 3);
+        assert(refundCount(3, std::numeric_limits<float>::quiet_NaN()) == 3);
+        assert(refundCount(3, std::numeric_limits<float>::infinity()) == 3);
+        assert(refundCount(100000, 1e20f) == 2147483647u);
+    }
+    std::cout << "Huntsman's Satchel: batch, lethal-source, immediate refund, corpse deletion, recipe, multi-hit, save, cost and harvest multiplier refund tests passed\n";
 }
