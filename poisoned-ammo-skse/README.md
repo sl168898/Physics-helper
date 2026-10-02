@@ -1,30 +1,35 @@
-# Version 0.3.0 beta — Alchemical Precision
+# Version 0.4.0 beta — Alchemical Potency
 
-Adds a one-point, single-rank Marksman perk above Measured Dose. Buying it
-requires base Marksman 60 and Measured Dose. Coating Mechanist I/II are not
-additional prerequisites.
+Replaces Alchemical Precision with Alchemical Potency in the Marksman tree.
+Requires base Marksman 60, Measured Dose, and one perk point. Its existing perk
+ID is preserved: characters who already bought Alchemical Precision receive the
+new effect automatically. Coating Mechanist I/II are not prerequisites.
 
-Coated crossbow bolts gain 25 percentage points of native critical chance,
-capped at 100%. All their native criticals receive an enhanced critical bonus:
-`ordinary critical bonus * (1 + 0.02 * current Stamina when fired)`.
-This is 2% per ONE Stamina point. A normal 20-point critical bonus becomes
-60 at 100 Stamina, 220 at 500, or 420 at 1000. It does not consume Stamina.
-Skyrim still rolls once. Existing perks resolve first. Ordinary physical shot
-damage, poison/oil damage, enchantments and noncritical hits are not multiplied.
-Poisons and elemental or pure-weakness oils all qualify as coatings.
+**Oils and greater oils delivered by your coated crossbow bolts deal 1% more
+damage for each point of current Alchemy.** The multiplier is `1 + Alchemy / 100`:
+Alchemy 50 gives x1.5 oil damage, Alchemy 100 gives x2, and Alchemy 150 gives x2.5.
+The skill is read when the bolt impacts. Coating Mechanist I/II still stack with
+this: Alchemy 100 and rank II give x2 x1.5 = x3 oil damage before resistances.
+This perk does not use the poison-strength modifier.
+
+Supported oils are the four Oil of Fire/Frost/Shock/Arcana records from Requiem -
+Alchemy Redone and their four greater versions from Big Tweaks, including their
+conditional species damage. Only their direct damage effects are strengthened;
+duration is unchanged. Bow arrows, melee coatings, bombs, powders, ordinary
+poisons, and pure weakness effects receive no Alchemical Potency bonus. Bolt
+physical damage is unchanged. The old critical-chance and Stamina bonus is gone.
 
 Install this complete archive over the previous Poisoned Ammunition / Coating
 Perks mod in MO2, let its files win, and restart through SKSE. Enable both
-PoisonedAmmoNative.esp and CoatingMechanist.esp; keep Perk Adjuster and Address
-Library installed. Target: Skyrim SE Steam 1.6.1170. No new game, trait selection,
+PoisonedAmmoNative.esp and CoatingMechanist.esp. Keep Perk Adjuster and Address
+Library installed. Target: Skyrim SE Steam 1.6.1170. No new game, perk reselection,
 or animation regeneration is needed. Existing coating recipes and perk IDs are
-preserved. Buy Alchemical Precision normally in the Marksman tree.
+preserved. Previously coated bolts use the new bonus on subsequent impacts.
+Effects already running on targets are not recalculated.
 
-This is a Windows-built beta with automated native-wrapper and ABI tests;
-Skyrim and the user's complete load order have not been run here. See the first
-section of TESTING.md for the in-game check. Stamina snapshots are transient:
-a bolt already in flight when saving/reloading does not retain this perk's bonus;
-bolts fired after loading do. Inventory coatings remain saved as before.
+This is a Windows-built beta with automated production-hook, recipe and ABI
+tests. Skyrim and the user's complete load order have not been run here. See
+the first section of TESTING.md for the in-game check.
 
 ## Previous version 0.2.9 — Coating Mechanist balance update
 

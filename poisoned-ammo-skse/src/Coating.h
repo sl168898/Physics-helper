@@ -1,5 +1,6 @@
 #pragma once
 #include "CoatingCore.h"
+#include "Potency.h"
 #include <vector>
 
 namespace coating
@@ -41,11 +42,11 @@ namespace coating
             context.poison = projectile->GetArrowRuntimeData().poison;
             if (!context.actor || !context.poison || !context.poison->IsPoison()) return;
             context.multiplier = strength(context.actor->HasPerk(rank1), context.actor->HasPerk(rank2));
-            if (context.multiplier > 1) {
-                current = &context;
-                if (trace) SKSE::log::info("Coating impact: projectile={:08X}, shooter={:08X}, poison={:08X}, strength={}",
-                    projectile->GetFormID(), context.actor->GetFormID(), context.poison->GetFormID(), context.multiplier);
-            }
+            // Potency can be owned through Measured Dose without either
+            // Mechanist rank. Retain the crossbow scope even at strength 1.
+            current = &context;
+            if (trace) SKSE::log::info("Coating impact: projectile={:08X}, shooter={:08X}, poison={:08X}, strength={}",
+                projectile->GetFormID(), context.actor->GetFormID(), context.poison->GetFormID(), context.multiplier);
         }
         ~Scope() { current = previous; }
         Scope(const Scope&) = delete;
@@ -70,6 +71,9 @@ namespace coating
                 target->GetTargetAsActor() == caster) return;
             if (std::find(ctx->adjusted.begin(), ctx->adjusted.end(), effect) != ctx->adjusted.end()) return;
             ctx->adjusted.push_back(effect);
+            // Only this exact crossbow impact's oil effect receives Potency.
+            // The same per-impact guard protects both perk multipliers.
+            potency::apply(effect, caster, target);
             const auto base = effect->effect->baseEffect;
             // Pure script/marker effects with no magnitude or duration are unchanged.
             const bool noMagnitude = base->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoMagnitude);

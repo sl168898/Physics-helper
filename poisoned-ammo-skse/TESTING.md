@@ -1,38 +1,44 @@
-# Alchemical Precision 0.3.0 beta: in-game acceptance check
+# Alchemical Potency 0.4.0 beta: in-game acceptance check
 
-1. Install the complete archive and launch Steam 1.6.1170 through SKSE. In the
-   Marksman tree, find Alchemical Precision connected above Measured Dose.
-   It must require Measured Dose, base Marksman 60, and one perk point. Check
-   Marksman 59, then 60; test without and with Measured Dose. Do not use console
-   addperk to evaluate purchase requirements, because it bypasses the perk menu.
+1. Install the complete archive and launch Steam 1.6.1170 through SKSE. Enable
+   both ESPs. Alchemical Potency replaces Alchemical Precision above Measured
+   Dose. Verify base Marksman 60, Measured Dose, and one point to buy; console
+   addperk bypasses purchase requirements. An already purchased perk must keep
+   its ownership and display the new name/description without removing it.
 2. Enable `TraceProjectiles=1` in `SKSE/Plugins/PoisonedAmmoNative.ini`, restart,
-   and inspect `Documents/My Games/Skyrim Special Edition/SKSE/PoisonedAmmoNative.log`.
-   Expect `Alchemical Precision ready` at startup. A fired coated bolt with the
-   perk must log `Alchemical Precision shot` and the firing Stamina.
-3. Fire plain bolts, coated arrows from a bow, and coated bolts without the perk.
-   None should log an enhanced chance/critical bonus. With the perk, test coated
-   crossbow bolts separately with poison, elemental oil, and pure weakness oil.
-   Coating Mechanist I/II must not be needed.
-4. With existing critical perks active, inspect `Alchemical Precision chance`:
-   enhanced chance must be ordinary +25, capped at 100. The engine rolls once;
-   a noncritical shot must not receive the critical-bonus multiplier. On a native
-   critical, the `critical bonus` line must be ordinary * (1 + 0.02 * firing Stamina).
-   For ordinary=20, Stamina 100/500/1000 produces 60/220/420. These log values are
-   the native critical bonus, not the full hit or the target's final Health loss.
-5. Fire at a distant target, then change Stamina or switch weapons before impact.
-   The bonus must use the logged firing Stamina and source crossbow. Test blocked
-   hits, armored targets, misses, rapid consecutive bolts and a reflected-damage
-   target. There must be no multiplier applied to poison ticks or reflected damage.
-6. Save/reload with coated ammunition in inventory, then fire a fresh bolt. The
-   coating, new perk and critical behavior must still work. Snapshots of bolts
-   already in flight are intentionally cleared on load; no impact-time Stamina
-   substitute is used. Turn tracing back off when finished.
+   and inspect Documents/My Games/Skyrim Special Edition/SKSE/PoisonedAmmoNative.log.
+   Expect version 0.4.0 and `Alchemical Potency enabled` with registered oil
+   effects. This Big Tweaks setup has eight distinct damage effects shared by
+   four normal and four greater oils. Optional-item messages identify a missing
+   source plugin/record; zero supported effects means no oil bonus can apply.
+3. Use a disposable test save. With Measured Dose and Potency but neither
+   Mechanist rank, compare the same oil/bolt/target at Alchemy 0, 50, and 100.
+   Each `Alchemical Potency` log line must show x1, x1.5, or x2 respectively
+   (no application line at x1). A normal 20-per-second oil becomes 30 or 40;
+   a greater 40-per-second oil becomes 60 or 80, before native resistance and
+   other modifiers. Duration remains five seconds. Keep target resistance,
+   weapon damage and all other perks constant when comparing Health loss.
+4. Test all four oil types, greater oils, and the appropriate species bonus.
+   A conditional effect must still depend on its native condition; only an
+   effect actually applied to the target is scaled. At Alchemy 100, Mechanist I
+   gives a total x2.5 and rank II x3. Owning both ranks still gives x3.
+5. Check coated bow arrows, melee oils, bombs/powders, plain bolts, ordinary
+   health-damage poisons and pure weakness-to-fire coatings. None receives a
+   Potency application log. Other perks keep their existing behavior. Stamina
+   changes must not affect oil strength or critical damage through this perk.
+6. Save/restart with coated bolts in inventory and fire them again. Repeat with
+   an existing batch and newly coated bolts, including a shot after switching
+   weapons before impact. Eligibility follows the projectile source weapon;
+   Alchemy is read at impact. Check rapid hits, blocked hits and misses. Effects
+   already active before the upgrade retain their existing strength. Turn
+   tracing back off after testing.
 
-Automated checks cover native modifier ordering, exactly one original entry
-call, nested-query isolation, real Windows x64 variadic forwarding and return
-registers, Stamina arithmetic, shot-cache lifetime, the production impact pointer
-ABI, generated perk records/tree prerequisites, and all existing recipe tests.
-They do not substitute for this in-game check.
+Automated checks exercise production registration/filtering, oil proxies,
+player/perk/source guards, crossbow versus bow/melee scope, skill arithmetic,
+conditional damage magnitudes, native modifier ordering, Mechanist stacking,
+recursive and repeated adjustments, missing forms, invalid floats, unmodified
+shared records/durations, impact return ABI, and existing recipe persistence.
+Windows compilation and these checks do not replace the in-game test above.
 
 # Coating Mechanist balance checks, v0.2.9
 

@@ -4,7 +4,7 @@
 #include <Windows.h>
 #include "Core.h"
 #include "Coating.h"
-#include "Precision.h"
+#include <MinHook.h>
 #include "ImmersiveAnimation.h"
 #include "AmmoIconEffects.h"
 #include "PoisonSnapshot.h"
@@ -612,26 +612,9 @@ namespace
         if (settings.trace && (fresh || actorContact)) SKSE::log::info("Projectile {:08X}: native poison {:08X}, actor contact={}, recover {:08X}",
             projectile->GetFormID(), slot.poison->GetFormID(), actorContact, runtime.ammoSource->GetFormID());
     }
-    bool precisionShot(RE::TESAmmo* ammo, precision::Shot& shot)
-    {
-        std::lock_guard lock(stateMutex);
-        if (!session || !formsReady || saveFault || !ammo) return false;
-        const auto it = slotIDs.find(ammo->GetFormID());
-        if (it == slotIDs.end()) return false;
-        const auto& slot = slots[it->second];
-        if (!slot.original || !slot.poison || !slot.poison->IsPoison()) return false;
-        shot.epoch = generation.load(); shot.ammo = ammo->GetFormID();
-        shot.baseAmmo = slot.original->GetFormID(); shot.poison = slot.poison->GetFormID();
-        return true;
-    }
-    bool precisionActive(std::uint64_t epoch)
-    {
-        std::lock_guard lock(stateMutex);
-        return session && formsReady && !saveFault && epoch == generation.load();
-    }
     struct LoadedHook
     {
-        static void thunk(RE::ArrowProjectile* p) { original(p); prepareProjectile(p, false); precision::loaded(p); }
+        static void thunk(RE::ArrowProjectile* p) { original(p); prepareProjectile(p, false); }
         static inline REL::Relocation<decltype(thunk)> original;
     };
     struct ImpactHook
@@ -646,7 +629,6 @@ namespace
         {
             prepareProjectile(p, target && target->As<RE::Actor>());
             coating::Scope scope(p, session.load());
-            precision::Scope criticalScope(p, target);
             return original(p, target, point, velocity, collidable, shapeKey, spellCollided);
         }
         static inline REL::Relocation<decltype(thunk)> original;
@@ -662,7 +644,6 @@ namespace
             }
             prepareProjectile(p, actorContact);
             coating::Scope scope(p, session.load());
-            precision::Scope criticalScope(p);
             return original(p);
         }
         static inline REL::Relocation<decltype(thunk)> original;
@@ -678,7 +659,6 @@ namespace
     void reset()
     {
         session = false; menuPending = false; externalPending = false; ++generation;
-        precision::clear();
         std::lock_guard lock(stateMutex);
         recipes.clear(); saveFault = false; disableSlots();
     }
@@ -727,15 +707,15 @@ namespace
                 if (slot.form) slotIDs.emplace(slot.form->GetFormID(), i);
             }
             if (!formsReady) { SKSE::log::error("Disabled: enable the matching PoisonedAmmoNative.esp"); break; }
-            disableSlots(); installHooks(); coating::install(data, settings.trace);
-            precision::install(data, settings.trace, precisionShot, precisionActive);
+            disableSlots(); potency::install(data, settings.trace);
+            installHooks(); coating::install(data, settings.trace);
             InventoryUseHook::install();
             if (settings.immersiveAnimation) pa::animation::install();
             RE::BSInputDeviceManager::GetSingleton()->AddEventSink(&input);
             SKSE::log::info("Ready: {} stable ESL slots; key {}; dose override {}; auto-equip {}; craft on inventory poison use {}", slots.size(), settings.key, settings.arrowsPerBottle, settings.autoEquip, settings.craftOnUse);
             break;
         }
-        case SKSE::MessagingInterface::kPreLoadGame: session = false; menuPending = false; externalPending = false; ++generation; precision::clear(); break;
+        case SKSE::MessagingInterface::kPreLoadGame: session = false; menuPending = false; externalPending = false; ++generation; break;
         case SKSE::MessagingInterface::kNewGame: {
             reset(); if (marker) marker->value = 0; session = formsReady; break;
         }
@@ -774,7 +754,7 @@ extern "C" __declspec(dllexport) std::uint32_t PoisonedAmmoNative_CoatOneV1(
 }
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({0, 3, 0, 0}); data.PluginName("PoisonedAmmoNative");
+    data.PluginVersion({0, 4, 0, 0}); data.PluginName("PoisonedAmmoNative");
     data.AuthorName("Physics-helper contributors"); data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}}); return data;
 }();
@@ -787,7 +767,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("PoisonedAmmoNative 0.3.0 beta; Alchemical Precision native criticals; Coating Mechanist +25%/+50%; Skyrim Steam 1.6.1170; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
+    SKSE::log::info("PoisonedAmmoNative 0.4.0 beta; Alchemical Potency crossbow oils +1% damage per Alchemy level; Coating Mechanist +25%/+50%; Skyrim Steam 1.6.1170; Inventory/Wheeler click coats one bottle; F8 opens batch selection");
     auto api = SKSE::GetSerializationInterface(); api->SetUniqueID(saveID);
     api->SetSaveCallback(save); api->SetLoadCallback(load);
     api->SetRevertCallback([](SKSE::SerializationInterface*) { reset(); });

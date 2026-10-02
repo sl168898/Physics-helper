@@ -1,38 +1,45 @@
-# Alchemical Precision integration (0.3.0)
+# Alchemical Potency integration (0.4.0)
 
-`CM_AlchemicalPrecision` is additive PERK 0x803 in CoatingMechanist.esp. Like the
-existing coating perks it is an SKSE-backed marker; it has no duplicate CK entry
-that would add the bonus a second time. CTDA gates require GetBaseActorValue
-Marksman >=60 AND HasPerk 0x802. Perk Adjuster adds only the new connected node.
+`CM_AlchemicalPotency` retains PERK 0x803 in CoatingMechanist.esp. It replaces the
+old critical perk without reallocating a record. CTDA purchase gates remain
+GetBaseActorValue Marksman >=60 AND HasPerk 0x802 (Measured Dose). The Perk
+Adjuster node, other three perks, ESP filename, masters and co-save format are
+unchanged. Precision's launch/critical detours and transient shot cache are
+removed. MinHook remains needed for the existing inventory-use hook.
 
-Precision.h detours Projectile::Launch (AE Address Library 44108) to snapshot
-current Stamina, source weapon, coating and save generation for each player bolt.
-It never asks which ammo or weapon is equipped later. The recipe owner validates
-stable coated-ammo slots. The existing ArrowProjectile impact/process wrappers
-supply independent critical contexts, even without Coating Mechanist I/II.
+Potency.h resolves the winning item records at DataLoaded: Requiem - Alchemy
+Redone.esp 807/808/809/80A, Big Tweaks.esp A6D/A6E/A6F/A70. It collects their
+Health ValueModifier/DualValueModifier detrimental effects with a magnitude,
+including species-conditional damage effects. Missing optional records are
+logged and omitted. No plugin masters, effects or keywords are injected. Recipe
+proxies retain these original magic-effect pointers, including after reload.
 
-BGSEntryPoint::HandleEntryPoint (AE 23526) is variadic. An x64 tail gate redirects
-only entry 1 (critical chance) and entry 2 (critical damage), whose parameters are
-owner, source weapon, target and float result pointer. Other entry points tail-
-jump the original trampoline with all registers and stack arguments untouched.
-After the original resolves existing native perks, entry 1 adds 25 and clamps
-to 100; entry 2 multiplies the ordinary critical bonus by 1+0.02*shot Stamina.
-The engine retains RNG, critical flags, damage application and resistances.
-There is no second roll, manual Health damage, full-hit multiplication or write
-to HitData::criticalDamageMult (misnamed reflected damage in the pinned headers).
+The existing synchronous coating::Scope identifies the impact's source crossbow,
+bolt, shooter and native poison. It now remains active at Mechanist strength 1,
+so Measured Dose owners do not need either Mechanist rank for Potency. Invalid
+or unrelated nested impacts mask the outer scope until they return. The existing
+AdjustForPerks wrappers first chain the original native function, then require
+this exact source poison and caster, a non-self target, the player as caster,
+the Potency perk and a registered oil damage effect. There is no general spell,
+scroll, equipped-weapon, physical-hit, or melee multiplier.
 
-Transient shot handles include engine generation bits, are removed at OnKill,
-are bounded to 4096 records and are cleared on save-game load/revert. No strong
-projectile pointers are retained. Existing recipe serialization is unchanged.
-Previously in-flight bolts on a load do not receive this perk's enhancement.
-Nested unrelated projectile scopes clear the outer context and restore it after
-return. A depth guard prevents duplicate application in nested entry queries.
-MinHook setup fails closed for this perk without disabling existing coating.
+Only the ActiveEffect instance magnitude is multiplied by
+`1 + max(0, current Alchemy) / 100`. The raw Alchemy actor value is used at impact;
+AlchemyModifier and AlchemyPowerModifier are not queried. Nonfinite skill or
+magnitude and overflowing results are left unchanged. Effect duration, shared
+MGEFs, ALCH records and recipe fingerprints are untouched. Existing native
+resistance, condition and damage handling continues normally.
 
-Validation includes an executable Windows x64 gate test with floating variadic
-registers, extra stack arguments and a 64-bit return sentinel. The production
-critical wrapper and impact wrapper are extracted into tests to exercise the
-actual code compiled into the DLL. CommonLib and vcpkg remain pinned.
+The per-impact duplicate guard and shared AdjustForPerks recursion guard protect
+both Potency and Mechanist scaling. After Potency, the existing Mechanist x1.25
+or x1.5 magnitude/duration logic still applies. Potency never adds a second
+critical roll or edits critical damage. Already running effects retain their
+magnitude; new applications read current skill/perks.
+
+Tests include the production Potency.h and Coating.h with engine doubles, plus
+the extracted production impact wrapper for its pointer-return ABI. Windows CI
+also compiles the real plugin against pinned CommonLibSSE-NG. In-game load-order
+behavior still needs confirmation; automated tests do not simulate Skyrim.
 
 # Coating Mechanist balance update (0.2.9)
 

@@ -36,12 +36,6 @@ namespace coating {
         ~Scope() { cleanupResult = cleanupClobber(); scopeActive = false; ++cleaned; }
     };
 }
-namespace precision {
-    struct Scope {
-        Scope(RE::ArrowProjectile*, RE::TESObjectREFR*) {}
-        ~Scope() { cleanupResult = cleanupClobber(); }
-    };
-}
 @@PRODUCTION_IMPACT_HOOK@@
 using NativeImpact = RE::Projectile::ImpactData* (*)(RE::ArrowProjectile*, RE::TESObjectREFR*,
     const RE::NiPoint3&, const RE::NiPoint3&, RE::hkpCollidable*, std::uint32_t, bool);

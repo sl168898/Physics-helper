@@ -76,7 +76,7 @@ foreach ($Name in $SourcePaths) {
 $SourceUrl = "https://github.com/sl168898/Physics-helper/tree/$($env:GITHUB_SHA)/poisoned-ammo-skse"
 "Exact build source: $SourceUrl`nBuild instructions: tools/build_windows.ps1`nSource file hashes: BuildInfo.json" | Set-Content (Join-Path $Stage 'SOURCE.txt') -Encoding utf8
 $Info = [ordered]@{
-    plugin = 'PoisonedAmmoNative'; version = '0.3.0-beta'; runtime = 'Steam 1.6.1170'
+    plugin = 'PoisonedAmmoNative'; version = '0.4.0-beta'; runtime = 'Steam 1.6.1170'
     source_commit = $env:GITHUB_SHA; source_url = $SourceUrl; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     esp_sha256 = (Get-FileHash (Join-Path $Stage 'PoisonedAmmoNative.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -93,12 +93,13 @@ $Info = [ordered]@{
     crafted_poison_handle_check_fixed = $true; production_poison_snapshot_tests = 'passed'
     runtime_keyword_persistence = $true; runtime_keyword_tests = 'passed'; legacy_v1_golden_tests = 'passed'
     global_form_keyword_lookup = $true; factory_keyword_regression_tests = 'passed'
-    alchemical_precision = $true; precision_form_id = '0x803|CoatingMechanist.esp'
-    precision_marksman = 60; precision_parent = 'Measured Dose'; native_critical_chance_points = 25
-    critical_bonus_stamina_per_point = 0.02; stamina_snapshot = 'Projectile::Launch'
-    native_critical_wrapper_tests = 'passed'; windows_x64_variadic_gate_tests = 'passed'
+    alchemical_precision = $false; alchemical_potency = $true; potency_form_id = '0x803|CoatingMechanist.esp'
+    potency_marksman = 60; potency_parent = 'Measured Dose'; potency_damage_per_alchemy_point = 0.01
+    potency_skill_actor_value = 'Alchemy'; potency_uses_poison_strength_modifier = $false
+    potency_damage_only = $true; potency_crossbow_bolts_only = $true; potency_production_hook_tests = 'passed'
+    critical_hooks_installed = $false
     recipe_payload_versions = @(1, 2)
     in_game_tested = $false; recipe_capacity = 512; dynamic_form_creation = $false; papyrus_scripts = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_3_0_Beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_4_0_Beta.zip')
