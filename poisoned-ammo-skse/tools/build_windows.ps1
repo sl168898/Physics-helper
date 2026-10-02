@@ -76,7 +76,7 @@ foreach ($Name in $SourcePaths) {
 $SourceUrl = "https://github.com/sl168898/Physics-helper/tree/$($env:GITHUB_SHA)/poisoned-ammo-skse"
 "Exact build source: $SourceUrl`nBuild instructions: tools/build_windows.ps1`nSource file hashes: BuildInfo.json" | Set-Content (Join-Path $Stage 'SOURCE.txt') -Encoding utf8
 $Info = [ordered]@{
-    plugin = 'PoisonedAmmoNative'; version = '0.4.0-beta'; runtime = 'Steam 1.6.1170'
+    plugin = 'PoisonedAmmoNative'; version = '0.5.0-beta'; runtime = 'Steam 1.6.1170'
     source_commit = $env:GITHUB_SHA; source_url = $SourceUrl; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     esp_sha256 = (Get-FileHash (Join-Path $Stage 'PoisonedAmmoNative.esp') -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -97,9 +97,17 @@ $Info = [ordered]@{
     potency_marksman = 60; potency_parent = 'Measured Dose'; potency_damage_per_alchemy_point = 0.01
     potency_skill_actor_value = 'Alchemy'; potency_uses_poison_strength_modifier = $false
     potency_damage_only = $true; potency_crossbow_bolts_only = $true; potency_production_hook_tests = 'passed'
+    twin_shot = $true; twin_shot_form_id = '0x804|CoatingMechanist.esp'
+    twin_shot_marksman = 80; twin_shot_parent = 'Alchemical Potency'
+    twin_shot_projectiles = 2; twin_shot_ammo_cost = 2; twin_shot_last_bolt_single = $true
+    twin_shot_extra_spread_degrees = 0.75; twin_shot_same_coating_batch = $true
+    twin_shot_deferred_extra = $true; twin_shot_extra_launch_failure_refund = $true
+    twin_shot_no_recursive_duplication = $true; twin_shot_stale_load_cancelled = $true
+    twin_shot_production_tests = 'passed'; native_test_suites = 7
+    twin_shot_native_launch_relocation = @(42928, 44108)
     critical_hooks_installed = $false
     recipe_payload_versions = @(1, 2)
     in_game_tested = $false; recipe_capacity = 512; dynamic_form_creation = $false; papyrus_scripts = $false
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_4_0_Beta.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Poisoned_Ammunition_Coating_Perks_v0_5_0_Beta.zip')

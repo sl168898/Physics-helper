@@ -1,3 +1,45 @@
+# Twin Shot 0.5.0 beta: focused in-game check
+
+1. Confirm the log begins `PoisonedAmmoNative 0.5.0 beta` and contains `Twin Shot
+   ready`. The perk should be above Alchemical Potency in Marksman, requiring
+   base Marksman 80 and Alchemical Potency. Buy it normally or, in a disposable
+   test save, resolve it with `help "Twin Shot" 4 PERK` and use its returned ID.
+2. With exactly TWO ordinary bolts, shoot a nearby wall in first person and
+   then third person: two projectiles, inventory 2 -> 0, one normal reload.
+   Repeat with exactly ONE bolt: one projectile, inventory 1 -> 0. With no
+   Twin Shot perk, ordinary single-shot behavior must remain.
+3. Repeat with TWO bolts from ONE fire-oil coating batch, then poison, frost
+   and shock. Confirm two native hits when both connect and the applicable
+   Coating Mechanist/Alchemical Potency adjustments once per bolt. Test against
+   a resistant target. Native duration/status effects may refresh instead of
+   stacking. Use single shots without the perk as a comparison.
+4. With ONE coated bolt and a different coating stack in inventory, fire a
+   single shot; the other stack must not supply the extra. Try the last two
+   coated bolts while ordinary bolts are available: both fired bolts must
+   retain their coating even if the game equips another stack afterward.
+5. Test a tempered/enchanted crossbow, close and distant targets, a wall near
+   the muzzle, and an equipment change after firing. Check that extra bolts
+   follow the original shot's weapon and aim. Existing crossbow reload and
+   poison-use animations should complete normally; test Wheeler coating too.
+6. Save/load with bolts in flight, and fire repeatedly: no replayed extras,
+   recursive volleys or free ammunition. Retest Huntsman's Satchel with a fresh
+   remembered batch and Corpse Explosion with the same existing chain cap.
+
+The log records `Twin Shot: extra projectile=... ammo=... weapon=... poison=...`
+and the reserved spare count. Enable TraceProjectiles=1 in the existing INI
+for the last-bolt skip and coating impact detail. If a launch hook cannot be
+installed, the log reports it and Twin Shot remains inactive; other coating
+features continue. Send that log plus a crash log if applicable.
+
+The automated suite compiles the ACTUAL TwinShot.h adapter with engine doubles:
+native removal before/after launch, 2/1/0 spare handling, exact coating stack,
+poison/enchantment/damage snapshots, spread, player/crossbow/perk gates,
+non-recursion, failed-launch refunds, overlapping deferred shots, dead player,
+missing task service, hook failure and stale-save cancellation. Windows CI
+also compiles the native adapter against the pinned CommonLib headers.
+
+## Earlier checks
+
 # Alchemical Potency 0.4.0 beta: in-game acceptance check
 
 1. Install the complete archive and launch Steam 1.6.1170 through SKSE. Enable

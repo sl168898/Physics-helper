@@ -29,6 +29,15 @@
       "parents": [
         "0x802|CoatingMechanist.esp"
       ]
+    },
+    {
+      "perk": "0x804|CoatingMechanist.esp",
+      "skill": "0x44E|Skyrim.esm",
+      "x": 6.4,
+      "y": 6.5,
+      "parents": [
+        "0x803|CoatingMechanist.esp"
+      ]
     }
   ]
 }

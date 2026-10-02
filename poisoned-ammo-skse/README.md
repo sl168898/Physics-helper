@@ -1,3 +1,44 @@
+# Version 0.5.0 beta: Twin Shot
+
+Adds **Twin Shot** to the Marksman tree: base Marksman 80, Alchemical Potency,
+and one perk point. Alchemical Potency remains Marksman 60 + Measured Dose.
+All existing perk IDs and ranks remain unchanged; Twin Shot is a new purchase.
+
+Each crossbow discharge fires two real bolts with one normal reload. The extra
+bolt launches through the native projectile system on the next queued task,
+with 0.75 degrees of horizontal spread from the original resolved aim. Both
+projectiles can hit the same enemy, hit different enemies, or miss.
+
+The shot consumes **two bolts from the exact same ammunition/coating stack**.
+If only one is available, the normal single shot fires. Another coating batch
+or ordinary bolts cannot pay for a coated extra. Each bolt carries the same
+coating and receives its applicable Coating Mechanist/Alchemical Potency bonus.
+The extra retains the first bolt's launch damage, native enchantment and poison.
+Effects use their native stacking rules; two impacts are not a guarantee that
+all duration/status effects stack. Both bolts follow the existing recovery rules.
+
+The extra cannot duplicate itself. Original shots are forwarded once. A failed
+extra launch refunds its reserved bolt. Old queued tasks are cancelled across
+load/revert; no new save records or dynamic ammo forms are introduced. The
+normal projectile impact hooks, coating recipes, Wheeler exports, poison-click
+crafting and reload-before-coating animation route are retained. Corpse Explosion
+and Huntsman's Satchel keep their existing death/refund rules.
+
+Install this COMPLETE archive over the previous Poisoned Ammunition / Coating
+Perks mod in MO2. Let **PoisonedAmmoNative.dll, CoatingMechanist.esp and its Perk
+Adjuster JSON** win conflicts. Enable PoisonedAmmoNative.esp and
+CoatingMechanist.esp; keep Perk Adjuster and Address Library installed. Restart
+through SKSE. This targets Steam Skyrim 1.6.1170. No new game, recipe recreation,
+perk reset or animation regeneration is required. Keep the separate Biggie
+Traits - Combined package installed for its traits.
+
+Windows compilation, seven automated suites and ESP/tree validation are
+required for this beta. The launch adapter is tested with engine doubles;
+actual aim, collision, coating stacking and mod compatibility need confirmation
+in Skyrim. See the Twin Shot section of TESTING.md and PoisonedAmmoNative.log.
+
+## Earlier release notes
+
 # Version 0.4.0 beta — Alchemical Potency
 
 Replaces Alchemical Precision with Alchemical Potency in the Marksman tree.
