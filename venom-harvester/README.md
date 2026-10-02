@@ -1,6 +1,6 @@
-# Version 2.2.0 beta: 50% + 100 damage and chain reactions
+# Version 2.2.1 beta: Alchemy-tier damage and limited chain reactions
 
-Included in COMPLETE Biggie Traits - Combined 2.14.0-beta1 for Steam Skyrim
+Included in COMPLETE Biggie Traits - Combined 2.14.1-beta1 for Steam Skyrim
 1.6.1170. Replace the previous Combined mod and let both Biggie Traits -
 Combined.esp and SKSE/Plugins/VenomHarvester.dll win conflicts. Restart SKSE.
 Existing trait ownership is preserved; no new game or trait reselection.
@@ -9,63 +9,99 @@ Keep your separate Poisoned Ammunition / Coating Perks package installed.
 ## Damage and chaining
 
 A confirmed killing blow from your poison or weapon oil produces a burst with
-**50% of your recorded actual Health damage to that enemy + 100 damage**.
-Overkill is capped to the Health actually removed: a nominal 5000-damage poison
-killing a 200-Health enemy produces a 200-damage burst, before the recipient's
-matching resistance. The flat 100 is added once per corpse, before resistance.
-The killing coating's damage mix splits the whole amount, including the 100.
-A 75% fire / 25% poison mix produces 150 fire + 50 poison in that example.
+**50% of your recorded actual Health damage to that enemy + an Alchemy bonus**:
 
-An enemy killed by one of these bursts also explodes, even if it was never
-coated. Its burst uses 50% of the player's recorded actual damage to THAT enemy
-(including chain damage) + 100, in the damage type of the blast that killed it.
-For example, a 200 fire burst kills a previously unharmed enemy with 120 Health:
-its own burst is 160 fire. If that kills another with 100 Health, the next is
-150 fire. Surviving a blast does not trigger a burst. A later weapon, follower
-or unrelated spell kill does not qualify merely because a blast hit earlier.
+| Current Alchemy level | Additional damage | Additional chain generations |
+| --- | ---: | ---: |
+| 0-25 | 50 | 1 |
+| 26-50 | 100 | 2 |
+| 51-75 | 150 | 3 |
+| 76-100 | 200 | 4 |
+
+Alchemy above 100 retains the 200 bonus and four-generation chain cap. Levels are whole points; a fractional
+25.9 remains in the first tier until 26. Current Alchemy is read when each corpse
+actually explodes, including later chain waves. Poison-strength and Alchemy
+power modifiers are not used to calculate this tier bonus.
+
+Overkill is capped to Health actually removed. A nominal 5000-damage poison
+killing a previously unharmed 200-Health enemy produces 100 percentage damage,
+plus the bonus: 150 / 200 / 250 / 300 total, depending on your Alchemy tier.
+Matching resistance reduces the whole amount. The bonus is added once per
+corpse and split using the killing coating's damage mix. For a 75% fire / 25%
+poison mix at Alchemy 100, that example gives 225 fire + 75 poison.
+
+An enemy killed by one of these bursts also explodes if chain allowance remains,
+even if it was never coated. Its burst uses 50% of the player's recorded actual damage to THAT enemy
+(including chain damage) + the current Alchemy bonus, in the damage type of
+the blast that killed it. At Alchemy 50, a 200 fire burst killing an untouched
+120-Health enemy produces a 160 fire burst. At Alchemy 100 the same victim
+produces 260 fire. Surviving a blast does not trigger a burst. A later weapon,
+follower or unrelated spell kill does not qualify merely because of an earlier
+blast hit.
+
+The initial oil-triggered explosion sets the chain allowance from your current
+Alchemy. It does not count toward that allowance: Alchemy 25 permits the initial
+burst plus one further generation, while Alchemy 100 permits up to five total.
+Each child inherits one fewer remaining generation. Several enemies can explode
+at the same generation; this is a depth limit, not a count of all corpses hit.
+The final allowed burst still damages enemies, but its kills do not explode.
+Later Alchemy changes cannot replenish the allowance. A separate fresh oil kill
+starts its own chain. The damage bonus still uses current Alchemy at each burst.
 
 Each corpse explodes once per life. Kills are queued for a later player update,
 with at most 16 corpse bursts per wave; additional corpses remain pending.
-There is no generation limit: the chain ends when no eligible enemy dies.
-This avoids recursively casting new explosions from inside damage callbacks.
-All stages retain the 25-foot (7.62-metre) radius, enemy-only filtering,
-matching resistance, native area visibility and existing elemental/Poison Nova
-visuals. The existing thumbnail and maximum Health reduction of 50 remain.
+This avoids recursive casting inside damage callbacks. All stages retain the
+25-foot (7.62-metre) radius, enemy-only filtering, matching resistance, native
+area visibility and existing elemental/Poison Nova visuals. The thumbnail and
+maximum Health reduction of 50 remain.
 
-Only this trait's four private typed spells qualify as chain damage; generic
-explosions are not treated as poison/oil kills. Both synchronous area delivery
-and later native effect updates supply typed damage attribution. Nested health
-hooks count actual damage once. Dead/essential/queued-death guards remain.
-Huntsman's Satchel keeps its own poison identity, crafting and refund rules.
-Chain spells do not become Satchel recipe poisons or issue extra refunds.
+Only this trait's private typed spells qualify as chain damage. Twenty spell
+identities encode four damage types and five remaining-generation budgets.
+Synchronous area delivery, delayed effect updates and saved native effects
+therefore retain their own allowance, even when different chains overlap.
+Nested Health hooks count actual damage once. Huntsman's Satchel keeps its
+separate crafting, poison identity and refund rules; chain spells do not issue
+extra ingredient refunds.
 
 ## Saves and testing
 
-CEXP v2 saves the same ledger fields with a new version tag and reads v1 saves.
-Old pending bursts adopt 50% + 100 while retaining their stored damage mix;
-spent corpses stay spent. Satchel HSAT/HSAP formats and all FormIDs are unchanged.
-Keep an earlier ESS/SKSE save pair if you plan to revert to an older DLL, which
-cannot read the new CEXP v2 record.
+CEXP v4 stores percentage damage, type mix and the remaining chain allowance;
+the Alchemy damage bonus is added only when claiming a pending burst. It reads
+v1/v2/v3 saves. Delivered v1 pending oil kills receive the new allowance at their
+initial burst. Undelivered v2/v3 pending bursts finish without extending a chain,
+because those versions had no saved allowance. Old pending damage is normalized
+to its percentage component. Saving/loading neither stacks damage bonuses nor
+resets a chain budget. Spent corpses remain spent.
+Satchel HSAT/HSAP formats and all FormIDs are unchanged. Keep an earlier ESS/SKSE
+save pair if you plan to revert to an older DLL, which cannot read CEXP v4.
 
-VenomHarvester.log must show native 2.2.0 and a ready line containing
-`50 percent + 100 flat damage` and `chains enabled`. Test in a disposable save:
+VenomHarvester.log must show native 2.2.1 and a ready line with
+`Alchemy-tier bonus 50/100/150/200` and `chains enabled`. Test in a disposable save:
 
-1. Place three hostile enemies close together in open space. Kill the first
-   using fire oil, with a second weak enough to die to its burst. The second
-   must explode once and damage the third, without requiring another oil hit.
-2. Check `confirmed chain explosion killing blow`, subsequent `area-cast`, and
-   `health-update ... actual-loss`. An accepted cast alone is not proof of loss.
-3. Repeat with poison, frost and shock. Check a resistant target and a companion;
-   resistance must reduce the whole burst, and the companion must be unharmed.
-4. Save/restart with the trait selected and repeat. Check a larger enemy group,
-   an essential actor, and a blast survivor subsequently killed by a plain weapon.
-5. Retest Huntsman's Satchel using a freshly remembered recipe and coated dagger.
-   Send the fresh VenomHarvester.log if damage, chaining or refunds misbehave.
+1. Kill equivalent targets using the same oil at Alchemy 25/26, 50/51 and 75/76.
+   Check `Alchemy tier ... Alchemy=... bonus=...`: each boundary raises the bonus
+   by 50. Alchemy 100 and above must still show bonus 200.
+2. Put three hostile enemies close together in open space. Kill the first using
+   fire oil, with the second weak enough to die to its burst. The second must
+   explode once and damage the third without another oil application.
+3. Look for `confirmed chain explosion killing blow`, subsequent `area-cast`
+   and `health-update ... actual-loss`. An accepted cast alone is not proof of
+   Health loss. Repeat with poison, frost and shock and a resistant target.
+4. Arrange a line of weak hostile targets with each next target in range of its
+   predecessor. Check one additional generation at 25, two at 26/50, three at
+   51/75 and four at 76/100. Log `remaining-chain-generations` must decrease to
+   zero, never reset. Branching groups share depth, not a global corpse count.
+5. Save/restart and repeat. Check companions, essential actors, overlapping
+   bursts, a larger group, and a blast survivor killed by a plain weapon.
+6. Retest Huntsman's Satchel with a freshly remembered recipe and coated dagger.
+   Send VenomHarvester.log if damage, chaining or refunds misbehave.
 
-Windows compilation and 15 automated suites are required. Tests exercise the
-production damage ledger, native callback accounting, save migration, and the
-actual deferred pump/queue methods. Skyrim's full collision, effects and the
-user's load order have not been run here; in-game confirmation is still needed.
+Windows compilation and 15 automated suites are required. These cover tier
+boundaries and caps, finite branched chains, production damage accounting,
+resistance, saved budgets, legacy migration and the actual deferred pump/queue
+with changing Alchemy levels.
+Skyrim's full effects, collision and the user's load order have not been run
+here; in-game confirmation is still needed.
 
 Earlier release notes describe their respective versions.
 

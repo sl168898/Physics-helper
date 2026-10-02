@@ -20,6 +20,7 @@ namespace RE {
     };
 }
 namespace SKSE {
+    namespace log { template<class... T> void info(const char*, T&&...) {} }
     struct Tasks { std::vector<std::function<void()>> jobs; void AddTask(std::function<void()> job){jobs.push_back(job);} };
     inline Tasks tasks;
     Tasks* GetTaskInterface(){return &tasks;}
@@ -33,16 +34,20 @@ namespace corpse {
         std::atomic<std::uint64_t> epoch{};
         std::atomic_bool taskQueued{};
         bool enabled=true;
+        float alchemy=50;
         FakeMutex mutex;
         Ledger ledger;
         std::vector<ID> exploded;
+        std::vector<Damage> amounts;
+        std::vector<unsigned> budgets;
         std::function<void(ID)> callback;
         bool selected(){return enabled;}
+        float currentAlchemy(){return alchemy;}
         void forget(ID id){ledger.forget(id);}
         static float health(RE::Actor* a){return a->hp;}
         static bool killQueued(RE::Actor* a){return a->queued;}
-        void explode(RE::Actor* a,const Damage&){
-            assert(taskQueued); exploded.push_back(a->id); if(callback)callback(a->id);
+        void explode(RE::Actor* a,const Damage& damage,unsigned remaining){
+            assert(taskQueued); exploded.push_back(a->id); amounts.push_back(damage); budgets.push_back(remaining); if(callback)callback(a->id);
         }
 @@PRODUCTION_PUMP@@
     };
@@ -54,16 +59,19 @@ void runTask(){
 int main(){
     using namespace corpse;
     Runtime runtime; Runtime::self=&runtime;
-    const Origin chain{true,true,0x21000F83,Type::fire};
-    auto pending=[&](ID id){
-        RE::actors[id]={id};runtime.ledger.record(id,chain,50);assert(runtime.ledger.killed(id,chain));
+    auto pending=[&](ID id,Origin origin=Origin{true,false,10,Type::fire}){
+        RE::actors[id]={id};runtime.ledger.record(id,origin,50);assert(runtime.ledger.killed(id,origin));
     };
     pending(1);
-    runtime.callback=[&](ID id){if(id==1){pending(2);runtime.queue();assert(SKSE::tasks.jobs.empty());}};
+    runtime.callback=[&](ID id){if(id==1){pending(2,Origin{true,true,chainSpellLocal(runtime.budgets.back(),0),Type::fire,runtime.budgets.back()});runtime.queue();assert(SKSE::tasks.jobs.empty());}};
     runtime.queue();runtime.queue();assert(SKSE::tasks.jobs.size()==1);
     runTask();assert(runtime.exploded==std::vector<ID>{1} && !runtime.taskQueued);
+    assert(runtime.amounts.at(0).at(0)==125); // 25 percentage damage + tier 100.
     assert(runtime.ledger.targets.at(2).state==State::pending && SKSE::tasks.jobs.empty());
+    runtime.alchemy=100; // A queued later wave reads the current skill.
     runtime.queue();runTask();assert((runtime.exploded==std::vector<ID>{1,2}));
+    assert(runtime.amounts.at(1).at(0)==225);
+    assert((runtime.budgets==std::vector<unsigned>{2,1})); // Skill changes cannot replenish the chain.
     // Large groups are spread over updates, without dropping later victims.
     runtime.callback={};runtime.exploded.clear();
     for(ID id=10;id<30;++id)pending(id);

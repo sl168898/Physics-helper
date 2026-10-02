@@ -21,11 +21,12 @@ namespace corpse
         struct AreaCast {
             BlastDelivery delivery;
             RE::NiPointer<RE::Actor> body, player;
+            unsigned remaining{};
         };
         inline static thread_local AreaCast* areaCast{};
         inline static REL::Relocation<void (*)(RE::PlayerCharacter*, float)> originalUpdate;
         RE::SpellItem* trait{};
-        std::array<RE::SpellItem*, 4> spells{};
+        std::array<RE::SpellItem*, chainSpellCount> spells{};
         std::array<RE::EffectSetting*, 4> effects{};
         std::array<RE::BGSExplosion*, 4> visuals{};
         std::atomic_bool session{}, taskQueued{};
@@ -42,6 +43,10 @@ namespace corpse
 
         static float health(RE::Actor* actor) {
             return actor ? actor->AsActorValueOwner()->GetActorValue(RE::ActorValue::kHealth) : 0.f;
+        }
+        static float currentAlchemy() {
+            const auto player = RE::PlayerCharacter::GetSingleton();
+            return player ? player->AsActorValueOwner()->GetActorValue(RE::ActorValue::kAlchemy) : 0.f;
         }
         static bool alive(RE::Actor* actor) {
             return actor && actor->AsActorState()->GetLifeState() == RE::ACTOR_LIFE_STATE::kAlive;
@@ -78,9 +83,12 @@ namespace corpse
                 effect->conditionStatus == RE::ActiveEffect::ConditionStatus::kFalse) return origin;
             if (burst != effects.end()) {
                 const auto index = static_cast<unsigned>(burst - effects.begin());
-                if (effect->spell == spells[index]) {
+                const auto spell = std::find(spells.begin(), spells.end(), effect->spell);
+                const auto slot = static_cast<unsigned>(spell - spells.begin());
+                if (spell != spells.end() && slot % 4 == index) {
                     origin.poison = effect->spell->GetFormID();
                     origin.type = static_cast<Type>(index);
+                    origin.remaining = slot / 4;
                 }
                 return origin;
             }
@@ -158,11 +166,12 @@ namespace corpse
                 if (!runtime || !data.magicItem) return original(target, data);
                 const auto found = std::find(runtime->spells.begin(), runtime->spells.end(), data.magicItem);
                 if (found == runtime->spells.end()) return original(target, data);
-                const auto index = static_cast<unsigned>(found - runtime->spells.begin());
+                const auto slot = static_cast<unsigned>(found - runtime->spells.begin());
+                const auto index = slot % 4;
                 auto cast = areaCast;
                 // Never let a console cast, deferred stray request, or native
                 // splash hit unfiltered actors. Ordinary magic is forwarded.
-                if (!cast || static_cast<unsigned>(cast->delivery.type) != index ||
+                if (!cast || static_cast<unsigned>(cast->delivery.type) != index || cast->remaining != slot / 4 ||
                     !data.effect || data.effect->baseEffect != runtime->effects[index]) {
                     SKSE::log::warn("[CorpseExplosion] area-rejected type={} reason=no-matching-cast", names[index]);
                     return false;
@@ -188,7 +197,7 @@ namespace corpse
                 // straight through HandleHealthDamage. Later effect updates
                 // independently recover the same qualified spell/type above.
                 Scope observed(actor.get(), Origin{true, true, data.magicItem->GetFormID(),
-                    static_cast<Type>(index)}, true);
+                    static_cast<Type>(index), cast->remaining}, true);
                 const bool accepted = original(target, data);
                 observed.finish();
                 if (accepted) ++cast->delivery.accepted;
@@ -210,10 +219,10 @@ namespace corpse
                 SKSE::log::info("[CorpseExplosion] installed {} MagicTarget::AddTarget hook", name);
             }
         };
-        void explode(RE::Actor* body, const Damage& damage) {
+        void explode(RE::Actor* body, const Damage& damage, unsigned remaining) {
             const auto p = RE::PlayerCharacter::GetSingleton();
             const auto processes = RE::ProcessLists::GetSingleton();
-            if (!p || !processes || !body || !body->GetParentCell() ||
+            if (remaining > maxChainReactions || !p || !processes || !body || !body->GetParentCell() ||
                 !body->Is3DLoaded() || body->IsDisabled()) return;
             // The pinned CommonLib TES facade reads the wrong world-space
             // field on 1.6.1170; its sky-cell lookup crashed at this call site.
@@ -247,7 +256,7 @@ namespace corpse
             for (unsigned i = 0; i < 4; ++i) {
                 if (!(damage[i] > 0) || !std::isfinite(damage[i]) || damage[i] > std::numeric_limits<float>::max()) continue;
                 AreaCast cast{{body->GetFormID(), static_cast<Type>(i), damage[i], allowed},
-                    RE::NiPointer<RE::Actor>(body), RE::NiPointer<RE::Actor>(p)};
+                    RE::NiPointer<RE::Actor>(body), RE::NiPointer<RE::Actor>(p), remaining};
                 struct Applying {
                     bool old = applying; AreaCast* previous = areaCast;
                     explicit Applying(AreaCast* cast) { applying = true; areaCast = cast; }
@@ -255,7 +264,7 @@ namespace corpse
                 } scope(&cast);
                 SKSE::log::info("[CorpseExplosion] area-cast victim={:08X} type={} requested={} eligible={} origin=corpse visibility=native-area",
                     body->GetFormID(), names[i], damage[i], allowed.size());
-                caster->CastSpellImmediate(spells[i], false, nullptr, 1.f, false, static_cast<float>(damage[i]), p);
+                caster->CastSpellImmediate(spells[remaining * 4 + i], false, nullptr, 1.f, false, static_cast<float>(damage[i]), p);
                 accepted += cast.delivery.accepted;
                 SKSE::log::info("[CorpseExplosion] area-result victim={:08X} type={} attempted={} accepted={}",
                     body->GetFormID(), names[i], cast.delivery.attempted.size(), cast.delivery.accepted);
@@ -289,10 +298,14 @@ namespace corpse
                     continue;
                 }
                 std::optional<Damage> damage;
-                { std::lock_guard lock(mutex); damage = ledger.claim(id); }
+                unsigned remaining{};
+                const auto alchemy = currentAlchemy();
+                { std::lock_guard lock(mutex); damage = ledger.claim(id, alchemy, &remaining); }
                 if (damage && generation == epoch.load() && selected()) {
                     ++bursts;
-                    explode(body.get(), *damage);
+                    SKSE::log::info("[CorpseExplosion] Alchemy tier victim={:08X} Alchemy={} bonus={} remaining-chain-generations={}",
+                        id, alchemy, alchemyBonus(alchemy), remaining);
+                    explode(body.get(), *damage, remaining);
                 }
             }
         }
@@ -437,13 +450,17 @@ namespace corpse
             ready = trait != nullptr;
             for (unsigned i = 0; i < 4; ++i) {
                 effects[i] = data->LookupForm<RE::EffectSetting>(0xF82 + 2 * i, plugin);
-                spells[i] = data->LookupForm<RE::SpellItem>(0xF83 + 2 * i, plugin);
                 visuals[i] = data->LookupForm<RE::BGSExplosion>(0xF8A + i, plugin);
-                ready &= effects[i] && spells[i] && visuals[i];
+                ready &= effects[i] && visuals[i];
             }
-            if (!ready) { SKSE::log::error("[CorpseExplosion] records missing; trait disabled (requires Combined 2.13.0)"); return; }
-            for (unsigned i = 0; i < 4; ++i) {
-                const auto spell = spells[i];
+            for (unsigned slot = 0; slot < chainSpellCount; ++slot) {
+                spells[slot] = data->LookupForm<RE::SpellItem>(chainSpellLocal(slot / 4, slot % 4), plugin);
+                ready &= spells[slot] != nullptr;
+            }
+            if (!ready) { SKSE::log::error("[CorpseExplosion] records missing; trait disabled (requires Combined 2.14.1)"); return; }
+            for (unsigned slot = 0; slot < chainSpellCount; ++slot) {
+                const auto i = slot % 4;
+                const auto spell = spells[slot];
                 const auto effect = effects[i];
                 const bool valid = spell->data.delivery == RE::MagicSystem::Delivery::kSelf &&
                     effect->data.delivery == RE::MagicSystem::Delivery::kSelf &&
@@ -456,7 +473,7 @@ namespace corpse
                     spell->data.flags.any(RE::SpellItem::SpellFlag::kNoAbsorb);
                 if (!valid) {
                     ready = false;
-                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.7 ESP winning conflicts (native area LOS enabled)", names[i]);
+                    SKSE::log::error("[CorpseExplosion] {} chain slot {} area records mismatched; requires Combined 2.14.1 ESP winning conflicts", names[i], slot);
                 }
             }
             if (!ready) return;
@@ -477,7 +494,7 @@ namespace corpse
             HealthHook<RE::VTABLE_Character>::install("Character");
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
-            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent + {} flat damage, radius {} feet ({:.3f} units), native area LOS, matching resistance, enemy filter, chains enabled, {} bursts per wave; acceptance and Health diagnostics", fraction * 100, flatDamage, radiusFeet, radius, maxBurstsPerWave);
+            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent + Alchemy-tier bonus 50/100/150/200 at levels 0/26/51/76, radius {} feet ({:.3f} units), native area LOS, matching resistance, enemy filter, chains enabled: 1/2/3/4 additional generations fixed at initial burst, {} bursts per wave; acceptance and Health diagnostics", fraction * 100, radiusFeet, radius, maxBurstsPerWave);
         }
         void setSession(bool value) { session.store(value); }
         void reset() {
@@ -487,11 +504,11 @@ namespace corpse
         void forget(ID id) { std::lock_guard lock(mutex); ledger.forget(id); }
         void save(SKSE::SerializationInterface* api) {
             std::lock_guard lock(mutex); const auto bytes = encode(ledger);
-            if (!api->WriteRecord(recordID, 2, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
+            if (!api->WriteRecord(recordID, 4, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
                 SKSE::log::error("[CorpseExplosion] save failed");
         }
         void load(SKSE::SerializationInterface* api, std::uint32_t version, std::uint32_t size) {
-            if ((version != 1 && version != 2) || size > 32 * 1024 * 1024) return;
+            if ((version < 1 || version > 4) || size > 32 * 1024 * 1024) return;
             std::vector<std::uint8_t> bytes(size);
             if (api->ReadRecordData(bytes.data(), size) != size) return;
             auto restored = decode(bytes, [api](ID old) { RE::FormID id{}; return api->ResolveFormID(old, id) ? id : 0; });

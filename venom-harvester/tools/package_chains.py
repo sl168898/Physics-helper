@@ -1,4 +1,4 @@
-"""Package native 2.2.0 plus two descriptions, preserving the complete trait mod."""
+"""Package native 2.2.1 with Alchemy tiers, finite chains and updated records, preserving the complete trait mod."""
 from pathlib import Path
 import io
 import json
@@ -20,8 +20,8 @@ def package(baseline, artifact, project, output):
         native = read_zip(io.BytesIO(archives[0]))
     info = json.loads(native['BuildInfo.json'].decode('utf-8-sig'))
     dll = native['SKSE/Plugins/VenomHarvester.dll']
-    assert info['version'] == '2.2.0' and info['runtime'] == '1.6.1170'
-    assert info['combined_version'] == info['combined_package_required'] == '2.14.0-beta1'
+    assert info['version'] == '2.2.1' and info['runtime'] == '1.6.1170'
+    assert info['combined_version'] == info['combined_package_required'] == '2.14.1-beta1'
     checks = ('windows_build', 'harvest_tests', 'menu_tests', 'crafting_tests',
         'inventory_event_tests', 'pending_crafts_tests', 'inventory_ownership_tests',
         'damage_observation_tests', 'corpse_explosion_tests', 'batch_name_tests',
@@ -35,14 +35,24 @@ def package(baseline, artifact, project, output):
     assert info['actor_health_hook_uses_actor_vtable'] is True
     assert info['corpse_explosion_visibility'] == 'native area LOS; no Actor::HasLineOfSight recipient prefilter'
     assert info['corpse_explosion_spell_ignore_los'] is False
-    assert info['corpse_explosion_fraction'] == 0.50 and info['corpse_explosion_flat_damage'] == 100
+    assert info['corpse_explosion_fraction'] == 0.50
+    assert info['corpse_explosion_alchemy_tier_damage'] == [50,100,150,200]
+    assert info['corpse_explosion_alchemy_tier_thresholds'] == [0,26,51,76]
+    assert info['corpse_explosion_alchemy_bonus_cap'] == 200
+    assert info['corpse_explosion_alchemy_sample'] == 'current Alchemy at burst'
+    assert info['corpse_explosion_alchemy_boundary_tests'] == 'passed'
+    assert info['corpse_explosion_chain_tier_limits'] == [1,2,3,4]
+    assert info['corpse_explosion_chain_budget_sample'] == 'fixed at initial burst; decremented per generation'
+    assert info['corpse_explosion_chain_budget_saved'] is True
+    assert info['corpse_explosion_private_chain_spell_count'] == 20
+    assert info['corpse_explosion_chain_limit_tests'] == 'passed'
     assert info['corpse_explosion_chains'] and info['corpse_explosion_flat_bonus_per_corpse']
     assert info['corpse_explosion_nonrecursive_waves'] and info['corpse_explosion_max_bursts_per_wave'] == 16
     assert info['corpse_explosion_radius_feet'] == 25
     assert info['corpse_explosion_preferred_poison_explosion_local_id'] == '005C32'
-    assert info['corpse_explosion_save_record'] == 'CEXP v2 (reads and migrates v1)'
+    assert info['corpse_explosion_save_record'] == 'CEXP v4 (reads and migrates v1/v2/v3)'
     assert info['in_game_tested'] is False and info['dll_sha256'] == sha(dll)
-    verify_dll_version(dll, 0x02020000)
+    verify_dll_version(dll, 0x02020010)
     assert subprocess.check_output(['git', '-C', str(project), 'rev-parse', 'HEAD'], text=True).strip() == info['source_commit']
     for name, expected in info['source_sha256_lf'].items():
         assert sha((project / name).read_text().encode()) == expected, name
@@ -61,24 +71,28 @@ def package(baseline, artifact, project, output):
         f'https://github.com/sl168898/Physics-helper/tree/{info["source_commit"]}/venom-harvester\n'
         'Earlier source snapshots in this archive document previous releases.\n').encode()
     instructions = native['README.md'].decode('utf-8-sig').split('# Version 2.1.7 beta:')[0]
-    files['README.txt'] = ('BIGGIE TRAITS - COMBINED 2.14.0-beta1\n\n' + instructions +
+    files['README.txt'] = ('BIGGIE TRAITS - COMBINED 2.14.1-beta1\n\n' + instructions +
         '\nPREVIOUS RELEASE NOTES FOLLOW\n\n').encode() + old['README.txt']
     changed = {name for name in old if files[name] != old[name]}
     assert changed == {'README.txt', 'SKSE/Plugins/VenomHarvester.dll', 'Biggie Traits - Combined.esp'}, changed
     assert set(old) <= set(files) and files[THUMBNAIL] == old[THUMBNAIL]
     report = {
-        'version': '2.14.0-beta1', 'baseline': '2.13.7-beta1',
+        'version': '2.14.1-beta1', 'baseline': '2.13.7-beta1',
         'baseline_archive_sha256': BASELINE_SHA,
-        'source_commit': info['source_commit'], 'native_version': '2.2.0',
+        'source_commit': info['source_commit'], 'native_version': '2.2.1',
         'native_test_suites': 15, 'windows_build': 'passed', 'in_game_tested': False,
         'dll_sha256': sha(dll), 'esp_sha256': sha(files['Biggie Traits - Combined.esp']),
-        'skse_export_version_verified': '2.2.0.0',
+        'skse_export_version_verified': '2.2.1.0',
         'changed_existing_files': sorted(changed),
-        'preserved_existing_files': len(old) - len(changed), 'changed_esp_records': 2,
+        'preserved_existing_files': len(old) - len(changed), 'changed_esp_records': 3, 'added_budget_coded_spell_records': 16,
         'unchanged_trait_ids_masters_and_satchel_save_records': True,
-        'corpse_save_record': 'CEXP v2; reads v1 and upgrades pending bursts',
-        'damage_fraction': 0.50, 'flat_damage': 100, 'flat_bonus_per_corpse': True,
-        'chain_reactions': True, 'max_bursts_per_wave': 16, 'recursive_casting': False,
+        'corpse_save_record': 'CEXP v4; reads v1/v2/v3; saves remaining chain generations',
+        'damage_fraction': 0.50, 'alchemy_tier_bonus': [50,100,150,200],
+        'alchemy_tier_thresholds': [0,26,51,76], 'alchemy_bonus_cap': 200,
+        'alchemy_sample': 'current Alchemy at burst', 'flat_bonus_per_corpse': True,
+        'chain_reactions': True, 'chain_tier_limits': [1,2,3,4],
+        'chain_budget_sample': 'fixed at initial burst; decremented per generation',
+        'chain_budget_saved': True, 'max_bursts_per_wave': 16, 'recursive_casting': False,
         'radius_feet': 25, 'area_visibility': 'native spell LOS',
         'actor_hook_tables_explicit_and_compile_time_bounds_checked': True,
         'poison_visual_source_plugin': 'Requiem - Magic Redone.esp',

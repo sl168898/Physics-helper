@@ -23,29 +23,29 @@ int main()
     ledger.record(1, follower, 2000); ledger.record(1, blast, 5000);
     assert(ledger.targets.at(1).total == 800);
     assert(ledger.killed(1, fire));
-    auto first = ledger.claim(1); assert(first && (*first)[0] == 375 && (*first)[3] == 125);
-    assert(!ledger.claim(1) && !ledger.killed(1, fire));
+    auto first = ledger.claim(1,50); assert(first && (*first)[0] == 375 && (*first)[3] == 125);
+    assert(!ledger.claim(1,50) && !ledger.killed(1, fire));
     ledger.record(1, fire, 500); assert(ledger.targets.at(1).total == 800);
     ledger.resurrected(1); ledger.record(1, fire, 100);
-    assert(ledger.killed(1, fire) && ledger.claim(1)->at(0) == 150);
+    assert(ledger.killed(1, fire) && ledger.claim(1,50)->at(0) == 150);
 
     // Weapon, follower and unqualified explosion kills cannot burst.
     for (const auto killer : {weapon, follower, blast}) {
         Ledger rejected; rejected.record(2, fire, 100);
-        assert(!rejected.killed(2, killer)); assert(!rejected.claim(2));
+        assert(!rejected.killed(2, killer)); assert(!rejected.claim(2,50));
         assert(!rejected.killed(2, fire));
     }
     // Only the lethal oil controls the mix; older different oils cannot add types.
     Ledger mixed;
     mixed.record(3, Origin{true, false, 20, Type::frost}, 600);
     mixed.record(3, fire, 400); assert(mixed.killed(3, fire));
-    assert(mixed.claim(3)->at(0) == 600);
+    assert(mixed.claim(3,50)->at(0) == 600);
 
     // A 5,000-damage poison hitting a 200-Health enemy records only 200 lost
     // Health: 50% + 100 produces 200 damage before recipient resistance.
     Ledger overkill;
     overkill.record(4, venom, healthLost(200, -4800));
-    assert(overkill.killed(4, venom) && overkill.claim(4)->at(3) == 200);
+    assert(overkill.killed(4, venom) && overkill.claim(4,50)->at(3) == 200);
 
     // Three overlapping scopes, including the generic native health callback.
     Frame outer{5, 100, 0, fire};
@@ -70,12 +70,17 @@ int main()
     assert(harvest::isLethalHealthChange({true, true, 10, 0, false, true, false, false}));
     assert(!harvest::isLethalHealthChange({true, true, 10, 0, false, true, false, true}));
     assert(!harvest::isLethalHealthChange({true, true, 10, 0, true, true, true, false}));
+    const auto legacyBytes=[](const Ledger& value,unsigned version) {
+        auto bytes=encode(value); assert(value.targets.size()==1);
+        bytes.erase(bytes.begin()+56,bytes.begin()+60); // v1-v3 had no remaining field.
+        bytes[0]=static_cast<std::uint8_t>(version); return bytes;
+    };
     Ledger saved; saved.record(42, fire, 120); assert(saved.killed(42, fire));
     auto bytes = encode(saved);
     auto restored = decode(bytes, [](ID id) { return id + 1; });
-    assert(restored && restored->claim(43)->at(0) == 160 && !restored->claim(43));
+    assert(restored && restored->claim(43,50)->at(0) == 160 && !restored->claim(43,50));
     auto spent = decode(encode(*restored), [](ID id) { return id; });
-    assert(spent && !spent->claim(43));
+    assert(spent && !spent->claim(43,50));
     for (std::size_t size = 0; size < bytes.size(); ++size)
         assert(!decode(std::span(bytes.data(), size), [](ID id) { return id; }));
     bytes.push_back(0); assert(!decode(bytes, [](ID id) { return id; }));
@@ -83,26 +88,43 @@ int main()
     assert(!decode(corrupt, [](ID id) { return id; }));
     auto missing = decode(encode(saved), [](ID) { return ID{}; });
     assert(missing && missing->targets.empty());
-    // v1 pending bursts from either old percentage adopt 50% + 100.
+    // v1 pending bursts normalize; level 50 adds its 100 bonus once at claim.
     for (double oldAmount : {30.0,60.0}) {
         Ledger legacy = saved; legacy.targets.at(42).blast[0] = oldAmount;
-        auto v1 = encode(legacy); v1[0] = 1;
+        auto v1 = legacyBytes(legacy,1);
         auto previous = decode(v1, [](ID id) { return id; });
         assert(previous);
         auto pendingAgain = decode(encode(*previous), [](ID id) { return id; });
-        assert(pendingAgain && pendingAgain->claim(42)->at(0) == 160);
-        assert(previous && previous->claim(42)->at(0) == 160);
-        assert(!previous->claim(42));
+        assert(pendingAgain && pendingAgain->claim(42,50)->at(0) == 160);
+        assert(previous && previous->claim(42,50)->at(0) == 160);
+        assert(!previous->claim(42,50));
         auto again = decode(encode(*previous), [](ID id) { return id; });
-        assert(again && !again->claim(42));
+        assert(again && !again->claim(42,50));
     }
-    Ledger excessive = saved; excessive.targets.at(42).blast[0] = 161;
+    Ledger excessive = saved; excessive.targets.at(42).blast[0] = 61;
     assert(!decode(encode(excessive), [](ID id) { return id; }));
-    auto v1 = encode(excessive); v1[0] = 1;
+    auto v1 = legacyBytes(excessive,1);
     assert(!decode(v1, [](ID id) { return id; }));
-    Ledger oldSpent = saved; oldSpent.claim(42); oldSpent.targets.at(42).blast[0] = 60;
-    v1 = encode(oldSpent); v1[0] = 1;
+    Ledger oldSpent = saved; oldSpent.claim(42,50); oldSpent.targets.at(42).blast[0] = 60;
+    v1 = legacyBytes(oldSpent,1);
     auto spentV1 = decode(v1, [](ID id) { return id; });
-    assert(spentV1 && !spentV1->claim(42));
-    std::cout << "Corpse Explosion: 50% + 100 typed damage, capped overkill, attribution, nested accounting, resistance, deaths and v1/v2 save tests passed\n";
+    assert(spentV1 && !spentV1->claim(42,50));
+    // The undelivered fixed-100 build wrote v2. Strip that bonus on import,
+    // preserve the type mix, then apply today's tier exactly once.
+    Ledger fixed = saved; fixed.targets.at(42).blast[0] = 160;
+    auto v2 = legacyBytes(fixed,2);
+    auto migrated = decode(v2, [](ID id) { return id; });
+    assert(migrated && migrated->targets.at(42).blast[0] == 60);
+    auto migratedAgain = decode(encode(*migrated), [](ID id) { return id; });
+    assert(migratedAgain && migratedAgain->claim(42,100)->at(0) == 260);
+    assert(!migratedAgain->claim(42,100));
+    assert(migrated->targets.at(42).remaining==0);
+    auto v3=decode(legacyBytes(saved,3),[](ID id){return id;});
+    unsigned budget=99;
+    assert(v3 && v3->claim(42,100,&budget) && budget==0);
+    auto invalidBudget=encode(saved); invalidBudget[56]=6;
+    assert(!decode(invalidBudget,[](ID id){return id;}));
+    auto v1Seed=decode(legacyBytes(saved,1),[](ID id){return id;});
+    assert(v1Seed && v1Seed->claim(42,100,&budget) && budget==4);
+    std::cout << "Corpse Explosion: 50% + Alchemy tiers, capped overkill, attribution, nested accounting, resistance, deaths and v1/v2/v3/v4 save tests passed\n";
 }

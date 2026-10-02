@@ -16,11 +16,26 @@ namespace corpse
     enum class Type : std::uint32_t { fire, frost, shock, poison };
     using Damage = std::array<double, 4>;
     constexpr double fraction = 0.50;
-    constexpr double flatDamage = 100.0;
+    inline unsigned chainAllowance(double alchemy)
+    {
+        // Whole skill levels, capped even when mods raise Alchemy above 100.
+        if (!std::isfinite(alchemy) || alchemy < 26) return 1;
+        if (alchemy < 51) return 2;
+        if (alchemy < 76) return 3;
+        return 4;
+    }
+    inline double alchemyBonus(double alchemy) { return 50.0 * chainAllowance(alchemy); }
+    constexpr unsigned maxChainReactions = 4, seedAllowance = 5;
+    constexpr unsigned chainSpellCount = (maxChainReactions + 1) * 4;
+    constexpr ID chainSpellLocal(unsigned remaining, unsigned type) {
+        // The old four spells are terminal bursts. Each remaining allowance
+        // has its own spell identity, retained by delayed effects and saves.
+        return remaining ? 0xF90 + (remaining - 1) * 4 + type : 0xF83 + type * 2;
+    }
     constexpr unsigned maxBurstsPerWave = 16;
     constexpr std::uint32_t radiusFeet = 25; // Ordinator Corpse Gas's outer area.
     constexpr float radius = radiusFeet * 128.f / 6.f; // 533 1/3 units = 7.62 metres.
-    constexpr std::uint32_t recordID = 0x43455850; // CEXP, version 2 (reads v1)
+    constexpr std::uint32_t recordID = 0x43455850; // CEXP v4 (reads v1/v2/v3)
     constexpr std::size_t maxActors = 4096, maxSources = 128;
 
     inline double healthLost(double before, double after)
@@ -39,6 +54,7 @@ namespace corpse
         // An explosion with no qualified source must never seed another burst.
         ID poison{};
         Type type{Type::poison};
+        unsigned remaining{}; // Further generations allowed by this burst.
     };
 
     // Nested health/effect hooks observe overlapping intervals. A child claims
@@ -72,6 +88,7 @@ namespace corpse
         std::map<ID, Damage> oils;
         State state{State::alive};
         Damage blast{};
+        unsigned remaining{seedAllowance}; // Only an oil kill may seed a chain.
     };
     class Ledger {
     public:
@@ -101,25 +118,35 @@ namespace corpse
             auto& t = it->second;
             t.state = State::spent; // Every observed killing blow consumes this life.
             if (!source.player || !source.poison || t.total <= 0) return false;
+            if (source.explosion && (!source.remaining || source.remaining > maxChainReactions)) return false;
             const auto oil = t.oils.find(source.poison);
             if (oil == t.oils.end()) return false;
             double sum{};
             for (auto part : oil->second) sum += part;
             if (!(sum > 0) || !std::isfinite(sum)) return false;
-            // One flat bonus per corpse, apportioned with the original damage
-            // mix. A mixed coating does not receive 100 for each damage type.
-            const auto amount = t.total * fraction + flatDamage;
+            // Store only the percentage component and its type mix. The
+            // current Alchemy tier is added once when the burst is claimed.
+            const auto amount = t.total * fraction;
             if (!std::isfinite(amount)) return false;
             for (std::size_t i = 0; i < 4; ++i) t.blast[i] = amount * (oil->second[i] / sum);
+            t.remaining = source.explosion ? source.remaining - 1 : seedAllowance;
             t.state = State::pending;
             return true;
         }
-        std::optional<Damage> claim(ID victim)
+        std::optional<Damage> claim(ID victim, double alchemy = 0, unsigned* remaining = nullptr)
         {
             const auto it = targets.find(victim);
             if (it == targets.end() || it->second.state != State::pending) return std::nullopt;
             it->second.state = State::spent; // Before any damage callback can re-enter.
-            return it->second.blast;
+            if (it->second.remaining == seedAllowance) it->second.remaining = chainAllowance(alchemy);
+            if (remaining) *remaining = it->second.remaining;
+            Damage result = it->second.blast;
+            double sum{};
+            for (auto d : result) sum += d;
+            if (!(sum > 0) || !std::isfinite(sum)) return std::nullopt;
+            const auto bonus = alchemyBonus(alchemy);
+            for (auto& d : result) d += bonus * (d / sum);
+            return result;
         }
     };
 
@@ -131,10 +158,11 @@ namespace corpse
             const auto bits = std::bit_cast<std::uint64_t>(x);
             u32(static_cast<std::uint32_t>(bits)); u32(static_cast<std::uint32_t>(bits >> 32));
         };
-        u32(2); u32(static_cast<std::uint32_t>(ledger.targets.size()));
+        u32(4); u32(static_cast<std::uint32_t>(ledger.targets.size()));
         for (const auto& [id, t] : ledger.targets) {
             u32(id); u32(static_cast<std::uint32_t>(t.state)); number(t.total);
             for (auto d : t.blast) number(d);
+            u32(t.remaining);
             u32(static_cast<std::uint32_t>(t.oils.size()));
             for (const auto& [source, damage] : t.oils) { u32(source); for (auto d : damage) number(d); }
         }
@@ -157,7 +185,7 @@ namespace corpse
             return d;
         };
         const auto version = u32();
-        if (version != 1 && version != 2) return std::nullopt;
+        if (version < 1 || version > 4) return std::nullopt;
         const auto count = u32();
         if (!valid || count > maxActors) return std::nullopt;
         Ledger result;
@@ -167,8 +195,12 @@ namespace corpse
             Target t; t.state = static_cast<State>(state); t.total = number();
             double blastTotal{};
             for (auto& d : t.blast) { d = number(); blastTotal += d; }
-            const auto maximum = t.total * fraction + (version == 2 ? flatDamage : 0.0);
+            const auto maximum = t.total * fraction + (version == 2 ? 100.0 : 0.0);
             if (!valid || !std::isfinite(blastTotal) || blastTotal > maximum + 0.001) return std::nullopt;
+            // v1 had only oil-seeded bursts. Undelivered v2/v3 had no chain
+            // budget: their pending bursts finish once without extending.
+            t.remaining = version >= 4 ? u32() : (version == 1 ? seedAllowance : 0);
+            if (!valid || t.remaining > seedAllowance) return std::nullopt;
             const auto sources = u32();
             if (sources > maxSources) return std::nullopt;
             for (std::uint32_t j = 0; j < sources; ++j) {
@@ -178,11 +210,11 @@ namespace corpse
                 if (source && !t.oils.emplace(source, damage).second) return std::nullopt;
             }
             if (!valid) return std::nullopt;
-            if (version == 1) {
-                // Old pending 25%/50% bursts adopt 50% + 100 while retaining
-                // their stored type proportions. Spent corpses stay spent.
+            if (version < 3) {
+                // Normalize old 25%/50%/fixed-bonus pending bursts to the
+                // percentage component. Apply the live tier only at claim.
                 if (t.state == State::pending && blastTotal > 0 && t.total > 0) {
-                    const auto amount = t.total * fraction + flatDamage;
+                    const auto amount = t.total * fraction;
                     for (auto& d : t.blast) d = amount * (d / blastTotal);
                 } else t.blast = {};
             }

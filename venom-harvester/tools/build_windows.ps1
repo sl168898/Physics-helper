@@ -51,17 +51,17 @@ foreach ($Name in @('src/main.cpp','tests/chain_reaction_tests.cpp','tests/chain
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'VenomHarvester'; version = '2.2.0'; runtime = '1.6.1170'
+    plugin = 'VenomHarvester'; version = '2.2.1'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; harvest_tests = 'passed'; menu_tests = 'passed'; crafting_tests = 'passed'; inventory_event_tests = 'passed'; pending_crafts_tests = 'passed'; inventory_ownership_tests = 'passed'; damage_observation_tests = 'passed'; in_game_tested = $false
-    trait = "Huntsman's Satchel"; combined_package_required = '2.14.0-beta1'
+    trait = "Huntsman's Satchel"; combined_package_required = '2.14.1-beta1'
     poison_resistance_penalty = 50; outgoing_poison_multiplier = 1.0
     unique_native_poison_per_batch = $true; no_new_esp = $true
     alchemy_refund_threshold_removed = $true; recorded_costs_unchanged = $true
     harvest_perk_yield_synergy = $true; harvest_yield_evaluated_per_ingredient_at_payout = $true
     green_thumb_applied_by_shared_native_entry_point = $true
-    combined_version = '2.14.0-beta1'; native_test_suites = 15
+    combined_version = '2.14.1-beta1'; native_test_suites = 15
     corpse_explosion_tests = 'passed'; corpse_explosion_fraction = 0.50
     corpse_explosion_overkill_and_previous_save_tests = 'passed'
     corpse_explosion_radius_feet = 25; corpse_explosion_radius_units = 25 * 128 / 6
@@ -71,11 +71,19 @@ $Info = [ordered]@{
     corpse_explosion_poison_model_in_supplied_mod = 'Noxcrab\Restoration\PoisonRuneExplosion.nif'
     corpse_explosion_preferred_visual_uses_winning_loaded_record = $true
     corpse_explosion_radius_boundary_tests = 'passed'
-    corpse_explosion_matching_resistance_only = $true; corpse_explosion_save_record = 'CEXP v2 (reads and migrates v1)'
+    corpse_explosion_matching_resistance_only = $true; corpse_explosion_save_record = 'CEXP v4 (reads and migrates v1/v2/v3)'
     corpse_explosion_strict_poison_kill = $false; corpse_explosion_chains = $true
     corpse_explosion_initial_kill_requires_poison_or_oil = $true
-    corpse_explosion_flat_damage = 100; corpse_explosion_flat_bonus_per_corpse = $true
+    corpse_explosion_alchemy_tier_damage = @(50, 100, 150, 200)
+    corpse_explosion_alchemy_tier_thresholds = @(0, 26, 51, 76)
+    corpse_explosion_alchemy_bonus_cap = 200; corpse_explosion_flat_bonus_per_corpse = $true
+    corpse_explosion_alchemy_sample = 'current Alchemy at burst'
+    corpse_explosion_alchemy_boundary_tests = 'passed'
     corpse_explosion_max_bursts_per_wave = 16; corpse_explosion_nonrecursive_waves = $true
+    corpse_explosion_chain_tier_limits = @(1, 2, 3, 4)
+    corpse_explosion_chain_budget_sample = 'fixed at initial burst; decremented per generation'
+    corpse_explosion_chain_budget_saved = $true; corpse_explosion_private_chain_spell_count = 20
+    corpse_explosion_chain_limit_tests = 'passed'
     corpse_explosion_chain_tests = 'passed'; corpse_explosion_production_pump_tests = 'passed'
     confirmed_kill_refund_requires_corpse = $false; pending_kill_survives_corpse_deletion = $true
     crafted_poison_identity = 'unique positive unbound poison inventory delta within captured alchemy callback'
@@ -122,7 +130,7 @@ $Info = [ordered]@{
     corpse_explosion_spell_ignore_los = $false
     corpse_explosion_logged_visibility_tests = 'passed'
     corpse_explosion_logged_visibility_cases = 7
-    explosion_effects_require_combined = '2.14.0-beta1'; ordinator_dependency = $false
+    explosion_effects_require_combined = '2.14.1-beta1'; ordinator_dependency = $false
     rename_potions_batch_names_preserved = $true; batch_name_tests = 'passed'
     name_captured_from_inventory_delta = $true; named_source_stack_removal = $true
     older_named_bottles_reserved = $true; legacy_pending_v1_supported = $true
@@ -130,4 +138,4 @@ $Info = [ordered]@{
     unattached_extra_lists_use_owned_cleanup = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Corpse_Explosion_Satchel_SKSE_v2_2_0_beta1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Corpse_Explosion_Satchel_SKSE_v2_2_1_beta1.zip')

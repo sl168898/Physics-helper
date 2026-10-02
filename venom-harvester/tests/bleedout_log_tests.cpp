@@ -55,9 +55,9 @@ namespace {
         assert(result.death && result.damage == observed.bleedout); // No overkill.
         explosion.record(victim, origin, result.damage);
         assert(explosion.killed(victim, *result.death));
-        const auto burst = explosion.claim(victim);
+        const auto burst = explosion.claim(victim,50);
         assert(burst && std::abs(burst->at(3) - (0.50 * observed.before + 100)) < 0.00001);
-        assert(!explosion.claim(victim));
+        assert(!explosion.claim(victim,50));
 
         // An essential actor dropping into bleedout is not a refundable kill.
         assert(!harvest::canObserveHealthBefore(Life::kBleedout, true));

@@ -7,4 +7,6 @@ start = source.index('        void pump(std::uint64_t generation) {')
 end = source.index('        void update(float delta) {', start)
 template = (root / 'tests/chain_pump_tests.cpp.in').read_text()
 assert template.count('@@PRODUCTION_PUMP@@') == 1
-Path(sys.argv[1]).write_text(template.replace('@@PRODUCTION_PUMP@@', source[start:end]))
+output = Path(sys.argv[1]).resolve()
+assert len(sys.argv) == 2 and output not in ((root / 'src/CorpseExplosionRuntime.h').resolve(), (root / 'tests/chain_pump_tests.cpp.in').resolve())
+output.write_text(template.replace('@@PRODUCTION_PUMP@@', source[start:end]))
