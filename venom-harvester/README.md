@@ -1,3 +1,38 @@
+# Version 2.1.7 beta: remove the corpse-perception veto
+
+The user's 2.1.6 log confirms working startup, hooks and Poison Nova visuals.
+It also contains seven otherwise eligible nearby recipients rejected by our
+`Actor::HasLineOfSight(corpse)` prefilter. Skyrim then offered those same
+recipients to the area hook, but the empty allowed set rejected every hit.
+Six offers had zero poison resistance; one had 75. No damage was attempted.
+
+The DLL no longer requires a recipient to pass that actor-to-corpse visibility
+query. One shared gate handles hostility, alive/loaded state, space and range
+both when snapshotting and when applying an effect. The four private spells
+now have Ignore LOS Check cleared, as in the supplied Ordinator Corpse Gas
+blast. Skyrim handles area visibility instead of our actor-perception query.
+The ESP patch changes only this flag in those four spell records.
+
+Seven regression cases use the logged IDs, damage amounts and resistances
+with synthetic in-range positions. They verify our new eligibility and damage
+gates, not Skyrim's collision or actual in-game Health modification. Thirteen
+native suites run on Windows. Actual in-game damage still needs confirmation.
+
+Install COMPLETE Combined 2.13.7-beta1 with BOTH its ESP and DLL winning
+conflicts. VenomHarvester.log must say native 2.1.7 and `native area LOS` in
+its ready line. With two hostile enemies close together in open space,
+kill one using a poison/oil. Look for `eligible=true visibility=native-area`,
+`area-apply ... accepted=true` and `health-update ... actual-loss` on the
+survivor. A requested or accepted effect alone is not proof of Health loss.
+If it still fails, send the fresh log. Also retest an elemental oil and
+Huntsman's Satchel refunds. No new game or trait reselection is required.
+
+The startup address-table fix, 50% damage, 25-foot radius, Poison Nova visual,
+thumbnail, enemy-only restrictions, matching resistance, no chains and save
+formats are retained. No Ordinator dependency or new assets are introduced.
+
+Earlier release notes describe their respective versions.
+
 # Version 2.1.6 beta: startup Address Library failure fixed
 
 Combined 2.13.3 through 2.13.5 can stop before the main menu with a

@@ -161,8 +161,8 @@ namespace corpse
                 }
                 const auto ref = target ? target->GetTargetStatsObject() : nullptr;
                 const RE::NiPointer<RE::Actor> actor(ref ? ref->As<RE::Actor>() : nullptr);
-                if (!enemy(actor.get(), cast->player.get()) || killQueued(actor.get()) ||
-                    !withinBlast(blastLocation(cast->body.get()), blastLocation(actor.get()), radius)) return false;
+                if (!eligibleBlastActor(cast->body.get(), actor.get(), radius,
+                    [cast](RE::Actor* a) { return enemy(a, cast->player.get()) && !killQueued(a); })) return false;
                 const auto resistance = actor->AsActorValueOwner()->GetActorValue(resistances[index]);
                 const auto quote = cast->delivery.claim(actor->GetFormID(), resistance);
                 if (quote.result != BlastDelivery::Result::ready) {
@@ -212,17 +212,16 @@ namespace corpse
             std::set<ID> allowed;
             for (auto handle : actors) {
                 auto a = handle.get();
-                if (!enemy(a.get(), p) ||
-                    !withinBlast(blastLocation(body), blastLocation(a.get()), radius)) {
+                if (!eligibleBlastActor(body, a.get(), radius,
+                    [p](RE::Actor* actor) { return enemy(actor, p) && !killQueued(actor); })) {
                     if (a) SKSE::log::info("[CorpseExplosion] candidate target={:08X} name='{}' eligible=false", a->GetFormID(), a->GetName());
                     continue;
                 }
-                bool visible = false;
-                if (!a->HasLineOfSight(body, visible)) {
-                    SKSE::log::info("[CorpseExplosion] candidate target={:08X} name='{}' eligible=false reason=corpse-line-of-sight", a->GetFormID(), a->GetName());
-                    continue;
-                }
+                // Actor::HasLineOfSight rejected every eligible recipient in
+                // the user's 2.1.6 log. Let native area LOS handle obstruction;
+                // recipients do not have to visually perceive the dead caster.
                 allowed.insert(a->GetFormID());
+                SKSE::log::info("[CorpseExplosion] candidate target={:08X} name='{}' eligible=true visibility=native-area", a->GetFormID(), a->GetName());
             }
             // Ordinator Corpse Gas casts a Self-area spell from the dying
             // actor; its MGEF's Explosion drives presentation. Do the same
@@ -240,7 +239,7 @@ namespace corpse
                     explicit Applying(AreaCast* cast) { applying = true; areaCast = cast; }
                     ~Applying() { applying = old; areaCast = previous; }
                 } scope(&cast);
-                SKSE::log::info("[CorpseExplosion] area-cast victim={:08X} type={} requested={} eligible={} origin=corpse",
+                SKSE::log::info("[CorpseExplosion] area-cast victim={:08X} type={} requested={} eligible={} origin=corpse visibility=native-area",
                     body->GetFormID(), names[i], damage[i], allowed.size());
                 caster->CastSpellImmediate(spells[i], false, nullptr, 1.f, false, static_cast<float>(damage[i]), p);
                 accepted += cast.delivery.accepted;
@@ -425,11 +424,12 @@ namespace corpse
                     spell->effects[0] && spell->effects[0]->baseEffect == effect &&
                     spell->effects[0]->effectItem.area == radiusFeet && spell->effects[0]->effectItem.duration == 0 &&
                     !effect->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoArea) &&
+                    !spell->data.flags.any(RE::SpellItem::SpellFlag::kIgnoreLOSCheck) &&
                     spell->data.flags.any(RE::SpellItem::SpellFlag::kIgnoreResistance) &&
                     spell->data.flags.any(RE::SpellItem::SpellFlag::kNoAbsorb);
                 if (!valid) {
                     ready = false;
-                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.5 ESP winning conflicts", names[i]);
+                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.7 ESP winning conflicts (native area LOS enabled)", names[i]);
                 }
             }
             if (!ready) return;
@@ -450,7 +450,7 @@ namespace corpse
             HealthHook<RE::VTABLE_Character>::install("Character");
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
-            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent, radius {} feet ({:.3f} units), matching resistance, enemy filter, no chains; acceptance and Health diagnostics", fraction * 100, radiusFeet, radius);
+            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent, radius {} feet ({:.3f} units), native area LOS, matching resistance, enemy filter, no chains; acceptance and Health diagnostics", fraction * 100, radiusFeet, radius);
         }
         void setSession(bool value) { session.store(value); }
         void reset() {

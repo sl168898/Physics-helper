@@ -1145,7 +1145,7 @@ namespace
 
 extern "C" __declspec(dllexport) constinit SKSE::PluginVersionData SKSEPlugin_Version = [] {
     SKSE::PluginVersionData data{};
-    data.PluginVersion({2, 1, 6, 0}); data.PluginName("VenomHarvester");
+    data.PluginVersion({2, 1, 7, 0}); data.PluginName("VenomHarvester");
     data.AuthorName("Physics-helper contributors");
     data.UsesAddressLibrary(true); data.UsesStructsPost629(true);
     data.CompatibleVersions({REL::Version{1, 6, 1170, 0}});
@@ -1160,7 +1160,7 @@ extern "C" __declspec(dllexport) bool SKSEPlugin_Load(const SKSE::LoadInterface*
         std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true)));
     spdlog::set_level(spdlog::level::info); spdlog::flush_on(spdlog::level::info);
     SKSE::Init(skse);
-    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.6 beta; Skyrim 1.6.1170; explicit actor hook tables, 50 percent damage, Poison Nova presentation, 25-foot corpse-origin area spells");
+    SKSE::log::info("Huntsman's Satchel / Corpse Explosion 2.1.7 beta; Skyrim 1.6.1170; native area visibility, explicit actor hook tables, 50 percent damage, Poison Nova presentation, 25-foot corpse-origin area spells");
     const auto serialization = SKSE::GetSerializationInterface();
     serialization->SetUniqueID(saveID); serialization->SetSaveCallback(save); serialization->SetLoadCallback(load);
     serialization->SetRevertCallback([](SKSE::SerializationInterface*) { session.store(false); corpseExplosion.setSession(false); reset(); });

@@ -42,6 +42,17 @@ namespace corpse
         return std::isfinite(distance) && distance <= radius * radius;
     }
 
+    // Eligibility is independent of the recipient's AI perception of a corpse.
+    // The Self-area spell performs the engine's area LOS check before delivery.
+    // Use this same gate when snapshotting and when AddTarget offers a target.
+    template<class Actor, class EnemyPredicate>
+    bool eligibleBlastActor(Actor* body, Actor* actor, double radius, EnemyPredicate enemy)
+    {
+        return body && actor && actor != body && actor->Is3DLoaded() &&
+            !actor->IsDisabled() && enemy(actor) &&
+            withinBlast(blastLocation(body), blastLocation(actor), radius);
+    }
+
     // Instantiate this exact collector against ProcessLists in the plugin and
     // against fake process lists in tests. No TES singleton, world-space sky
     // cell lookup, reference-list lock, spell cast or visual spawn is involved.
