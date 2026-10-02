@@ -44,25 +44,26 @@ Copy-Item (Join-Path $Root 'README.md') $Stage
 Copy-Item (Join-Path $Root 'LICENSE') $Stage
 Copy-Item (Join-Path $Common 'LICENSE') (Join-Path $Stage 'CommonLibSSE-LICENSE')
 $Sources = [ordered]@{}
-foreach ($Name in @('src/main.cpp','src/CorpseExplosion.h','src/CorpseExplosionRuntime.h','src/BlastTargets.h','src/BlastDelivery.h','tests/blast_delivery_tests.cpp','tools/patch_poison_nova_radius_records.py','tools/package_poison_nova_radius.py','tools/esp.py','tools/build_windows.ps1','README.md','tests/blast_targets_tests.cpp','tests/corpse_explosion_tests.cpp','src/Harvest.h','src/MenuGate.h','src/CraftCapture.h','src/DeferredForms.h','src/InventoryBottleRefs.h','src/DamageObservation.h','src/PendingCrafts.h','src/BatchNames.h','tests/batch_names_tests.cpp','tests/harvest_tests.cpp','tests/menu_tests.cpp','tests/crafting_tests.cpp','tests/inventory_event_tests.cpp','tests/inventory_ownership_tests.cpp','tests/damage_observation_tests.cpp','tests/bleedout_log_tests.cpp','tests/pending_crafts_tests.cpp','CMakeLists.txt','vcpkg.json')) {
+foreach ($Name in @('src/main.cpp','src/CorpseExplosion.h','src/CorpseExplosionRuntime.h','src/BlastTargets.h','src/BlastDelivery.h','tests/blast_delivery_tests.cpp','tools/patch_damage50_records.py','tools/package_damage50.py','tools/patch_poison_nova_radius_records.py','tools/esp.py','tools/build_windows.ps1','README.md','tests/blast_targets_tests.cpp','tests/corpse_explosion_tests.cpp','src/Harvest.h','src/MenuGate.h','src/CraftCapture.h','src/DeferredForms.h','src/InventoryBottleRefs.h','src/DamageObservation.h','src/PendingCrafts.h','src/BatchNames.h','tests/batch_names_tests.cpp','tests/harvest_tests.cpp','tests/menu_tests.cpp','tests/crafting_tests.cpp','tests/inventory_event_tests.cpp','tests/inventory_ownership_tests.cpp','tests/damage_observation_tests.cpp','tests/bleedout_log_tests.cpp','tests/pending_crafts_tests.cpp','CMakeLists.txt','vcpkg.json')) {
     # Normalize checkout CRLF for reproducible source identification.
     $Text = [IO.File]::ReadAllText((Join-Path $Root $Name)).Replace("`r`n", "`n")
     $Bytes = [Text.Encoding]::UTF8.GetBytes($Text)
     $Sources[$Name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
 }
 $Info = [ordered]@{
-    plugin = 'VenomHarvester'; version = '2.1.4'; runtime = '1.6.1170'
+    plugin = 'VenomHarvester'; version = '2.1.5'; runtime = '1.6.1170'
     source_commit = $env:GITHUB_SHA; commonlib_commit = $CommonCommit; vcpkg_commit = $VcpkgCommit
     dll_sha256 = (Get-FileHash $Dll -Algorithm SHA256).Hash.ToLowerInvariant()
     source_sha256_lf = $Sources; windows_build = 'passed'; harvest_tests = 'passed'; menu_tests = 'passed'; crafting_tests = 'passed'; inventory_event_tests = 'passed'; pending_crafts_tests = 'passed'; inventory_ownership_tests = 'passed'; damage_observation_tests = 'passed'; in_game_tested = $false
-    trait = "Huntsman's Satchel"; combined_package_required = '2.13.4-beta1'
+    trait = "Huntsman's Satchel"; combined_package_required = '2.13.5-beta1'
     poison_resistance_penalty = 50; outgoing_poison_multiplier = 1.0
     unique_native_poison_per_batch = $true; no_new_esp = $true
     alchemy_refund_threshold_removed = $true; recorded_costs_unchanged = $true
     harvest_perk_yield_synergy = $true; harvest_yield_evaluated_per_ingredient_at_payout = $true
     green_thumb_applied_by_shared_native_entry_point = $true
-    combined_version = '2.13.4-beta1'; native_test_suites = 12
-    corpse_explosion_tests = 'passed'; corpse_explosion_fraction = 0.25
+    combined_version = '2.13.5-beta1'; native_test_suites = 12
+    corpse_explosion_tests = 'passed'; corpse_explosion_fraction = 0.50
+    corpse_explosion_overkill_and_previous_save_tests = 'passed'
     corpse_explosion_radius_feet = 25; corpse_explosion_radius_units = 25 * 128 / 6
     corpse_explosion_radius_metres = 7.62
     corpse_explosion_preferred_poison_plugin = 'Requiem - Magic Redone.esp'
@@ -109,7 +110,7 @@ $Info = [ordered]@{
     explosion_delivery = 'corpse-origin Self-area spell with native AddTarget gate'
     explosion_area_delivery_tests = 'passed'; explosion_health_change_logged = $true
     explosion_acceptance_logged = $true; explosion_native_spell_area_feet = 25
-    explosion_effects_require_combined = '2.13.4-beta1'; ordinator_dependency = $false
+    explosion_effects_require_combined = '2.13.5-beta1'; ordinator_dependency = $false
     rename_potions_batch_names_preserved = $true; batch_name_tests = 'passed'
     name_captured_from_inventory_delta = $true; named_source_stack_removal = $true
     older_named_bottles_reserved = $true; legacy_pending_v1_supported = $true
@@ -117,4 +118,4 @@ $Info = [ordered]@{
     unattached_extra_lists_use_owned_cleanup = $true
 }
 $Info | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Stage 'BuildInfo.json') -Encoding utf8
-Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Corpse_Explosion_Satchel_SKSE_v2_1_4_beta1.zip')
+Compress-Archive -Path (Join-Path $Stage '*') -DestinationPath (Join-Path $WorkDirectory 'Corpse_Explosion_Satchel_SKSE_v2_1_5_beta1.zip')

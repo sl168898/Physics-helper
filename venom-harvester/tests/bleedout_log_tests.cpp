@@ -56,7 +56,7 @@ namespace {
         explosion.record(victim, origin, result.damage);
         assert(explosion.killed(victim, *result.death));
         const auto burst = explosion.claim(victim);
-        assert(burst && std::abs(burst->at(3) - 0.25 * observed.before) < 0.00001);
+        assert(burst && std::abs(burst->at(3) - 0.50 * observed.before) < 0.00001);
         assert(!explosion.claim(victim));
 
         // An essential actor dropping into bleedout is not a refundable kill.

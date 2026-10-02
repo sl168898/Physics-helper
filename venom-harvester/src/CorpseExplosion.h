@@ -15,7 +15,7 @@ namespace corpse
     using ID = std::uint32_t;
     enum class Type : std::uint32_t { fire, frost, shock, poison };
     using Damage = std::array<double, 4>;
-    constexpr double fraction = 0.25;
+    constexpr double fraction = 0.50;
     constexpr std::uint32_t radiusFeet = 25; // Ordinator Corpse Gas's outer area.
     constexpr float radius = radiusFeet * 128.f / 6.f; // 533 1/3 units = 7.62 metres.
     constexpr std::uint32_t recordID = 0x43455850; // CEXP, version 1

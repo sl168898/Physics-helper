@@ -1,3 +1,23 @@
+# Version 2.1.5 beta: 50% Corpse Explosion damage
+
+Corpse Explosion now deals 50% of the player's recorded actual Health damage
+to the killed target, increased from 25%. The killing oil's damage-type mix
+still splits that amount, and each recipient's matching resistance applies.
+For example, a poison that removes a target's remaining 200 Health produces
+100 poison damage before recipient resistance, even if its nominal damage
+was 5,000. Existing mixed-damage and bleedout tests use the new percentage;
+overkill and old CEXP v1 pending-save compatibility are also checked.
+
+The 25-foot (7.62-metre) range, Poison Nova visual, thumbnail, enemy filters,
+Health penalty, Satchel refunds and save formats are retained. The trait's
+in-game descriptions now say 50%. No new game or trait reselection is required.
+Exit Skyrim and replace the previous mod with COMPLETE Combined 2.13.5-beta1.
+Its ESP and VenomHarvester.dll must win conflicts. VenomHarvester.log must show
+version 2.1.5 and `50 percent, radius 25 feet (533.333 units)` in the ready line.
+Automated checks do not establish in-game visual or damage confirmation.
+
+Earlier release notes describe their respective versions.
+
 # Version 2.1.4 beta: Poison Nova visual and 25-foot radius
 
 Corpse Explosion now reaches 25 feet (7.62 metres, 533 1/3 game units),

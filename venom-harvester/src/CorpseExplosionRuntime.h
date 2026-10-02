@@ -420,7 +420,7 @@ namespace corpse
                     spell->data.flags.any(RE::SpellItem::SpellFlag::kNoAbsorb);
                 if (!valid) {
                     ready = false;
-                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.4 ESP winning conflicts", names[i]);
+                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.5 ESP winning conflicts", names[i]);
                 }
             }
             if (!ready) return;
@@ -440,7 +440,7 @@ namespace corpse
             HealthHook<RE::Actor>::install(); HealthHook<RE::Character>::install();
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
-            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, 25 percent, radius {} feet ({:.3f} units), matching resistance, enemy filter, no chains; acceptance and Health diagnostics", radiusFeet, radius);
+            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent, radius {} feet ({:.3f} units), matching resistance, enemy filter, no chains; acceptance and Health diagnostics", fraction * 100, radiusFeet, radius);
         }
         void setSession(bool value) { session.store(value); }
         void reset() {

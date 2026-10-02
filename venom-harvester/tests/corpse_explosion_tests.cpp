@@ -23,11 +23,11 @@ int main()
     ledger.record(1, follower, 2000); ledger.record(1, blast, 5000);
     assert(ledger.targets.at(1).total == 800);
     assert(ledger.killed(1, fire));
-    auto first = ledger.claim(1); assert(first && (*first)[0] == 150 && (*first)[3] == 50);
+    auto first = ledger.claim(1); assert(first && (*first)[0] == 300 && (*first)[3] == 100);
     assert(!ledger.claim(1) && !ledger.killed(1, fire));
     ledger.record(1, fire, 500); assert(ledger.targets.at(1).total == 800);
     ledger.resurrected(1); ledger.record(1, fire, 100);
-    assert(ledger.killed(1, fire) && ledger.claim(1)->at(0) == 25);
+    assert(ledger.killed(1, fire) && ledger.claim(1)->at(0) == 50);
 
     // A coated target killed by a weapon, follower or explosion cannot burst.
     for (const auto killer : {weapon, follower, blast}) {
@@ -39,7 +39,13 @@ int main()
     Ledger mixed;
     mixed.record(3, Origin{true, false, 20, Type::frost}, 600);
     mixed.record(3, fire, 400); assert(mixed.killed(3, fire));
-    assert(mixed.claim(3)->at(0) == 250);
+    assert(mixed.claim(3)->at(0) == 500);
+
+    // A 5,000-damage poison hitting a 200-Health enemy records only 200 lost
+    // Health, so the new 50% burst is 100 damage before recipient resistance.
+    Ledger overkill;
+    overkill.record(4, venom, healthLost(200, -4800));
+    assert(overkill.killed(4, venom) && overkill.claim(4)->at(3) == 100);
 
     // Three overlapping scopes, including the generic native health callback.
     Frame outer{5, 100, 0, fire};
@@ -67,7 +73,7 @@ int main()
     Ledger saved; saved.record(42, fire, 120); assert(saved.killed(42, fire));
     auto bytes = encode(saved);
     auto restored = decode(bytes, [](ID id) { return id + 1; });
-    assert(restored && restored->claim(43)->at(0) == 30 && !restored->claim(43));
+    assert(restored && restored->claim(43)->at(0) == 60 && !restored->claim(43));
     auto spent = decode(encode(*restored), [](ID id) { return id; });
     assert(spent && !spent->claim(43));
     for (std::size_t size = 0; size < bytes.size(); ++size)
@@ -77,5 +83,11 @@ int main()
     assert(!decode(corrupt, [](ID id) { return id; }));
     auto missing = decode(encode(saved), [](ID) { return ID{}; });
     assert(missing && missing->targets.empty());
-    std::cout << "Corpse Explosion: attribution, nested accounting, mixed damage, resistance, deaths and save tests passed\n";
+    // Old CEXP v1 pending bursts retain their already calculated amount.
+    Ledger legacy = saved; legacy.targets.at(42).blast[0] = 30;
+    auto previous = decode(encode(legacy), [](ID id) { return id; });
+    assert(previous && previous->claim(42)->at(0) == 30);
+    Ledger excessive = saved; excessive.targets.at(42).blast[0] = 61;
+    assert(!decode(encode(excessive), [](ID id) { return id; }));
+    std::cout << "Corpse Explosion: 50% typed damage, capped overkill, attribution, nested accounting, resistance, deaths and save compatibility tests passed\n";
 }
