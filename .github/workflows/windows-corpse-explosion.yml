@@ -1,8 +1,8 @@
-name: Build Corpse Explosion Area Delivery
+name: Build Corpse Explosion Poison Nova and Radius
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/corpse-area-delivery-20261002']
+    branches: ['codex/corpse-poison-nova-radius-20261002']
 permissions:
   contents: read
 concurrency:
@@ -25,6 +25,6 @@ jobs:
       - name: Upload native package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: Corpse-Explosion-Satchel-v2-1-3
-          path: venom-harvester/_build/Corpse_Explosion_Satchel_SKSE_v2_1_3_beta1.zip
+          name: Corpse-Explosion-Satchel-v2-1-4
+          path: venom-harvester/_build/Corpse_Explosion_Satchel_SKSE_v2_1_4_beta1.zip
           if-no-files-found: error

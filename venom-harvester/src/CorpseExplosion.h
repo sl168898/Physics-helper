@@ -16,7 +16,8 @@ namespace corpse
     enum class Type : std::uint32_t { fire, frost, shock, poison };
     using Damage = std::array<double, 4>;
     constexpr double fraction = 0.25;
-    constexpr float radius = 420.f; // 128 game units = 6 feet; approximately 6 metres.
+    constexpr std::uint32_t radiusFeet = 25; // Ordinator Corpse Gas's outer area.
+    constexpr float radius = radiusFeet * 128.f / 6.f; // 533 1/3 units = 7.62 metres.
     constexpr std::uint32_t recordID = 0x43455850; // CEXP, version 1
     constexpr std::size_t maxActors = 4096, maxSources = 128;
 

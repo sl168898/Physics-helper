@@ -1,3 +1,39 @@
+# Version 2.1.4 beta: Poison Nova visual and 25-foot radius
+
+Corpse Explosion now reaches 25 feet (7.62 metres, 533 1/3 game units),
+matching Ordinator Corpse Gas's outer area. One shared radius controls loaded
+actor collection, application rechecks and all four private explosion records.
+The four damage spells already have 25-foot native areas. Their actual damage
+boundary now covers that full area, including enemies beyond the previous
+420-unit limit. Ordinator's separate 15-foot inner effect is not added.
+
+Poison bursts explicitly reuse the winning EXPL 005C32 record from Requiem -
+Magic Redone.esp, which is linked by Poison Nova. In the supplied mod its model
+is Noxcrab\\Restoration\\PoisonRuneExplosion.nif. Model, light and sounds are
+copied into our private visual; its damage, force and secondary gameplay
+effects are not copied. The Combined ESP also points its private poison visual
+at that model. Magic Redone is already a Combined master; no third-party assets
+or additional master are distributed. Fire, frost and shock retain their
+elemental visuals. If the loaded Poison Nova record is unavailable or lacks a
+model, the previous safe selector remains available and logs the fallback.
+
+Install COMPLETE Combined 2.13.4-beta1 with both its ESP and VenomHarvester.dll
+winning conflicts. No new game or trait reselection is required. Check the log
+header for 2.1.4, the ready line for `radius 25 feet (533.333 units)`, and
+`poison visual source: Poison Nova` followed by the exact loaded model path.
+The trait description now gives the 25-foot range; the thumbnail is preserved.
+
+The 25% calculation, damage types, matching resistance, enemy/companion/summon
+filters, corpse line of sight, no chains, Health penalty, Satchel refunds and
+save formats are unchanged. Test with two hostile enemies within 7.6 metres:
+kill one using your oil/poison and inspect the survivor's Health. The previous
+acceptance and actual Health-loss diagnostics remain. A neutral deer does not
+qualify as a nearby damage recipient. Automated tests cover the expanded range
+and exact boundary. This beta still needs in-game visual/damage confirmation;
+the illustrative simulation video is not captured game footage.
+
+Earlier release notes follow and describe their respective versions.
+
 # Version 2.1.3 beta: corpse-origin area delivery
 
 The latest log confirms poison kills and two nonzero cast requests, but the

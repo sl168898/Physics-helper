@@ -1,4 +1,5 @@
 #include "BlastTargets.h"
+#include "CorpseExplosion.h"
 #include <cassert>
 #include <iostream>
 #include <limits>
@@ -62,6 +63,20 @@ int main()
     assert((candidates == std::vector<std::uint32_t>{2, 3}));
     assert(processes.enumerations == 1); // All four process levels, deduplicated.
 
+    // The configured 25-foot blast now reaches the former 420..533-unit gap.
+    // Keep the exact boundary inclusive and reject targets just beyond it.
+    Actor expanded{13, &exteriorB, &tamriel, {4090, 0, 500}};
+    Actor expandedBoundary{14, &exteriorA, &tamriel, {4090, 0, corpse::radius}};
+    Actor outsideExpanded{15, &exteriorA, &tamriel, {4090, 0, corpse::radius + 0.1f}};
+    processes.levels = {};
+    processes.levels[0] = {&body, &expanded, &expandedBoundary, &outsideExpanded, &expanded};
+    assert((corpse::collectBlastActors<Result::next>(&processes, &body, corpse::radius) ==
+        std::vector<std::uint32_t>{13, 14}));
+    const auto exteriorOrigin = corpse::blastLocation(&body);
+    assert(!corpse::withinBlast(exteriorOrigin, corpse::blastLocation(&expanded), 420));
+    expanded.position.z = corpse::radius + 0.1f;
+    assert(!corpse::withinBlast(exteriorOrigin, corpse::blastLocation(&expanded), corpse::radius));
+
     // Equal coordinates in different interiors are not adjacent in the game.
     body.cell = &interiorA; body.world = nullptr;
     Actor sameRoom{11, &interiorA, nullptr, {4110, 0, 0}};
@@ -91,5 +106,5 @@ int main()
     assert(!corpse::withinBlast(origin, origin, std::numeric_limits<double>::infinity()));
     assert(corpse::collectBlastActors<Result::next>(static_cast<Processes*>(nullptr), &body, 420).empty());
     assert(corpse::collectBlastActors<Result::next>(&processes, static_cast<Actor*>(nullptr), 420).empty());
-    std::cout << "PASS: loaded actor collector, exterior cell boundary, 3D radius, separate spaces, deduplication and delivery rechecks\n";
+    std::cout << "PASS: loaded actor collector, exterior cell boundary, 25-foot extension and exact boundary, 3D radius, separate spaces, deduplication and delivery rechecks\n";
 }

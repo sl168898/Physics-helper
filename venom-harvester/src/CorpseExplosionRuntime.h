@@ -84,9 +84,16 @@ namespace corpse
         }
         void configureVisuals(RE::TESDataHandler* data) {
             const auto fallback = data->LookupForm<RE::BGSExplosion>(0xF5076, "Skyrim.esm");
+            // Poison Nova links this explosion in the supplied Magic Redone
+            // plugin. Prefer its winning loaded record over filename scores.
+            const auto poisonNova = data->LookupForm<RE::BGSExplosion>(0x5C32, "Requiem - Magic Redone.esp");
             for (unsigned i = 0; i < 4; ++i) {
                 RE::BGSExplosion* best = fallback; int bestScore = 0;
-                for (auto candidate : data->GetFormArray<RE::BGSExplosion>()) {
+                const bool preferred = i == 3 && poisonNova && poisonNova->GetModel() && *poisonNova->GetModel();
+                if (preferred) {
+                    best = poisonNova;
+                    SKSE::log::info("[CorpseExplosion] poison visual source: Poison Nova, Requiem - Magic Redone.esp local EXPL 005C32");
+                } else for (auto candidate : data->GetFormArray<RE::BGSExplosion>()) {
                     if (!candidate || std::find(visuals.begin(), visuals.end(), candidate) != visuals.end()) continue;
                     const auto path = candidate->GetModel();
                     if (!path || !*path) continue;
@@ -104,6 +111,8 @@ namespace corpse
                     if (model.find("fireball") != std::string::npos) score += 5;
                     if (score > bestScore) { bestScore = score; best = candidate; }
                 }
+                if (i == 3 && !preferred)
+                    SKSE::log::warn("[CorpseExplosion] Poison Nova explosion unavailable; using loaded poison visual fallback");
                 auto visual = visuals[i];
                 if (best) {
                     visual->SetModel(best->GetModel());
@@ -405,13 +414,13 @@ namespace corpse
                     effect->data.delivery == RE::MagicSystem::Delivery::kSelf &&
                     effect->data.explosion == visuals[i] && spell->effects.size() == 1 &&
                     spell->effects[0] && spell->effects[0]->baseEffect == effect &&
-                    spell->effects[0]->effectItem.area == 25 && spell->effects[0]->effectItem.duration == 0 &&
+                    spell->effects[0]->effectItem.area == radiusFeet && spell->effects[0]->effectItem.duration == 0 &&
                     !effect->data.flags.any(RE::EffectSetting::EffectSettingData::Flag::kNoArea) &&
                     spell->data.flags.any(RE::SpellItem::SpellFlag::kIgnoreResistance) &&
                     spell->data.flags.any(RE::SpellItem::SpellFlag::kNoAbsorb);
                 if (!valid) {
                     ready = false;
-                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.3 ESP winning conflicts", names[i]);
+                    SKSE::log::error("[CorpseExplosion] {} area records mismatched; requires Combined 2.13.4 ESP winning conflicts", names[i]);
                 }
             }
             if (!ready) return;
@@ -431,7 +440,7 @@ namespace corpse
             HealthHook<RE::Actor>::install(); HealthHook<RE::Character>::install();
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
-            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, 25 percent, radius 420, matching resistance, enemy filter, no chains; acceptance and Health diagnostics");
+            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, 25 percent, radius {} feet ({:.3f} units), matching resistance, enemy filter, no chains; acceptance and Health diagnostics", radiusFeet, radius);
         }
         void setSession(bool value) { session.store(value); }
         void reset() {
