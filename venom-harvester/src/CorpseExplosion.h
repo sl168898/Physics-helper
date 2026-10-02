@@ -16,9 +16,11 @@ namespace corpse
     enum class Type : std::uint32_t { fire, frost, shock, poison };
     using Damage = std::array<double, 4>;
     constexpr double fraction = 0.50;
+    constexpr double flatDamage = 100.0;
+    constexpr unsigned maxBurstsPerWave = 16;
     constexpr std::uint32_t radiusFeet = 25; // Ordinator Corpse Gas's outer area.
     constexpr float radius = radiusFeet * 128.f / 6.f; // 533 1/3 units = 7.62 metres.
-    constexpr std::uint32_t recordID = 0x43455850; // CEXP, version 1
+    constexpr std::uint32_t recordID = 0x43455850; // CEXP, version 2 (reads v1)
     constexpr std::size_t maxActors = 4096, maxSources = 128;
 
     inline double healthLost(double before, double after)
@@ -33,6 +35,8 @@ namespace corpse
     }
     struct Origin {
         bool player{}, explosion{};
+        // ALCH for a poison/oil; private typed SPEL for a verified chain hit.
+        // An explosion with no qualified source must never seed another burst.
         ID poison{};
         Type type{Type::poison};
     };
@@ -80,7 +84,8 @@ namespace corpse
         }
         void record(ID victim, const Origin& source, double damage)
         {
-            if (!victim || !source.player || source.explosion || !std::isfinite(damage) || damage <= 0) return;
+            if (!victim || !source.player || (source.explosion && !source.poison) ||
+                !std::isfinite(damage) || damage <= 0) return;
             if (!targets.contains(victim) && targets.size() >= maxActors) return;
             auto& t = targets[victim];
             if (t.state != State::alive) return;
@@ -95,13 +100,17 @@ namespace corpse
             if (it == targets.end() || it->second.state != State::alive) return false;
             auto& t = it->second;
             t.state = State::spent; // Every observed killing blow consumes this life.
-            if (!source.player || source.explosion || !source.poison || t.total <= 0) return false;
+            if (!source.player || !source.poison || t.total <= 0) return false;
             const auto oil = t.oils.find(source.poison);
             if (oil == t.oils.end()) return false;
             double sum{};
             for (auto part : oil->second) sum += part;
             if (!(sum > 0) || !std::isfinite(sum)) return false;
-            for (std::size_t i = 0; i < 4; ++i) t.blast[i] = t.total * fraction * (oil->second[i] / sum);
+            // One flat bonus per corpse, apportioned with the original damage
+            // mix. A mixed coating does not receive 100 for each damage type.
+            const auto amount = t.total * fraction + flatDamage;
+            if (!std::isfinite(amount)) return false;
+            for (std::size_t i = 0; i < 4; ++i) t.blast[i] = amount * (oil->second[i] / sum);
             t.state = State::pending;
             return true;
         }
@@ -122,7 +131,7 @@ namespace corpse
             const auto bits = std::bit_cast<std::uint64_t>(x);
             u32(static_cast<std::uint32_t>(bits)); u32(static_cast<std::uint32_t>(bits >> 32));
         };
-        u32(1); u32(static_cast<std::uint32_t>(ledger.targets.size()));
+        u32(2); u32(static_cast<std::uint32_t>(ledger.targets.size()));
         for (const auto& [id, t] : ledger.targets) {
             u32(id); u32(static_cast<std::uint32_t>(t.state)); number(t.total);
             for (auto d : t.blast) number(d);
@@ -147,7 +156,8 @@ namespace corpse
             if (!std::isfinite(d) || d < 0) valid = false;
             return d;
         };
-        if (u32() != 1) return std::nullopt;
+        const auto version = u32();
+        if (version != 1 && version != 2) return std::nullopt;
         const auto count = u32();
         if (!valid || count > maxActors) return std::nullopt;
         Ledger result;
@@ -157,7 +167,8 @@ namespace corpse
             Target t; t.state = static_cast<State>(state); t.total = number();
             double blastTotal{};
             for (auto& d : t.blast) { d = number(); blastTotal += d; }
-            if (!valid || blastTotal > t.total * fraction + 0.001) return std::nullopt;
+            const auto maximum = t.total * fraction + (version == 2 ? flatDamage : 0.0);
+            if (!valid || !std::isfinite(blastTotal) || blastTotal > maximum + 0.001) return std::nullopt;
             const auto sources = u32();
             if (sources > maxSources) return std::nullopt;
             for (std::uint32_t j = 0; j < sources; ++j) {
@@ -167,6 +178,14 @@ namespace corpse
                 if (source && !t.oils.emplace(source, damage).second) return std::nullopt;
             }
             if (!valid) return std::nullopt;
+            if (version == 1) {
+                // Old pending 25%/50% bursts adopt 50% + 100 while retaining
+                // their stored type proportions. Spent corpses stay spent.
+                if (t.state == State::pending && blastTotal > 0 && t.total > 0) {
+                    const auto amount = t.total * fraction + flatDamage;
+                    for (auto& d : t.blast) d = amount * (d / blastTotal);
+                } else t.blast = {};
+            }
             if (id && !result.targets.emplace(id, std::move(t)).second) return std::nullopt;
         }
         if (!valid || pos != bytes.size()) return std::nullopt;

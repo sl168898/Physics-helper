@@ -1,0 +1,87 @@
+#include "CorpseExplosion.h"
+#include <atomic>
+#include <cassert>
+#include <functional>
+#include <map>
+#include <vector>
+#include <iostream>
+namespace RE {
+    struct Actor { corpse::ID id{}; bool dead=true, queued=false; float hp=0; bool IsDead(){return dead;} };
+    inline std::map<corpse::ID,Actor> actors;
+    struct TESForm {
+        template<class T> static T* LookupByID(corpse::ID id) {
+            auto it=actors.find(id); return it==actors.end()?nullptr:&it->second;
+        }
+    };
+    template<class T> struct NiPointer {
+        T* ptr{}; explicit NiPointer(T* p):ptr(p){}
+        explicit operator bool() const{return ptr!=nullptr;}
+        T* operator->() const{return ptr;} T* get() const{return ptr;}
+    };
+}
+namespace SKSE {
+    struct Tasks { std::vector<std::function<void()>> jobs; void AddTask(std::function<void()> job){jobs.push_back(job);} };
+    inline Tasks tasks;
+    Tasks* GetTaskInterface(){return &tasks;}
+}
+struct FakeMutex { void lock(){} void unlock(){} };
+#include <mutex>
+namespace corpse {
+    class Runtime {
+    public:
+        inline static Runtime* self{};
+        std::atomic<std::uint64_t> epoch{};
+        std::atomic_bool taskQueued{};
+        bool enabled=true;
+        FakeMutex mutex;
+        Ledger ledger;
+        std::vector<ID> exploded;
+        std::function<void(ID)> callback;
+        bool selected(){return enabled;}
+        void forget(ID id){ledger.forget(id);}
+        static float health(RE::Actor* a){return a->hp;}
+        static bool killQueued(RE::Actor* a){return a->queued;}
+        void explode(RE::Actor* a,const Damage&){
+            assert(taskQueued); exploded.push_back(a->id); if(callback)callback(a->id);
+        }
+@@PRODUCTION_PUMP@@
+    };
+}
+void runTask(){
+    assert(!SKSE::tasks.jobs.empty()); auto f=SKSE::tasks.jobs.front();
+    SKSE::tasks.jobs.erase(SKSE::tasks.jobs.begin()); f();
+}
+int main(){
+    using namespace corpse;
+    Runtime runtime; Runtime::self=&runtime;
+    const Origin chain{true,true,0x21000F83,Type::fire};
+    auto pending=[&](ID id){
+        RE::actors[id]={id};runtime.ledger.record(id,chain,50);assert(runtime.ledger.killed(id,chain));
+    };
+    pending(1);
+    runtime.callback=[&](ID id){if(id==1){pending(2);runtime.queue();assert(SKSE::tasks.jobs.empty());}};
+    runtime.queue();runtime.queue();assert(SKSE::tasks.jobs.size()==1);
+    runTask();assert(runtime.exploded==std::vector<ID>{1} && !runtime.taskQueued);
+    assert(runtime.ledger.targets.at(2).state==State::pending && SKSE::tasks.jobs.empty());
+    runtime.queue();runTask();assert((runtime.exploded==std::vector<ID>{1,2}));
+    // Large groups are spread over updates, without dropping later victims.
+    runtime.callback={};runtime.exploded.clear();
+    for(ID id=10;id<30;++id)pending(id);
+    runtime.queue();runTask();assert(runtime.exploded.size()==maxBurstsPerWave);
+    runtime.queue();runTask();assert(runtime.exploded.size()==20);
+    runtime.queue();runTask();assert(runtime.exploded.size()==20); // Spent bodies ignored.
+    // A queued kill waits for death; cancelled kills and missing forms are retired.
+    pending(40);RE::actors[40].dead=false;RE::actors[40].queued=true;
+    pending(41);RE::actors[41].dead=false;RE::actors[41].hp=10;
+    pending(42);RE::actors.erase(42);
+    runtime.queue();runTask();assert(runtime.ledger.targets.at(40).state==State::pending);
+    assert(!runtime.ledger.targets.contains(41) && !runtime.ledger.targets.contains(42));
+    RE::actors[40].dead=true;runtime.queue();runTask();assert(runtime.exploded.back()==40);
+    // An old task cannot release the gate belonging to a newer loaded game.
+    runtime.queue();++runtime.epoch;runtime.taskQueued=false;runtime.queue();
+    assert(SKSE::tasks.jobs.size()==2);runTask();assert(runtime.taskQueued);
+    runTask();assert(!runtime.taskQueued);
+    pending(50);runtime.queue();runtime.enabled=false;runTask();
+    assert(!runtime.taskQueued && runtime.ledger.targets.at(50).state==State::pending);
+    std::cout<<"PASS: production pump defers chain waves, limits bursts, deduplicates scheduling, waits for corpse and respects session generation\n";
+}

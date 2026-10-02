@@ -1,3 +1,74 @@
+# Version 2.2.0 beta: 50% + 100 damage and chain reactions
+
+Included in COMPLETE Biggie Traits - Combined 2.14.0-beta1 for Steam Skyrim
+1.6.1170. Replace the previous Combined mod and let both Biggie Traits -
+Combined.esp and SKSE/Plugins/VenomHarvester.dll win conflicts. Restart SKSE.
+Existing trait ownership is preserved; no new game or trait reselection.
+Keep your separate Poisoned Ammunition / Coating Perks package installed.
+
+## Damage and chaining
+
+A confirmed killing blow from your poison or weapon oil produces a burst with
+**50% of your recorded actual Health damage to that enemy + 100 damage**.
+Overkill is capped to the Health actually removed: a nominal 5000-damage poison
+killing a 200-Health enemy produces a 200-damage burst, before the recipient's
+matching resistance. The flat 100 is added once per corpse, before resistance.
+The killing coating's damage mix splits the whole amount, including the 100.
+A 75% fire / 25% poison mix produces 150 fire + 50 poison in that example.
+
+An enemy killed by one of these bursts also explodes, even if it was never
+coated. Its burst uses 50% of the player's recorded actual damage to THAT enemy
+(including chain damage) + 100, in the damage type of the blast that killed it.
+For example, a 200 fire burst kills a previously unharmed enemy with 120 Health:
+its own burst is 160 fire. If that kills another with 100 Health, the next is
+150 fire. Surviving a blast does not trigger a burst. A later weapon, follower
+or unrelated spell kill does not qualify merely because a blast hit earlier.
+
+Each corpse explodes once per life. Kills are queued for a later player update,
+with at most 16 corpse bursts per wave; additional corpses remain pending.
+There is no generation limit: the chain ends when no eligible enemy dies.
+This avoids recursively casting new explosions from inside damage callbacks.
+All stages retain the 25-foot (7.62-metre) radius, enemy-only filtering,
+matching resistance, native area visibility and existing elemental/Poison Nova
+visuals. The existing thumbnail and maximum Health reduction of 50 remain.
+
+Only this trait's four private typed spells qualify as chain damage; generic
+explosions are not treated as poison/oil kills. Both synchronous area delivery
+and later native effect updates supply typed damage attribution. Nested health
+hooks count actual damage once. Dead/essential/queued-death guards remain.
+Huntsman's Satchel keeps its own poison identity, crafting and refund rules.
+Chain spells do not become Satchel recipe poisons or issue extra refunds.
+
+## Saves and testing
+
+CEXP v2 saves the same ledger fields with a new version tag and reads v1 saves.
+Old pending bursts adopt 50% + 100 while retaining their stored damage mix;
+spent corpses stay spent. Satchel HSAT/HSAP formats and all FormIDs are unchanged.
+Keep an earlier ESS/SKSE save pair if you plan to revert to an older DLL, which
+cannot read the new CEXP v2 record.
+
+VenomHarvester.log must show native 2.2.0 and a ready line containing
+`50 percent + 100 flat damage` and `chains enabled`. Test in a disposable save:
+
+1. Place three hostile enemies close together in open space. Kill the first
+   using fire oil, with a second weak enough to die to its burst. The second
+   must explode once and damage the third, without requiring another oil hit.
+2. Check `confirmed chain explosion killing blow`, subsequent `area-cast`, and
+   `health-update ... actual-loss`. An accepted cast alone is not proof of loss.
+3. Repeat with poison, frost and shock. Check a resistant target and a companion;
+   resistance must reduce the whole burst, and the companion must be unharmed.
+4. Save/restart with the trait selected and repeat. Check a larger enemy group,
+   an essential actor, and a blast survivor subsequently killed by a plain weapon.
+5. Retest Huntsman's Satchel using a freshly remembered recipe and coated dagger.
+   Send the fresh VenomHarvester.log if damage, chaining or refunds misbehave.
+
+Windows compilation and 15 automated suites are required. Tests exercise the
+production damage ledger, native callback accounting, save migration, and the
+actual deferred pump/queue methods. Skyrim's full collision, effects and the
+user's load order have not been run here; in-game confirmation is still needed.
+
+Earlier release notes describe their respective versions.
+
 # Version 2.1.7 beta: remove the corpse-perception veto
 
 The user's 2.1.6 log confirms working startup, hooks and Poison Nova visuals.

@@ -23,13 +23,13 @@ int main()
     ledger.record(1, follower, 2000); ledger.record(1, blast, 5000);
     assert(ledger.targets.at(1).total == 800);
     assert(ledger.killed(1, fire));
-    auto first = ledger.claim(1); assert(first && (*first)[0] == 300 && (*first)[3] == 100);
+    auto first = ledger.claim(1); assert(first && (*first)[0] == 375 && (*first)[3] == 125);
     assert(!ledger.claim(1) && !ledger.killed(1, fire));
     ledger.record(1, fire, 500); assert(ledger.targets.at(1).total == 800);
     ledger.resurrected(1); ledger.record(1, fire, 100);
-    assert(ledger.killed(1, fire) && ledger.claim(1)->at(0) == 50);
+    assert(ledger.killed(1, fire) && ledger.claim(1)->at(0) == 150);
 
-    // A coated target killed by a weapon, follower or explosion cannot burst.
+    // Weapon, follower and unqualified explosion kills cannot burst.
     for (const auto killer : {weapon, follower, blast}) {
         Ledger rejected; rejected.record(2, fire, 100);
         assert(!rejected.killed(2, killer)); assert(!rejected.claim(2));
@@ -39,13 +39,13 @@ int main()
     Ledger mixed;
     mixed.record(3, Origin{true, false, 20, Type::frost}, 600);
     mixed.record(3, fire, 400); assert(mixed.killed(3, fire));
-    assert(mixed.claim(3)->at(0) == 500);
+    assert(mixed.claim(3)->at(0) == 600);
 
     // A 5,000-damage poison hitting a 200-Health enemy records only 200 lost
-    // Health, so the new 50% burst is 100 damage before recipient resistance.
+    // Health: 50% + 100 produces 200 damage before recipient resistance.
     Ledger overkill;
     overkill.record(4, venom, healthLost(200, -4800));
-    assert(overkill.killed(4, venom) && overkill.claim(4)->at(3) == 100);
+    assert(overkill.killed(4, venom) && overkill.claim(4)->at(3) == 200);
 
     // Three overlapping scopes, including the generic native health callback.
     Frame outer{5, 100, 0, fire};
@@ -73,7 +73,7 @@ int main()
     Ledger saved; saved.record(42, fire, 120); assert(saved.killed(42, fire));
     auto bytes = encode(saved);
     auto restored = decode(bytes, [](ID id) { return id + 1; });
-    assert(restored && restored->claim(43)->at(0) == 60 && !restored->claim(43));
+    assert(restored && restored->claim(43)->at(0) == 160 && !restored->claim(43));
     auto spent = decode(encode(*restored), [](ID id) { return id; });
     assert(spent && !spent->claim(43));
     for (std::size_t size = 0; size < bytes.size(); ++size)
@@ -83,11 +83,26 @@ int main()
     assert(!decode(corrupt, [](ID id) { return id; }));
     auto missing = decode(encode(saved), [](ID) { return ID{}; });
     assert(missing && missing->targets.empty());
-    // Old CEXP v1 pending bursts retain their already calculated amount.
-    Ledger legacy = saved; legacy.targets.at(42).blast[0] = 30;
-    auto previous = decode(encode(legacy), [](ID id) { return id; });
-    assert(previous && previous->claim(42)->at(0) == 30);
-    Ledger excessive = saved; excessive.targets.at(42).blast[0] = 61;
+    // v1 pending bursts from either old percentage adopt 50% + 100.
+    for (double oldAmount : {30.0,60.0}) {
+        Ledger legacy = saved; legacy.targets.at(42).blast[0] = oldAmount;
+        auto v1 = encode(legacy); v1[0] = 1;
+        auto previous = decode(v1, [](ID id) { return id; });
+        assert(previous);
+        auto pendingAgain = decode(encode(*previous), [](ID id) { return id; });
+        assert(pendingAgain && pendingAgain->claim(42)->at(0) == 160);
+        assert(previous && previous->claim(42)->at(0) == 160);
+        assert(!previous->claim(42));
+        auto again = decode(encode(*previous), [](ID id) { return id; });
+        assert(again && !again->claim(42));
+    }
+    Ledger excessive = saved; excessive.targets.at(42).blast[0] = 161;
     assert(!decode(encode(excessive), [](ID id) { return id; }));
-    std::cout << "Corpse Explosion: 50% typed damage, capped overkill, attribution, nested accounting, resistance, deaths and save compatibility tests passed\n";
+    auto v1 = encode(excessive); v1[0] = 1;
+    assert(!decode(v1, [](ID id) { return id; }));
+    Ledger oldSpent = saved; oldSpent.claim(42); oldSpent.targets.at(42).blast[0] = 60;
+    v1 = encode(oldSpent); v1[0] = 1;
+    auto spentV1 = decode(v1, [](ID id) { return id; });
+    assert(spentV1 && !spentV1->claim(42));
+    std::cout << "Corpse Explosion: 50% + 100 typed damage, capped overkill, attribution, nested accounting, resistance, deaths and v1/v2 save tests passed\n";
 }

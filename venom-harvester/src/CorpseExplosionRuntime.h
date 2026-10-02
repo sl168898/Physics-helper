@@ -54,9 +54,6 @@ namespace corpse
             const auto p = RE::PlayerCharacter::GetSingleton();
             return ready && session.load() && p && trait && p->HasSpell(trait);
         }
-        bool ownEffect(RE::EffectSetting* effect) const {
-            return effect && std::find(effects.begin(), effects.end(), effect) != effects.end();
-        }
         static Type typeOf(RE::EffectSetting* base) {
             // Inspect the effect, not the item's IsPoison flag: elemental oils
             // are alchemy poisons too. Weakness effects never enter this path
@@ -73,11 +70,22 @@ namespace corpse
             if (!effect || !effect->effect || !effect->effect->baseEffect || !effect->spell ||
                 !harvest::matchesMagicTarget(effect->target, actor)) return origin;
             const auto base = effect->effect->baseEffect;
-            origin.explosion = applying || ownEffect(base);
+            const auto burst = std::find(effects.begin(), effects.end(), base);
+            origin.explosion = applying || burst != effects.end();
             origin.player = effect->GetCasterActor().get() == RE::PlayerCharacter::GetSingleton();
-            if (!origin.player || origin.explosion || (!base->IsHostile() && !base->IsDetrimental()) ||
+            if (!origin.player || (!base->IsHostile() && !base->IsDetrimental()) ||
                 effect->flags.any(RE::ActiveEffect::Flag::kDispelled) ||
                 effect->conditionStatus == RE::ActiveEffect::ConditionStatus::kFalse) return origin;
+            if (burst != effects.end()) {
+                const auto index = static_cast<unsigned>(burst - effects.begin());
+                if (effect->spell == spells[index]) {
+                    origin.poison = effect->spell->GetFormID();
+                    origin.type = static_cast<Type>(index);
+                }
+                return origin;
+            }
+            // Other effects fired during a burst are not automatically chains.
+            if (origin.explosion) return origin;
             if (const auto oil = effect->spell->As<RE::AlchemyItem>(); oil && oil->IsPoison()) {
                 origin.poison = oil->GetFormID(); origin.type = typeOf(base);
             }
@@ -176,7 +184,13 @@ namespace corpse
                 // native effect creation, with matching resistance applied once.
                 data.caster = cast->player.get();
                 data.magnitude = quote.magnitude;
+                // Observe synchronous damage even if the engine routes it
+                // straight through HandleHealthDamage. Later effect updates
+                // independently recover the same qualified spell/type above.
+                Scope observed(actor.get(), Origin{true, true, data.magicItem->GetFormID(),
+                    static_cast<Type>(index)}, true);
                 const bool accepted = original(target, data);
+                observed.finish();
                 if (accepted) ++cast->delivery.accepted;
                 SKSE::log::info("[CorpseExplosion] area-apply victim={:08X} target={:08X} type={} base={} resistance={} engine-input={} requested={} accepted={} Health-now {} -> {}",
                     cast->delivery.victim, actor->GetFormID(), names[index], cast->delivery.base, resistance,
@@ -251,12 +265,21 @@ namespace corpse
         }
         void pump(std::uint64_t generation) {
             if (generation != epoch.load()) return;
-            taskQueued.store(false);
+            // Keep the gate held while damage callbacks run. New chain kills
+            // are pending for the next player update, never recursive casts.
+            struct Completion {
+                std::atomic_bool& queued;
+                const std::atomic<std::uint64_t>& epoch;
+                std::uint64_t generation;
+                ~Completion() { if (epoch.load() == generation) queued.store(false); }
+            } completion{taskQueued, epoch, generation};
             if (!selected()) return;
             std::vector<ID> pending;
             { std::lock_guard lock(mutex); for (const auto& [id, t] : ledger.targets)
                 if (t.state == State::pending) pending.push_back(id); }
+            unsigned bursts{};
             for (auto id : pending) {
+                if (bursts >= maxBurstsPerWave || generation != epoch.load() || !selected()) break;
                 const RE::NiPointer<RE::Actor> body(RE::TESForm::LookupByID<RE::Actor>(id));
                 if (!body) { forget(id); continue; }
                 if (!body->IsDead()) {
@@ -267,7 +290,10 @@ namespace corpse
                 }
                 std::optional<Damage> damage;
                 { std::lock_guard lock(mutex); damage = ledger.claim(id); }
-                if (damage && generation == epoch.load() && selected()) explode(body.get(), *damage);
+                if (damage && generation == epoch.load() && selected()) {
+                    ++bursts;
+                    explode(body.get(), *damage);
+                }
             }
         }
         void queue() {
@@ -392,12 +418,13 @@ namespace corpse
                     runtime->ledger.record(frame.actor, frame.origin, result.damage);
                     if (result.death) offered = runtime->ledger.killed(frame.actor, *result.death);
                 }
-                if (frame.origin.player && !frame.origin.explosion && result.damage > 0 && runtime->diagnosticCount.fetch_add(1) < 100)
-                    SKSE::log::info("[CorpseExplosion] damage victim={:08X} source={:08X} type={} actual={}",
-                        frame.actor, frame.origin.poison, names[static_cast<unsigned>(frame.origin.type)], result.damage);
+                if (frame.origin.player && result.damage > 0 && runtime->diagnosticCount.fetch_add(1) < 100)
+                    SKSE::log::info("[CorpseExplosion] damage victim={:08X} source={:08X} type={} chain={} actual={}",
+                        frame.actor, frame.origin.poison, names[static_cast<unsigned>(frame.origin.type)], frame.origin.explosion, result.damage);
                 if (offered) {
-                    SKSE::log::info("[CorpseExplosion] confirmed poison/oil killing blow victim={:08X} source={:08X}",
-                        frame.actor, result.death->poison);
+                    SKSE::log::info("[CorpseExplosion] confirmed {} killing blow victim={:08X} source={:08X} type={}",
+                        result.death->explosion ? "chain explosion" : "poison/oil",
+                        frame.actor, result.death->poison, names[static_cast<unsigned>(result.death->type)]);
                     runtime->queue();
                 }
             }
@@ -450,7 +477,7 @@ namespace corpse
             HealthHook<RE::VTABLE_Character>::install("Character");
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
-            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent, radius {} feet ({:.3f} units), native area LOS, matching resistance, enemy filter, no chains; acceptance and Health diagnostics", fraction * 100, radiusFeet, radius);
+            SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent + {} flat damage, radius {} feet ({:.3f} units), native area LOS, matching resistance, enemy filter, chains enabled, {} bursts per wave; acceptance and Health diagnostics", fraction * 100, flatDamage, radiusFeet, radius, maxBurstsPerWave);
         }
         void setSession(bool value) { session.store(value); }
         void reset() {
@@ -460,11 +487,11 @@ namespace corpse
         void forget(ID id) { std::lock_guard lock(mutex); ledger.forget(id); }
         void save(SKSE::SerializationInterface* api) {
             std::lock_guard lock(mutex); const auto bytes = encode(ledger);
-            if (!api->WriteRecord(recordID, 1, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
+            if (!api->WriteRecord(recordID, 2, bytes.data(), static_cast<std::uint32_t>(bytes.size())))
                 SKSE::log::error("[CorpseExplosion] save failed");
         }
         void load(SKSE::SerializationInterface* api, std::uint32_t version, std::uint32_t size) {
-            if (version != 1 || size > 32 * 1024 * 1024) return;
+            if ((version != 1 && version != 2) || size > 32 * 1024 * 1024) return;
             std::vector<std::uint8_t> bytes(size);
             if (api->ReadRecordData(bytes.data(), size) != size) return;
             auto restored = decode(bytes, [api](ID old) { RE::FormID id{}; return api->ResolveFormID(old, id) ? id : 0; });
