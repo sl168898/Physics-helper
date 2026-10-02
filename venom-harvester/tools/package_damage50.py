@@ -27,7 +27,7 @@ def read_zip(path):
         return {name: archive.read(name) for name in names}
 
 
-def verify_dll_version(blob):
+def verify_dll_version(blob, packed_version=0x02010050):
     u16 = lambda pos: struct.unpack_from('<H', blob, pos)[0]
     u32 = lambda pos: struct.unpack_from('<I', blob, pos)[0]
     assert blob[:2] == b'MZ'
@@ -55,7 +55,7 @@ def verify_dll_version(blob):
     for i in range(u32(export+24)):
         if string(raw(u32(names+4*i))) == 'SKSEPlugin_Version':
             version = raw(u32(functions+4*u16(ordinals+2*i)))
-            assert u32(version) == 1 and u32(version+4) == 0x02010050
+            assert u32(version) == 1 and u32(version+4) == packed_version
             assert string(version+8) == 'VenomHarvester'
             return
     raise AssertionError('No SKSEPlugin_Version export')

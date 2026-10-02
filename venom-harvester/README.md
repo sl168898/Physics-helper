@@ -1,3 +1,33 @@
+# Version 2.1.6 beta: startup Address Library failure fixed
+
+Combined 2.13.3 through 2.13.5 can stop before the main menu with a
+VenomHarvester.dll Address Library error containing a huge invalid ID.
+The new MagicTarget hook used `Actor::VTABLE[4]`, but the pinned CommonLib
+Actor class inherits TESObjectREFR's four-entry VTABLE member. That reads
+past the array and passes unrelated memory to Address Library.
+
+Hooks now receive the explicit `RE::VTABLE_Actor`, `RE::VTABLE_Character`
+and `RE::VTABLE_PlayerCharacter` arrays. Compile-time size assertions and
+`std::get` prevent out-of-bounds table selection. The Actor health hook is
+also corrected: its old inherited table selected TESObjectREFR instead of
+Actor. Each hook installation now has before/after startup log messages.
+This was our DLL bug; reinstalling Address Library does not correct it.
+
+Install COMPLETE Combined 2.13.6-beta1 with VenomHarvester.dll winning MO2
+conflicts. First confirm the main menu appears, then load your existing save.
+VenomHarvester.log must start with native version 2.1.6 and reach all five
+`installed ... hook` lines, CorpseExplosion `ready`, and Satchel `Ready`.
+Then test a poison/oil kill with a nearby hostile enemy and a Satchel refund.
+If startup still fails, send the fresh log and the exact error message.
+
+The ESP is byte-for-byte unchanged from 2.13.5. The 50% damage, 25-foot radius,
+Poison Nova presentation, thumbnail, trait IDs and save formats are preserved.
+No new game, save cleaning or trait reselection is needed for this update.
+Windows compilation and 12 native automated suites are checked; in-game
+startup, visual and damage confirmation still require the user's game.
+
+Earlier release notes describe their respective versions.
+
 # Version 2.1.5 beta: 50% Corpse Explosion damage
 
 Corpse Explosion now deals 50% of the player's recorded actual Health damage

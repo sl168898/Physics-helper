@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 namespace corpse
 {
@@ -141,7 +142,8 @@ namespace corpse
                 (commander.get() == player || commander->IsPlayerTeammate())) return false;
             return actor->IsHostileToActor(player);
         }
-        template<class T> struct AreaTargetHook {
+        template<const auto& VTables> struct AreaTargetHook {
+            static_assert(VTables.size() >= 10, "Actor hooks require the explicit RE::VTABLE_Actor/Character/PlayerCharacter table");
             inline static REL::Relocation<bool (*)(RE::MagicTarget*, RE::MagicTarget::AddTargetData&)> original;
             static bool Add(RE::MagicTarget* target, RE::MagicTarget::AddTargetData& data) {
                 auto runtime = self;
@@ -181,13 +183,17 @@ namespace corpse
                     incoming, quote.magnitude, accepted, before, health(actor.get()));
                 return accepted;
             }
-            static void install() {
+            static void install(std::string_view name) {
                 // TESObjectREFR owns four vtables. Actor's next secondary
                 // base is MagicTarget (0xA0 on 1.6.1170), whose slot 1 is
                 // AddTarget. Use the real secondary-base this pointer.
-                static_assert(RE::VTABLE_TESObjectREFR.size() == 4);
-                REL::Relocation<std::uintptr_t> table{T::VTABLE[4]};
+                // The pinned CommonLib Actor has no own VTABLE member:
+                // Actor::VTABLE inherits TESObjectREFR's FOUR-entry array.
+                // Pass the explicit actor array and bounds-check at compile time.
+                SKSE::log::info("[CorpseExplosion] installing {} MagicTarget::AddTarget hook", name);
+                REL::Relocation<std::uintptr_t> table{std::get<4>(VTables)};
                 original = table.write_vfunc(1, Add);
+                SKSE::log::info("[CorpseExplosion] installed {} MagicTarget::AddTarget hook", name);
             }
         };
         void explode(RE::Actor* body, const Damage& damage) {
@@ -304,7 +310,8 @@ namespace corpse
             originalUpdate(p, delta);
             if (self) self->update(delta);
         }
-        template<class T> struct HealthHook {
+        template<const auto& VTables> struct HealthHook {
+            static_assert(VTables.size() >= 10, "Health hooks require an explicit actor vtable array");
             inline static REL::Relocation<void (*)(RE::Actor*, RE::Actor*, float)> original;
             static void Damage(RE::Actor* actor, RE::Actor* attacker, float damage) {
                 Origin origin{attacker == RE::PlayerCharacter::GetSingleton(), applying};
@@ -314,9 +321,11 @@ namespace corpse
                 original(actor, attacker, damage);
                 observed.finish();
             }
-            static void install() {
-                REL::Relocation<std::uintptr_t> table{T::VTABLE[0]};
+            static void install(std::string_view name) {
+                SKSE::log::info("[CorpseExplosion] installing {} HandleHealthDamage hook", name);
+                REL::Relocation<std::uintptr_t> table{std::get<0>(VTables)};
                 original = table.write_vfunc(0x104, Damage);
+                SKSE::log::info("[CorpseExplosion] installed {} HandleHealthDamage hook", name);
             }
         };
     public:
@@ -434,10 +443,11 @@ namespace corpse
                     if (typeKeywords[i] == editor) effects[i]->AddKeyword(keyword);
             }
             configureVisuals(data);
-            AreaTargetHook<RE::Actor>::install();
-            AreaTargetHook<RE::Character>::install();
-            AreaTargetHook<RE::PlayerCharacter>::install();
-            HealthHook<RE::Actor>::install(); HealthHook<RE::Character>::install();
+            AreaTargetHook<RE::VTABLE_Actor>::install("Actor");
+            AreaTargetHook<RE::VTABLE_Character>::install("Character");
+            AreaTargetHook<RE::VTABLE_PlayerCharacter>::install("PlayerCharacter");
+            HealthHook<RE::VTABLE_Actor>::install("Actor");
+            HealthHook<RE::VTABLE_Character>::install("Character");
             REL::Relocation<std::uintptr_t> table{RE::VTABLE_PlayerCharacter[0]};
             originalUpdate = table.write_vfunc(0xAD, Update);
             SKSE::log::info("[CorpseExplosion] ready: corpse-origin Self-area spells, {} percent, radius {} feet ({:.3f} units), matching resistance, enemy filter, no chains; acceptance and Health diagnostics", fraction * 100, radiusFeet, radius);
